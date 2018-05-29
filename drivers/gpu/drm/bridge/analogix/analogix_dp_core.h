@@ -17,6 +17,7 @@
 #include <drm/drm_dp_helper.h>
 
 #define DP_TIMEOUT_LOOP_COUNT 100
+#define DP_TRAINING_MAX_COUNT 5
 #define MAX_CR_LOOP 5
 #define MAX_EQ_LOOP 5
 
