@@ -1,3 +1,11 @@
+ifeq ($(CONFIG_MACH_NANOPI4),y)
+
+dtb-$(CONFIG_ARCH_ROCKCHIP) += \
+	rk3399-nanopi4-rev00.dtb \
+	rk3399-nanopi4-rev01.dtb
+
+else
+
 dtb-$(CONFIG_ARCH_ROCKCHIP) += px30-evb-ddr3-v10.dtb
 dtb-$(CONFIG_ARCH_ROCKCHIP) += px30-evb-ddr3-lvds-v10.dtb
 dtb-$(CONFIG_ARCH_ROCKCHIP) += px30-evb-ddr4-v10.dtb
@@ -65,7 +73,8 @@ dtb-$(CONFIG_ARCH_ROCKCHIP) += rk3399-sapphire-excavator-linux.dtb
 dtb-$(CONFIG_ARCH_ROCKCHIP) += rk3399-tve1205g.dtb
 dtb-$(CONFIG_ARCH_ROCKCHIP) += rk3399-videostrong-linux.dtb
 dtb-$(CONFIG_ARCH_ROCKCHIP) += rk3399-vr-android.dtb
-dtb-$(CONFIG_ARCH_ROCKCHIP) += rk3399-nanopi4-rev00.dtb
+
+endif
 
 always		:= $(dtb-y)
 subdir-y	:= $(dts-dirs)
