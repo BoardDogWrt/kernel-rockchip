@@ -439,6 +439,7 @@ s32 _do_i2c_write(struct i2c_msg *msg, u16 addr, u8 *buffer, s32 len)
 	return 0;
 }
 
+#if !GTP_POWER_CTRL_SLEEP
 #if !GTP_ESD_PROTECT
 static s32 gt1x_i2c_test(void)
 {
@@ -461,6 +462,7 @@ static s32 gt1x_i2c_test(void)
 
 	return ERROR_RETRY;
 }
+#endif
 #endif
 
 /**
@@ -942,7 +944,9 @@ static s32 gt1x_enter_sleep(void)
 	gt1x_power_switch(SWITCH_OFF);
 	return 0;
 #else
+	int ret;
 	{
+		int ret;
 		s32 retry = 0;
 		if (gt1x_wakeup_level == 1) {	/* high level wakeup */
 			GTP_GPIO_OUTPUT(GTP_INT_PORT, 0);
@@ -952,6 +956,8 @@ static s32 gt1x_enter_sleep(void)
 		while (retry++ < 3) {
 			if (!gt1x_send_cmd(GTP_CMD_SLEEP, 0)) {
 				GTP_INFO("Enter sleep mode!");
+				if (ret < 0)
+					GTP_ERROR("disable power-supply error %d\n", ret);
 				return 0;
 			}
 			msleep(10);
@@ -975,11 +981,11 @@ static s32 gt1x_wakeup_sleep(void)
 	s32 ret = -1;
 	int flag = 0;
 #endif
-
 	GTP_DEBUG("Wake up begin.");
 	gt1x_irq_disable();
 
 #if GTP_POWER_CTRL_SLEEP	/* power manager unit control the procedure */
+	gt1x_power_switch(SWITCH_ON);
 	gt1x_power_reset();
 	GTP_INFO("Wakeup by poweron");
 	return 0;
