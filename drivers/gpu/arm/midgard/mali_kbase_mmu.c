@@ -1,6 +1,6 @@
 /*
  *
- * (C) COPYRIGHT 2010-2017 ARM Limited. All rights reserved.
+ * (C) COPYRIGHT 2010-2016 ARM Limited. All rights reserved.
  *
  * This program is free software and is provided to you under the terms of the
  * GNU General Public License version 2 as published by the Free Software
@@ -172,23 +172,18 @@ void page_fault_worker(struct work_struct *data)
 		dev_warn(kbdev->dev, "Access flag unexpectedly set");
 		goto fault_done;
 
+#ifdef CONFIG_MALI_GPU_MMU_AARCH64
 	case AS_FAULTSTATUS_EXCEPTION_CODE_ADDRESS_SIZE_FAULT:
-		if (kbase_hw_has_feature(kbdev, BASE_HW_FEATURE_AARCH64_MMU))
-			kbase_mmu_report_fault_and_kill(kctx, faulting_as,
+
+		kbase_mmu_report_fault_and_kill(kctx, faulting_as,
 					"Address size fault");
-		else
-			kbase_mmu_report_fault_and_kill(kctx, faulting_as,
-					"Unknown fault code");
 		goto fault_done;
 
 	case AS_FAULTSTATUS_EXCEPTION_CODE_MEMORY_ATTRIBUTES_FAULT:
-		if (kbase_hw_has_feature(kbdev, BASE_HW_FEATURE_AARCH64_MMU))
-			kbase_mmu_report_fault_and_kill(kctx, faulting_as,
+		kbase_mmu_report_fault_and_kill(kctx, faulting_as,
 					"Memory attributes fault");
-		else
-			kbase_mmu_report_fault_and_kill(kctx, faulting_as,
-					"Unknown fault code");
 		goto fault_done;
+#endif /* CONFIG_MALI_GPU_MMU_AARCH64 */
 
 	default:
 		kbase_mmu_report_fault_and_kill(kctx, faulting_as,
@@ -206,13 +201,6 @@ void page_fault_worker(struct work_struct *data)
 		kbase_gpu_vm_unlock(kctx);
 		kbase_mmu_report_fault_and_kill(kctx, faulting_as,
 				"Memory is not mapped on the GPU");
-		goto fault_done;
-	}
-
-	if (region->gpu_alloc->type == KBASE_MEM_TYPE_IMPORTED_UMM) {
-		kbase_gpu_vm_unlock(kctx);
-		kbase_mmu_report_fault_and_kill(kctx, faulting_as,
-				"DMA-BUF is not mapped on the GPU");
 		goto fault_done;
 	}
 
@@ -344,7 +332,7 @@ void page_fault_worker(struct work_struct *data)
 #if defined(CONFIG_MALI_GATOR_SUPPORT)
 		kbase_trace_mali_page_fault_insert_pages(as_no, new_pages);
 #endif
-		KBASE_TLSTREAM_AUX_PAGEFAULT(kctx->id, (u64)new_pages);
+		kbase_tlstream_aux_pagefault(kctx->id, (u64)new_pages);
 
 		/* AS transaction begin */
 		mutex_lock(&kbdev->mmu_hw_mutex);
@@ -410,7 +398,7 @@ phys_addr_t kbase_mmu_alloc_pgd(struct kbase_context *kctx)
 	if (!p)
 		goto sub_pages;
 
-	KBASE_TLSTREAM_AUX_PAGESALLOC(
+	kbase_tlstream_aux_pagesalloc(
 			(u32)kctx->id,
 			(u64)new_page_count);
 
@@ -522,7 +510,6 @@ static phys_addr_t mmu_insert_pages_recover_get_next_pgd(struct kbase_context *k
 	KBASE_DEBUG_ASSERT(NULL != kctx);
 
 	lockdep_assert_held(&kctx->mmu_lock);
-	lockdep_assert_held(&kctx->reg_lock);
 
 	/*
 	 * Architecture spec defines level-0 as being the top-most.
@@ -573,7 +560,6 @@ static void mmu_insert_pages_failure_recovery(struct kbase_context *kctx, u64 vp
 	KBASE_DEBUG_ASSERT(vpfn <= (U64_MAX / PAGE_SIZE));
 
 	lockdep_assert_held(&kctx->mmu_lock);
-	lockdep_assert_held(&kctx->reg_lock);
 
 	mmu_mode = kctx->kbdev->mmu_mode;
 
@@ -921,9 +907,7 @@ static void kbase_mmu_flush_invalidate(struct kbase_context *kctx,
 		return;
 
 	kbdev = kctx->kbdev;
-	mutex_lock(&kbdev->js_data.queue_mutex);
 	ctx_is_in_runpool = kbasep_js_runpool_retain_ctx(kbdev, kctx);
-	mutex_unlock(&kbdev->js_data.queue_mutex);
 
 	if (ctx_is_in_runpool) {
 		KBASE_DEBUG_ASSERT(kctx->as_nr != KBASEP_AS_NR_INVALID);
@@ -1210,8 +1194,6 @@ static void mmu_check_unused(struct kbase_context *kctx, phys_addr_t pgd)
 	u64 *page;
 	int i;
 
-	lockdep_assert_held(&kctx->reg_lock);
-
 	page = kmap_atomic(pfn_to_page(PFN_DOWN(pgd)));
 	/* kmap_atomic should NEVER fail. */
 	KBASE_DEBUG_ASSERT(NULL != page);
@@ -1232,7 +1214,6 @@ static void mmu_teardown_level(struct kbase_context *kctx, phys_addr_t pgd, int 
 
 	KBASE_DEBUG_ASSERT(NULL != kctx);
 	lockdep_assert_held(&kctx->mmu_lock);
-	lockdep_assert_held(&kctx->reg_lock);
 
 	pgd_page = kmap_atomic(pfn_to_page(PFN_DOWN(pgd)));
 	/* kmap_atomic should NEVER fail. */
@@ -1314,7 +1295,7 @@ void kbase_mmu_free_pgd(struct kbase_context *kctx)
 	new_page_count = kbase_atomic_sub_pages(1, &kctx->used_pages);
 	kbase_atomic_sub_pages(1, &kctx->kbdev->memdev.used_pages);
 
-	KBASE_TLSTREAM_AUX_PAGESALLOC(
+	kbase_tlstream_aux_pagesalloc(
 			(u32)kctx->id,
 			(u64)new_page_count);
 }
@@ -1633,8 +1614,7 @@ const char *kbase_exception_name(struct kbase_device *kbdev, u32 exception_code)
 		e = "TRANSLATION_FAULT";
 		break;
 	case 0xC8:
-		e = "PERMISSION_FAULT";
-		break;
+#ifdef CONFIG_MALI_GPU_MMU_AARCH64
 	case 0xC9:
 	case 0xCA:
 	case 0xCB:
@@ -1642,10 +1622,8 @@ const char *kbase_exception_name(struct kbase_device *kbdev, u32 exception_code)
 	case 0xCD:
 	case 0xCE:
 	case 0xCF:
-		if (kbase_hw_has_feature(kbdev, BASE_HW_FEATURE_AARCH64_MMU))
-			e = "PERMISSION_FAULT";
-		else
-			e = "UNKNOWN";
+#endif /* CONFIG_MALI_GPU_MMU_AARCH64 */
+		e = "PERMISSION_FAULT";
 		break;
 	case 0xD0:
 	case 0xD1:
@@ -1658,8 +1636,7 @@ const char *kbase_exception_name(struct kbase_device *kbdev, u32 exception_code)
 		e = "TRANSTAB_BUS_FAULT";
 		break;
 	case 0xD8:
-		e = "ACCESS_FLAG";
-		break;
+#ifdef CONFIG_MALI_GPU_MMU_AARCH64
 	case 0xD9:
 	case 0xDA:
 	case 0xDB:
@@ -1667,11 +1644,10 @@ const char *kbase_exception_name(struct kbase_device *kbdev, u32 exception_code)
 	case 0xDD:
 	case 0xDE:
 	case 0xDF:
-		if (kbase_hw_has_feature(kbdev, BASE_HW_FEATURE_AARCH64_MMU))
-			e = "ACCESS_FLAG";
-		else
-			e = "UNKNOWN";
+#endif /* CONFIG_MALI_GPU_MMU_AARCH64 */
+		e = "ACCESS_FLAG";
 		break;
+#ifdef CONFIG_MALI_GPU_MMU_AARCH64
 	case 0xE0:
 	case 0xE1:
 	case 0xE2:
@@ -1680,10 +1656,7 @@ const char *kbase_exception_name(struct kbase_device *kbdev, u32 exception_code)
 	case 0xE5:
 	case 0xE6:
 	case 0xE7:
-		if (kbase_hw_has_feature(kbdev, BASE_HW_FEATURE_AARCH64_MMU))
-			e = "ADDRESS_SIZE_FAULT";
-		else
-			e = "UNKNOWN";
+		e = "ADDRESS_SIZE_FAULT";
 		break;
 	case 0xE8:
 	case 0xE9:
@@ -1693,10 +1666,8 @@ const char *kbase_exception_name(struct kbase_device *kbdev, u32 exception_code)
 	case 0xED:
 	case 0xEE:
 	case 0xEF:
-		if (kbase_hw_has_feature(kbdev, BASE_HW_FEATURE_AARCH64_MMU))
-			e = "MEMORY_ATTRIBUTES_FAULT";
-		else
-			e = "UNKNOWN";
+		e = "MEMORY_ATTRIBUTES_FAULT";
+#endif /* CONFIG_MALI_GPU_MMU_AARCH64 */
 		break;
 	default:
 		e = "UNKNOWN";
@@ -1711,10 +1682,11 @@ static const char *access_type_name(struct kbase_device *kbdev,
 {
 	switch (fault_status & AS_FAULTSTATUS_ACCESS_TYPE_MASK) {
 	case AS_FAULTSTATUS_ACCESS_TYPE_ATOMIC:
-		if (kbase_hw_has_feature(kbdev, BASE_HW_FEATURE_AARCH64_MMU))
-			return "ATOMIC";
-		else
-			return "UNKNOWN";
+#ifdef CONFIG_MALI_GPU_MMU_AARCH64
+		return "ATOMIC";
+#else
+		return "UNKNOWN";
+#endif /* CONFIG_MALI_GPU_MMU_AARCH64 */
 	case AS_FAULTSTATUS_ACCESS_TYPE_READ:
 		return "READ";
 	case AS_FAULTSTATUS_ACCESS_TYPE_WRITE:
@@ -1750,7 +1722,7 @@ static void kbase_mmu_report_fault_and_kill(struct kbase_context *kctx,
 	js_devdata = &kbdev->js_data;
 
 	/* ASSERT that the context won't leave the runpool */
-	KBASE_DEBUG_ASSERT(atomic_read(&kctx->refcount) > 0);
+	KBASE_DEBUG_ASSERT(kbasep_js_debug_check_ctx_refcount(kbdev, kctx) > 0);
 
 	/* decode the fault status */
 	exception_type = as->fault_status & 0xFF;
@@ -2049,14 +2021,15 @@ void kbase_mmu_interrupt_process(struct kbase_device *kbdev, struct kbase_contex
 		 */
 		kbasep_js_clear_submit_allowed(js_devdata, kctx);
 
-		if (kbase_hw_has_feature(kbdev, BASE_HW_FEATURE_AARCH64_MMU))
-			dev_warn(kbdev->dev,
-					"Bus error in AS%d at VA=0x%016llx, IPA=0x%016llx\n",
-					as->number, as->fault_addr,
-					as->fault_extra_addr);
-		else
-			dev_warn(kbdev->dev, "Bus error in AS%d at 0x%016llx\n",
-					as->number, as->fault_addr);
+#ifdef CONFIG_MALI_GPU_MMU_AARCH64
+		dev_warn(kbdev->dev,
+				"Bus error in AS%d at VA=0x%016llx, IPA=0x%016llx\n",
+				as->number, as->fault_addr,
+				as->fault_extra_addr);
+#else
+		dev_warn(kbdev->dev, "Bus error in AS%d at 0x%016llx\n",
+				as->number, as->fault_addr);
+#endif /* CONFIG_MALI_GPU_MMU_AARCH64 */
 
 		/*
 		 * We need to switch to UNMAPPED mode - but we do this in a

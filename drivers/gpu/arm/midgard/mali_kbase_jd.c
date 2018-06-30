@@ -1,6 +1,6 @@
 /*
  *
- * (C) COPYRIGHT 2010-2017 ARM Limited. All rights reserved.
+ * (C) COPYRIGHT 2010-2016 ARM Limited. All rights reserved.
  *
  * This program is free software and is provided to you under the terms of the
  * GNU General Public License version 2 as published by the Free Software
@@ -290,18 +290,7 @@ static int kbase_jd_pre_external_resources(struct kbase_jd_atom *katom, const st
 	struct kbase_dma_fence_resv_info info = {
 		.dma_fence_resv_count = 0,
 	};
-#ifdef CONFIG_SYNC
-	/*
-	 * When both dma-buf fence and Android native sync is enabled, we
-	 * disable dma-buf fence for contexts that are using Android native
-	 * fences.
-	 */
-	const bool implicit_sync = !kbase_ctx_flag(katom->kctx,
-						   KCTX_NO_IMPLICIT_SYNC);
-#else /* CONFIG_SYNC */
-	const bool implicit_sync = true;
-#endif /* CONFIG_SYNC */
-#endif /* CONFIG_MALI_DMA_FENCE */
+#endif
 	struct base_external_resource *input_extres;
 
 	KBASE_DEBUG_ASSERT(katom);
@@ -353,22 +342,20 @@ static int kbase_jd_pre_external_resources(struct kbase_jd_atom *katom, const st
 #endif				/* CONFIG_KDS */
 
 #ifdef CONFIG_MALI_DMA_FENCE
-	if (implicit_sync) {
-		info.resv_objs = kmalloc_array(katom->nr_extres,
-					sizeof(struct reservation_object *),
-					GFP_KERNEL);
-		if (!info.resv_objs) {
-			err_ret_val = -ENOMEM;
-			goto early_err_out;
-		}
+	info.resv_objs = kmalloc_array(katom->nr_extres,
+				       sizeof(struct reservation_object *),
+				       GFP_KERNEL);
+	if (!info.resv_objs) {
+		err_ret_val = -ENOMEM;
+		goto early_err_out;
+	}
 
-		info.dma_fence_excl_bitmap =
-				kcalloc(BITS_TO_LONGS(katom->nr_extres),
-					sizeof(unsigned long), GFP_KERNEL);
-		if (!info.dma_fence_excl_bitmap) {
-			err_ret_val = -ENOMEM;
-			goto early_err_out;
-		}
+	info.dma_fence_excl_bitmap = kcalloc(BITS_TO_LONGS(katom->nr_extres),
+					     sizeof(unsigned long),
+					     GFP_KERNEL);
+	if (!info.dma_fence_excl_bitmap) {
+		err_ret_val = -ENOMEM;
+		goto early_err_out;
 	}
 #endif /* CONFIG_MALI_DMA_FENCE */
 
@@ -413,8 +400,7 @@ static int kbase_jd_pre_external_resources(struct kbase_jd_atom *katom, const st
 		}
 
 #ifdef CONFIG_MALI_DMA_FENCE
-		if (implicit_sync &&
-		    reg->gpu_alloc->type == KBASE_MEM_TYPE_IMPORTED_UMM) {
+		if (reg->gpu_alloc->type == KBASE_MEM_TYPE_IMPORTED_UMM) {
 			struct reservation_object *resv;
 
 			resv = reg->gpu_alloc->imported.umm.dma_buf->resv;
@@ -465,18 +451,16 @@ static int kbase_jd_pre_external_resources(struct kbase_jd_atom *katom, const st
 #endif				/* CONFIG_KDS */
 
 #ifdef CONFIG_MALI_DMA_FENCE
-	if (implicit_sync) {
-		if (info.dma_fence_resv_count) {
-			int ret;
+	if (info.dma_fence_resv_count) {
+		int ret;
 
-			ret = kbase_dma_fence_wait(katom, &info);
-			if (ret < 0)
-				goto failed_dma_fence_setup;
-		}
-
-		kfree(info.resv_objs);
-		kfree(info.dma_fence_excl_bitmap);
+		ret = kbase_dma_fence_wait(katom, &info);
+		if (ret < 0)
+			goto failed_dma_fence_setup;
 	}
+
+	kfree(info.resv_objs);
+	kfree(info.dma_fence_excl_bitmap);
 #endif /* CONFIG_MALI_DMA_FENCE */
 
 	/* all done OK */
@@ -531,10 +515,8 @@ failed_kds_setup:
 	kfree(kds_access_bitmap);
 #endif				/* CONFIG_KDS */
 #ifdef CONFIG_MALI_DMA_FENCE
-	if (implicit_sync) {
-		kfree(info.resv_objs);
-		kfree(info.dma_fence_excl_bitmap);
-	}
+	kfree(info.resv_objs);
+	kfree(info.dma_fence_excl_bitmap);
 #endif
 	return err_ret_val;
 }
@@ -596,7 +578,7 @@ static inline void jd_resolve_dep(struct list_head *out_list,
 #ifdef CONFIG_MALI_DMA_FENCE
 			int dep_count;
 
-			dep_count = kbase_fence_dep_count_read(dep_atom);
+			dep_count = atomic_read(&dep_atom->dma_fence.dep_count);
 			if (likely(dep_count == -1)) {
 				dep_satisfied = true;
 			} else {
@@ -735,8 +717,8 @@ static void jd_try_submitting_deps(struct list_head *out_list,
 #ifdef CONFIG_MALI_DMA_FENCE
 				int dep_count;
 
-				dep_count = kbase_fence_dep_count_read(
-								dep_atom);
+				dep_count = atomic_read(
+						&dep_atom->dma_fence.dep_count);
 				if (likely(dep_count == -1)) {
 					dep_satisfied = true;
 				} else {
@@ -975,11 +957,8 @@ bool jd_submit_atom(struct kbase_context *kctx, const struct base_jd_atom_v2 *us
 	 * the scheduler: 'not ready to run' and 'dependency-only' jobs. */
 	jctx->job_nr++;
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 10, 0)
 	katom->start_timestamp.tv64 = 0;
-#else
-	katom->start_timestamp = 0;
-#endif
+	katom->time_spent_us = 0;
 	katom->udata = user_atom->udata;
 	katom->kctx = kctx;
 	katom->nr_extres = user_atom->nr_extres;
@@ -1011,8 +990,10 @@ bool jd_submit_atom(struct kbase_context *kctx, const struct base_jd_atom_v2 *us
 	katom->kds_rset = NULL;
 #endif				/* CONFIG_KDS */
 #ifdef CONFIG_MALI_DMA_FENCE
-	kbase_fence_dep_count_set(katom, -1);
+	atomic_set(&katom->dma_fence.dep_count, -1);
 #endif
+
+	kbase_tlstream_tl_attrib_atom_state(katom, TL_ATOM_STATE_IDLE);
 
 	/* Don't do anything if there is a mess up with dependencies.
 	   This is done in a separate cycle to check both the dependencies at ones, otherwise
@@ -1032,13 +1013,11 @@ bool jd_submit_atom(struct kbase_context *kctx, const struct base_jd_atom_v2 *us
 				/* Wrong dependency setup. Atom will be sent
 				 * back to user space. Do not record any
 				 * dependencies. */
-				KBASE_TLSTREAM_TL_NEW_ATOM(
+				kbase_tlstream_tl_new_atom(
 						katom,
 						kbase_jd_atom_id(kctx, katom));
-				KBASE_TLSTREAM_TL_RET_ATOM_CTX(
+				kbase_tlstream_tl_ret_atom_ctx(
 						katom, kctx);
-				KBASE_TLSTREAM_TL_ATTRIB_ATOM_STATE(katom,
-						TL_ATOM_STATE_IDLE);
 
 				ret = jd_done_nolock(katom, NULL);
 				goto out;
@@ -1079,12 +1058,10 @@ bool jd_submit_atom(struct kbase_context *kctx, const struct base_jd_atom_v2 *us
 			/* This atom is going through soft replay or
 			 * will be sent back to user space. Do not record any
 			 * dependencies. */
-			KBASE_TLSTREAM_TL_NEW_ATOM(
+			kbase_tlstream_tl_new_atom(
 					katom,
 					kbase_jd_atom_id(kctx, katom));
-			KBASE_TLSTREAM_TL_RET_ATOM_CTX(katom, kctx);
-			KBASE_TLSTREAM_TL_ATTRIB_ATOM_STATE(katom,
-					TL_ATOM_STATE_IDLE);
+			kbase_tlstream_tl_ret_atom_ctx(katom, kctx);
 
 			if ((katom->core_req & BASE_JD_REQ_SOFT_JOB_TYPE)
 					 == BASE_JD_REQ_SOFT_REPLAY) {
@@ -1129,16 +1106,15 @@ bool jd_submit_atom(struct kbase_context *kctx, const struct base_jd_atom_v2 *us
 	katom->sched_priority = sched_prio;
 
 	/* Create a new atom recording all dependencies it was set up with. */
-	KBASE_TLSTREAM_TL_NEW_ATOM(
+	kbase_tlstream_tl_new_atom(
 			katom,
 			kbase_jd_atom_id(kctx, katom));
-	KBASE_TLSTREAM_TL_ATTRIB_ATOM_STATE(katom, TL_ATOM_STATE_IDLE);
-	KBASE_TLSTREAM_TL_ATTRIB_ATOM_PRIORITY(katom, katom->sched_priority);
-	KBASE_TLSTREAM_TL_RET_ATOM_CTX(katom, kctx);
+	kbase_tlstream_tl_attrib_atom_priority(katom, katom->sched_priority);
+	kbase_tlstream_tl_ret_atom_ctx(katom, kctx);
 	for (i = 0; i < 2; i++)
 		if (BASE_JD_DEP_TYPE_INVALID != kbase_jd_katom_dep_type(
 					&katom->dep[i])) {
-			KBASE_TLSTREAM_TL_DEP_ATOM_ATOM(
+			kbase_tlstream_tl_dep_atom_atom(
 					(void *)kbase_jd_katom_dep_atom(
 						&katom->dep[i]),
 					(void *)katom);
@@ -1150,7 +1126,7 @@ bool jd_submit_atom(struct kbase_context *kctx, const struct base_jd_atom_v2 *us
 			struct kbase_jd_atom *dep_atom =
 				&jctx->atoms[dep_atom_number];
 
-			KBASE_TLSTREAM_TL_RDEP_ATOM_ATOM(
+			kbase_tlstream_tl_rdep_atom_atom(
 					(void *)dep_atom,
 					(void *)katom);
 		}
@@ -1237,7 +1213,7 @@ bool jd_submit_atom(struct kbase_context *kctx, const struct base_jd_atom_v2 *us
 
 
 #ifdef CONFIG_MALI_DMA_FENCE
-	if (kbase_fence_dep_count_read(katom) != -1) {
+	if (atomic_read(&katom->dma_fence.dep_count) != -1) {
 		ret = false;
 		goto out;
 	}
@@ -1274,20 +1250,26 @@ bool jd_submit_atom(struct kbase_context *kctx, const struct base_jd_atom_v2 *us
 	return ret;
 }
 
+#ifdef BASE_LEGACY_UK6_SUPPORT
 int kbase_jd_submit(struct kbase_context *kctx,
-		void __user *user_addr, u32 nr_atoms, u32 stride,
-		bool uk6_atom)
+		const struct kbase_uk_job_submit *submit_data,
+		int uk6_atom)
+#else
+int kbase_jd_submit(struct kbase_context *kctx,
+		const struct kbase_uk_job_submit *submit_data)
+#endif /* BASE_LEGACY_UK6_SUPPORT */
 {
 	struct kbase_jd_context *jctx = &kctx->jctx;
 	int err = 0;
 	int i;
 	bool need_to_try_schedule_context = false;
 	struct kbase_device *kbdev;
+	void __user *user_addr;
 	u32 latest_flush;
 
 	/*
-	 * kbase_jd_submit isn't expected to fail and so all errors with the
-	 * jobs are reported by immediately failing them (through event system)
+	 * kbase_jd_submit isn't expected to fail and so all errors with the jobs
+	 * are reported by immediately falling them (through event system)
 	 */
 	kbdev = kctx->kbdev;
 
@@ -1298,25 +1280,29 @@ int kbase_jd_submit(struct kbase_context *kctx,
 		return -EINVAL;
 	}
 
-	if (stride != sizeof(base_jd_atom_v2)) {
+#ifdef BASE_LEGACY_UK6_SUPPORT
+	if ((uk6_atom && submit_data->stride !=
+			sizeof(struct base_jd_atom_v2_uk6)) ||
+			submit_data->stride != sizeof(base_jd_atom_v2)) {
+#else
+	if (submit_data->stride != sizeof(base_jd_atom_v2)) {
+#endif /* BASE_LEGACY_UK6_SUPPORT */
 		dev_err(kbdev->dev, "Stride passed to job_submit doesn't match kernel");
 		return -EINVAL;
 	}
 
-	KBASE_TIMELINE_ATOMS_IN_FLIGHT(kctx, atomic_add_return(nr_atoms,
-				&kctx->timeline.jd_atoms_in_flight));
+	user_addr = get_compat_pointer(kctx, &submit_data->addr);
+
+	KBASE_TIMELINE_ATOMS_IN_FLIGHT(kctx, atomic_add_return(submit_data->nr_atoms, &kctx->timeline.jd_atoms_in_flight));
 
 	/* All atoms submitted in this call have the same flush ID */
 	latest_flush = kbase_backend_get_current_flush_id(kbdev);
 
-	for (i = 0; i < nr_atoms; i++) {
+	for (i = 0; i < submit_data->nr_atoms; i++) {
 		struct base_jd_atom_v2 user_atom;
 		struct kbase_jd_atom *katom;
 
 #ifdef BASE_LEGACY_UK6_SUPPORT
-		BUILD_BUG_ON(sizeof(struct base_jd_atom_v2_uk6) !=
-				sizeof(base_jd_atom_v2));
-
 		if (uk6_atom) {
 			struct base_jd_atom_v2_uk6 user_atom_v6;
 			base_jd_dep_type dep_types[2] = {BASE_JD_DEP_TYPE_DATA, BASE_JD_DEP_TYPE_DATA};
@@ -1326,7 +1312,7 @@ int kbase_jd_submit(struct kbase_context *kctx,
 				err = -EINVAL;
 				KBASE_TIMELINE_ATOMS_IN_FLIGHT(kctx,
 					atomic_sub_return(
-					nr_atoms - i,
+					submit_data->nr_atoms - i,
 					&kctx->timeline.jd_atoms_in_flight));
 				break;
 			}
@@ -1358,17 +1344,14 @@ int kbase_jd_submit(struct kbase_context *kctx,
 			user_atom.device_nr = user_atom_v6.device_nr;
 		} else {
 #endif /* BASE_LEGACY_UK6_SUPPORT */
-			if (copy_from_user(&user_atom, user_addr,
-						sizeof(user_atom)) != 0) {
-				err = -EINVAL;
-				KBASE_TIMELINE_ATOMS_IN_FLIGHT(kctx,
-					atomic_sub_return(nr_atoms - i,
-					&kctx->timeline.jd_atoms_in_flight));
-				break;
-			}
+		if (copy_from_user(&user_atom, user_addr, sizeof(user_atom)) != 0) {
+			err = -EINVAL;
+			KBASE_TIMELINE_ATOMS_IN_FLIGHT(kctx, atomic_sub_return(submit_data->nr_atoms - i, &kctx->timeline.jd_atoms_in_flight));
+			break;
+		}
 #ifdef BASE_LEGACY_UK6_SUPPORT
 		}
-#endif
+#endif /* BASE_LEGACY_UK6_SUPPORT */
 
 #ifdef BASE_LEGACY_UK10_2_SUPPORT
 		if (KBASE_API_VERSION(10, 3) > kctx->api_version)
@@ -1376,7 +1359,7 @@ int kbase_jd_submit(struct kbase_context *kctx,
 					      & 0x7fff);
 #endif /* BASE_LEGACY_UK10_2_SUPPORT */
 
-		user_addr = (void __user *)((uintptr_t) user_addr + stride);
+		user_addr = (void __user *)((uintptr_t) user_addr + submit_data->stride);
 
 		mutex_lock(&jctx->lock);
 #ifndef compiletime_assert
@@ -1476,7 +1459,7 @@ void kbase_jd_done_worker(struct work_struct *data)
 	 * Begin transaction on JD context and JS context
 	 */
 	mutex_lock(&jctx->lock);
-	KBASE_TLSTREAM_TL_ATTRIB_ATOM_STATE(katom, TL_ATOM_STATE_DONE);
+	kbase_tlstream_tl_attrib_atom_state(katom, TL_ATOM_STATE_DONE);
 	mutex_lock(&js_devdata->queue_mutex);
 	mutex_lock(&js_kctx_info->ctx.jsctx_mutex);
 
@@ -1731,11 +1714,14 @@ KBASE_EXPORT_TEST_API(kbase_jd_done);
 void kbase_jd_cancel(struct kbase_device *kbdev, struct kbase_jd_atom *katom)
 {
 	struct kbase_context *kctx;
+	struct kbasep_js_kctx_info *js_kctx_info;
 
 	KBASE_DEBUG_ASSERT(NULL != kbdev);
 	KBASE_DEBUG_ASSERT(NULL != katom);
 	kctx = katom->kctx;
 	KBASE_DEBUG_ASSERT(NULL != kctx);
+
+	js_kctx_info = &kctx->jctx.sched_info;
 
 	KBASE_TRACE_ADD(kbdev, JD_CANCEL, kctx, katom, katom->jc, 0);
 
@@ -1843,9 +1829,8 @@ int kbase_jd_init(struct kbase_context *kctx)
 		kctx->jctx.atoms[i].event_code = BASE_JD_EVENT_JOB_INVALID;
 		kctx->jctx.atoms[i].status = KBASE_JD_ATOM_STATE_UNUSED;
 
-#if defined(CONFIG_MALI_DMA_FENCE) || defined(CONFIG_SYNC_FILE)
-		kctx->jctx.atoms[i].dma_fence.context =
-						dma_fence_context_alloc(1);
+#ifdef CONFIG_MALI_DMA_FENCE
+		kctx->jctx.atoms[i].dma_fence.context = fence_context_alloc(1);
 		atomic_set(&kctx->jctx.atoms[i].dma_fence.seqno, 0);
 		INIT_LIST_HEAD(&kctx->jctx.atoms[i].dma_fence.callbacks);
 #endif

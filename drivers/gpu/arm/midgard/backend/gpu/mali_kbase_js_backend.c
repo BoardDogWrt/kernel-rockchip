@@ -117,7 +117,7 @@ static enum hrtimer_restart timer_callback(struct hrtimer *timer)
 			/* The current version of the model doesn't support
 			 * Soft-Stop */
 			if (!kbase_hw_has_issue(kbdev, BASE_HW_ISSUE_5736)) {
-				u32 ticks = atom->ticks++;
+				u32 ticks = atom->sched_info.cfs.ticks++;
 
 #if !CINSTR_DUMPING_ENABLED
 				u32 soft_stop_ticks, hard_stop_ticks,
@@ -146,7 +146,8 @@ static enum hrtimer_restart timer_callback(struct hrtimer *timer)
 				 * changing the timeouts. */
 				if (backend->timeouts_updated &&
 						ticks > soft_stop_ticks)
-					ticks = atom->ticks = soft_stop_ticks;
+					ticks = atom->sched_info.cfs.ticks =
+							soft_stop_ticks;
 
 				/* Job is Soft-Stoppable */
 				if (ticks == soft_stop_ticks) {
