@@ -1792,6 +1792,14 @@ void mmc_power_off(struct mmc_host *host)
 	if (host->ios.power_mode == MMC_POWER_OFF)
 		return;
 
+	mmc_set_initial_signal_voltage(host);
+
+	/*
+	 * This delay should be sufficient to allow the power supply
+	 * to reach the minimum voltage.
+	 */
+	mmc_delay(10);
+
 	mmc_pwrseq_power_off(host);
 
 	host->ios.clock = 0;
