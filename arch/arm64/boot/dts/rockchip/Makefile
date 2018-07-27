@@ -2,7 +2,8 @@ ifeq ($(CONFIG_MACH_NANOPI4),y)
 
 dtb-$(CONFIG_ARCH_ROCKCHIP) += \
 	rk3399-nanopi4-rev00.dtb \
-	rk3399-nanopi4-rev01.dtb
+	rk3399-nanopi4-rev01.dtb \
+	rk3399-nanopi4-rev04.dtb
 
 else
 
