@@ -56,7 +56,7 @@
 
 	cpuinfo {
 		compatible = "rockchip,cpuinfo";
-		nvmem-cells = <&efuse_id>;
+		nvmem-cells = <&cpu_id>;
 		nvmem-cell-names = "id";
 	};
 
@@ -169,7 +169,7 @@
 
 		/* for rockchip boot on */
 		rockchip,pwm_id = <2>;
-		rockchip,pwm_voltage = <1000000>;
+		rockchip,pwm_voltage = <900000>;
 	};
 
 	rt5651_card: rt5651-sound {

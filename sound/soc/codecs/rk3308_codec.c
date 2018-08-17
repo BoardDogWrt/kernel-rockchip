@@ -149,6 +149,7 @@ struct rk3308_codec_priv {
 	u32 i2s_sdis[ADC_LR_GROUP_MAX];
 	u32 to_i2s_grps;
 	u32 delay_loopback_handle_ms;
+	u32 delay_start_play_ms;
 	int which_i2s;
 	int irq;
 	int adc_grp0_using_linein;
@@ -1001,6 +1002,9 @@ static int rk3308_mute_stream(struct snd_soc_dai *dai, int mute, int stream)
 				rk3308_speaker_ctl(rk3308, 1);
 			else if (rk3308->dac_output == DAC_HPOUT)
 				rk3308_headphone_ctl(rk3308, 1);
+
+			if (rk3308->delay_start_play_ms)
+				msleep(rk3308->delay_start_play_ms);
 #endif
 			for (dgain = 0x7; dgain >= 0x2; dgain--) {
 				/*
@@ -1651,13 +1655,13 @@ static int rk3308_codec_power_on(struct rk3308_codec_priv *rk3308)
 	/*
 	 * 6. Change the register ACODEC_ADC_ANA_CON10[6:0] from the 0x1 to
 	 *    0x7f step by step or configure the ACODEC_ADC_ANA_CON10[6:0] to
-	 *    0x7f directly. The suggestion slot time of the step is 20ms.
+	 *    0x7f directly. Here the slot time of the step is 200us.
 	 */
 	for (v = 0x1; v <= 0x7f; v++) {
 		regmap_update_bits(rk3308->regmap, RK3308_ADC_ANA_CON10(0),
 				   RK3308_ADC_CURRENT_CHARGE_MSK,
 				   v);
-		udelay(50);
+		udelay(200);
 	}
 
 	/* 7. Wait until the voltage of VCM keeps stable at the AVDD/2 */
@@ -1697,13 +1701,13 @@ static int rk3308_codec_power_off(struct rk3308_codec_priv *rk3308)
 	/*
 	 * 4.Change the register ACODEC_ADC_ANA_CON10[6:0] from the 0x1 to 0x7f
 	 *   step by step or configure the ACODEC_ADC_ANA_CON10[6:0] to 0x7f
-	 *   directly. The suggestion slot time of the step is 20ms
+	 *   directly. Here the slot time of the step is 200us.
 	 */
 	for (v = 0x1; v <= 0x7f; v++) {
 		regmap_update_bits(rk3308->regmap, RK3308_ADC_ANA_CON10(0),
 				   RK3308_ADC_CURRENT_CHARGE_MSK,
 				   v);
-		udelay(50);
+		udelay(200);
 	}
 
 	/* 5. Wait until the voltage of VCM keeps stable at the AGND */
@@ -3829,6 +3833,10 @@ static int rk3308_platform_probe(struct platform_device *pdev)
 	rk3308->delay_loopback_handle_ms = LOOPBACK_HANDLE_MS;
 	ret = of_property_read_u32(np, "rockchip,delay-loopback-handle-ms",
 				   &rk3308->delay_loopback_handle_ms);
+
+	rk3308->delay_start_play_ms = 0;
+	ret = of_property_read_u32(np, "rockchip,delay-start-play-ms",
+				   &rk3308->delay_start_play_ms);
 
 	rk3308->loopback_grp = NOT_USED;
 	ret = of_property_read_u32(np, "rockchip,loopback-grp",

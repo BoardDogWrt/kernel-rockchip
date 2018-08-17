@@ -1706,21 +1706,6 @@ out_unlocked:
 
 }
 
-static int dwc_otg_wait_bit_set(volatile uint32_t *reg,
-				uint32_t bit, uint32_t timeout)
-{
-	int i;
-
-	for (i = 0; i < timeout; i++) {
-		if (DWC_READ_REG32(reg) & bit)
-			return 0;
-
-		dwc_udelay(1);
-	}
-
-	return -ETIMEDOUT;
-}
-
 static void dwc_otg_pcd_ep_stop_transfer(dwc_otg_core_if_t
 					 *core_if, dwc_ep_t *ep)
 {
@@ -2483,19 +2468,24 @@ int dwc_otg_pcd_ep_dequeue(dwc_otg_pcd_t *pcd, void *ep_handle,
 	}
 
 	if (!DWC_CIRCLEQ_EMPTY_ENTRY(req, queue_entry)) {
-		dwc_otg_pcd_ep_stop_transfer(GET_CORE_IF(pcd),
-					     &ep->dwc_ep);
-		/* Flush the Tx FIFO */
-		if (ep->dwc_ep.is_in) {
-			dwc_otg_flush_tx_fifo(GET_CORE_IF(pcd),
-					      ep->dwc_ep.tx_fifo_num);
-			release_perio_tx_fifo(GET_CORE_IF(pcd),
-					      ep->dwc_ep.tx_fifo_num);
-			release_tx_fifo(GET_CORE_IF(pcd),
-					ep->dwc_ep.tx_fifo_num);
+		if (ep->dwc_ep.type != DWC_OTG_EP_TYPE_ISOC) {
+			dwc_otg_pcd_ep_stop_transfer(GET_CORE_IF(pcd),
+						     &ep->dwc_ep);
+			/* Flush the Tx FIFO */
+			if (ep->dwc_ep.is_in) {
+				dwc_otg_flush_tx_fifo(GET_CORE_IF(pcd),
+						      ep->dwc_ep.tx_fifo_num);
+				release_perio_tx_fifo(GET_CORE_IF(pcd),
+						      ep->dwc_ep.tx_fifo_num);
+				release_tx_fifo(GET_CORE_IF(pcd),
+						ep->dwc_ep.tx_fifo_num);
+			}
 		}
 
 		dwc_otg_request_done(ep, req, -DWC_E_RESTART);
+
+		if (ep->dwc_ep.type == DWC_OTG_EP_TYPE_ISOC)
+			ep->dwc_ep.frame_num = 0xFFFFFFFF;
 	} else {
 		req = NULL;
 	}

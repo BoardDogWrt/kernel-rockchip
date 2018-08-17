@@ -136,7 +136,7 @@
 #define SCLK_USBPHY0_480M_SRC		168
 #define SCLK_USBPHY1_480M_SRC		169
 #define SCLK_DDRCLK			170
-#define SCLK_TESTOUT2			171
+#define SCLK_TESTCLKOUT2		171
 #define SCLK_UART0_SRC			172
 #define SCLK_UART_SRC			173
 #define SCLK_I2S0_DIV			174
@@ -144,12 +144,15 @@
 #define SCLK_I2S2_DIV			176
 #define SCLK_SPDIF_DIV			177
 #define SCLK_CIF_OUT_SRC		178
+#define SCLK_TESTCLKOUT1		179
 
 #define DCLK_VOP0			180
 #define DCLK_VOP1			181
 #define DCLK_VOP0_DIV			182
 #define DCLK_VOP1_DIV			183
 #define DCLK_M0_PERILP			184
+#define DCLK_VOP0_FRAC			185
+#define DCLK_VOP1_FRAC			186
 
 #define FCLK_CM0S 			190
 
