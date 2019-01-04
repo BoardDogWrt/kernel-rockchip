@@ -1095,6 +1095,9 @@ struct dwc3_scratchpad_array {
  *			check during HS transmit.
  * @parkmode_disable_ss_quirk: set if we need to disable all SuperSpeed
  *			instances in park mode.
+ * @xhci_trb_ent_quirk: set if need to enable the Evaluate Next TRB(ENT)
+ *			flag in the TRB data structure to force xHC to
+ *			pre-fetch the next TRB of a TD.
  * @tx_de_emphasis_quirk: set if we enable Tx de-emphasis quirk
  * @tx_de_emphasis: Tx de-emphasis value
  *	0	- -6dB de-emphasis
@@ -1310,6 +1313,7 @@ struct dwc3 {
 	unsigned		dis_del_phy_power_chg_quirk:1;
 	unsigned		dis_tx_ipgap_linecheck_quirk:1;
 	unsigned		parkmode_disable_ss_quirk:1;
+	unsigned		xhci_trb_ent_quirk:1;
 
 	unsigned		tx_de_emphasis_quirk:1;
 	unsigned		tx_de_emphasis:2;
