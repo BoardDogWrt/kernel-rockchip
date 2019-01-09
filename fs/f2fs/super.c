@@ -211,7 +211,8 @@ static inline void limit_reserve_root(struct f2fs_sb_info *sbi)
 
 	/* limit is 0.2% */
 	if (test_opt(sbi, RESERVE_ROOT) &&
-			F2FS_OPTION(sbi).root_reserved_blocks > limit) {
+			F2FS_OPTION(sbi).root_reserved_blocks > limit &&
+			F2FS_OPTION(sbi).root_reserved_blocks > MIN_ROOT_RESERVED_BLOCKS) {
 		F2FS_OPTION(sbi).root_reserved_blocks = limit;
 		f2fs_msg(sbi->sb, KERN_INFO,
 			"Reduce reserved blocks for root = %u",
@@ -740,6 +741,10 @@ static int parse_options(struct super_block *sb, char *options)
 			} else if (strlen(name) == 6 &&
 					!strncmp(name, "strict", 6)) {
 				F2FS_OPTION(sbi).fsync_mode = FSYNC_MODE_STRICT;
+			} else if (strlen(name) == 9 &&
+					!strncmp(name, "nobarrier", 9)) {
+				F2FS_OPTION(sbi).fsync_mode =
+							FSYNC_MODE_NOBARRIER;
 			} else {
 				kfree(name);
 				return -EINVAL;
@@ -1159,7 +1164,8 @@ static int f2fs_statfs(struct dentry *dentry, struct kstatfs *buf)
 	buf->f_type = F2FS_SUPER_MAGIC;
 	buf->f_bsize = sbi->blocksize;
 
-	buf->f_blocks = total_count - start_count;
+	/* f_blocks should not include overhead of filesystem */
+	buf->f_blocks = user_block_count;
 	buf->f_bfree = user_block_count - valid_user_blocks(sbi) -
 						sbi->current_reserved_blocks;
 	if (buf->f_bfree > F2FS_OPTION(sbi).root_reserved_blocks)
@@ -3070,6 +3076,12 @@ static void destroy_inodecache(void)
 static int __init init_f2fs_fs(void)
 {
 	int err;
+
+	if (PAGE_SIZE != F2FS_BLKSIZE) {
+		printk("F2FS not supported on PAGE_SIZE(%lu) != %d\n",
+				PAGE_SIZE, F2FS_BLKSIZE);
+		return -EINVAL;
+	}
 
 	f2fs_build_trace_ios();
 

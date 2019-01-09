@@ -316,6 +316,10 @@ static int gt1x_parse_dt(struct device *dev)
 	if (PTR_ERR(vdd_ana) == -ENODEV) {
 		GTP_ERROR("vdd_ana not specified, fallback to power-supply");
 		vdd_ana = devm_regulator_get_optional(dev, "power");
+		if (PTR_ERR(vdd_ana) == -ENODEV) {
+			GTP_ERROR("power not specified, ignore power ctrl");
+			vdd_ana = NULL;
+		}
 	}
 	if (IS_ERR(vdd_ana)) {
 		GTP_ERROR("regulator get of vdd_ana/power-supply failed");
@@ -373,25 +377,21 @@ static s32 gt1x_request_io_port(void)
 	ret = gpio_request(GTP_INT_PORT, "GTP_INT_IRQ");
 	if (ret < 0) {
 		GTP_ERROR("Failed to request GPIO:%d, ERRNO:%d", (s32) GTP_INT_PORT, ret);
-		ret = -ENODEV;
-	} else {
-		GTP_GPIO_AS_INT(GTP_INT_PORT);
-		gt1x_i2c_client->irq = GTP_INT_IRQ;
+		return ret;
 	}
+
+	GTP_GPIO_AS_INT(GTP_INT_PORT);
+	gt1x_i2c_client->irq = GTP_INT_IRQ;
 
 	ret = gpio_request(GTP_RST_PORT, "GTP_RST_PORT");
 	if (ret < 0) {
 		GTP_ERROR("Failed to request GPIO:%d, ERRNO:%d", (s32) GTP_RST_PORT, ret);
-		ret = -ENODEV;
+		gpio_free(GTP_INT_PORT);
+		return ret;
 	}
 
 	GTP_GPIO_AS_INPUT(GTP_RST_PORT);
-	if (ret < 0) {
-		gpio_free(GTP_RST_PORT);
-		gpio_free(GTP_INT_PORT);
-	}
-
-	return ret;
+	return 0;
 }
 
 /**

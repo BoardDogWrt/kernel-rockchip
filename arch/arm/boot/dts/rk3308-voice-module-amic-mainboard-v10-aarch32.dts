@@ -13,6 +13,15 @@
 	compatible = "rockchip,rk3308-voice-module-amic-mainboard-v10-aarch32", "rockchip,rk3308";
 };
 
+&acodec {
+	/* The grp2/3 (ADC5-8) keeps enabled always for VAD */
+	rockchip,en-always-grps = <2 3>;
+};
+
+&bluetooth_sound {
+	status = "okay";
+};
+
 &is31fl3236 {
 	reg = <0x3f>;
 };

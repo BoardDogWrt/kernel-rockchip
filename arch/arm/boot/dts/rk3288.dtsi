@@ -135,9 +135,11 @@
 		rockchip,avs-scale = <17>;
 		rockchip,max-volt = <1350000>;
 		nvmem-cells = <&cpu_leakage>, <&special_function>,
-			      <&performance>, <&process_version>;
+			      <&performance>, <&process_version>,
+			      <&performance_w>;
 		nvmem-cell-names = "leakage", "special",
-				   "performance", "process";
+				   "performance", "process",
+				   "performance-w";
 		rockchip,bin-scaling-sel = <
 			0               17
 			1               25
@@ -158,7 +160,7 @@
 		rockchip,pvtm-error = <1000>;
 		rockchip,pvtm-ref-temp = <35>;
 		rockchip,pvtm-temp-prop = <(-18) (-18)>;
-		rockchip,pvtm-thermal-zone = "soc-thermal";
+		rockchip,thermal-zone = "soc-thermal";
 
 		opp-126000000 {
 			opp-hz = /bits/ 64 <126000000>;
@@ -1049,7 +1051,7 @@
                                   <&cru ACLK_PERI>, <&cru HCLK_PERI>,
                                   <&cru PCLK_PERI>;
 		assigned-clock-rates = <594000000>,
-				       <500000000>, <300000000>,
+				       <1250000000>, <300000000>,
 				       <150000000>, <75000000>,
 				       <300000000>, <150000000>,
 				       <75000000>;
@@ -1726,8 +1728,8 @@
 			opp-hz = /bits/ 64 <300000000>;
 			opp-microvolt = <1000000>;
 		};
-		opp-400000000 {
-			opp-hz = /bits/ 64 <400000000>;
+		opp-420000000 {
+			opp-hz = /bits/ 64 <420000000>;
 			opp-microvolt = <1100000>;
 		};
 		opp-500000000 {
@@ -1797,6 +1799,10 @@
 		};
 		cpu_leakage: cpu-leakage@17 {
 			reg = <0x17 0x1>;
+		};
+		performance_w: performance@1c {
+			reg = <0x1c 0x1>;
+			bits = <4 3>;
 		};
 		performance: performance@1d {
 			reg = <0x1d 0x1>;

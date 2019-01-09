@@ -163,11 +163,11 @@ define archhelp
   echo  '                  install to $$(INSTALL_PATH) and run lilo'
 endef
 
-kernel.img: Image
-	$(Q)$(srctree)/scripts/mkkrnlimg $(objtree)/arch/arm64/boot/Image $(objtree)/kernel.img >/dev/null
+kernel.img: Image.lz4
+	$(Q)scripts/mkkrnlimg $(objtree)/arch/arm64/boot/Image $(objtree)/kernel.img >/dev/null
 	@echo '  Image:  kernel.img is ready'
 ifdef CONFIG_MODULES
-	$(Q)$(MAKE) modules
+	$(Q)if [ "$(srctree)" = "$(objtree)" ]; then $(MAKE) modules; fi
 endif
 
 LOGO := $(notdir $(wildcard $(srctree)/logo.bmp))
@@ -183,14 +183,25 @@ DTBS := rockchip/rk3399-nanopi4-rev*.dtb
 
 PHONY += nanopi4-images
 nanopi4-images: dtbs kernel.img rklogo
-	$(Q)$(srctree)/scripts/resource_tool --dtbname $(objtree)/arch/arm64/boot/dts/$(DTBS) $(LOGO) $(LOGO_KERNEL)
+	$(Q)scripts/resource_tool --dtbname $(objtree)/arch/arm64/boot/dts/$(DTBS) $(LOGO) $(LOGO_KERNEL)
 	@echo '  Image:  resource.img (with $(DTBS) $(LOGO) $(LOGO_KERNEL)) is ready'
 
 endif
 
 %.img: rockchip/%.dtb kernel.img rklogo
-	$(Q)$(srctree)/scripts/resource_tool $(objtree)/arch/arm64/boot/dts/rockchip/$*.dtb $(LOGO) $(LOGO_KERNEL)
+	$(Q)scripts/resource_tool $(objtree)/arch/arm64/boot/dts/rockchip/$*.dtb $(LOGO) $(LOGO_KERNEL)
 	@echo '  Image:  resource.img (with $*.dtb $(LOGO) $(LOGO_KERNEL)) is ready'
-	$(Q) if [ -x $(srctree)/scripts/mkbootimg ]; then $(srctree)/scripts/mkbootimg --kernel $(objtree)/arch/arm64/boot/Image --second resource.img -o boot.img && echo '  Image:  boot.img (with Image resource.img) is ready'; fi
+	$(Q) if [ -x $(srctree)/scripts/mkbootimg ]; then \
+		$(srctree)/scripts/mkbootimg \
+			--kernel $(objtree)/arch/arm64/boot/Image \
+			--second resource.img \
+			-o boot.img && \
+		echo '  Image:  boot.img (with Image resource.img) is ready'; \
+		$(srctree)/scripts/mkbootimg \
+			--kernel $(objtree)/arch/arm64/boot/Image.lz4 \
+			--second resource.img \
+			-o zboot.img && \
+		echo '  Image:  zboot.img (with Image.lz4 resource.img) is ready'; \
+	fi
 
-CLEAN_FILES += boot.img kernel.img resource.img
+CLEAN_FILES += boot.img kernel.img resource.img zboot.img

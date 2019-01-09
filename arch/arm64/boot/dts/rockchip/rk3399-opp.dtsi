@@ -47,6 +47,10 @@
 		compatible = "operating-points-v2";
 		opp-shared;
 
+		rockchip,temp-hysteresis = <5000>;
+		rockchip,low-temp = <0>;
+		rockchip,low-temp-min-volt = <900000>;
+
 		nvmem-cells = <&cpul_leakage>;
 		nvmem-cell-names = "cpu_leakage";
 
@@ -64,7 +68,7 @@
 		rockchip,pvtm-error = <1000>;
 		rockchip,pvtm-ref-temp = <41>;
 		rockchip,pvtm-temp-prop = <115 66>;
-		rockchip,pvtm-thermal-zone = "soc-thermal";
+		rockchip,thermal-zone = "soc-thermal";
 
 		opp-408000000 {
 			opp-hz = /bits/ 64 <408000000>;
@@ -127,6 +131,10 @@
 		compatible = "operating-points-v2";
 		opp-shared;
 
+		rockchip,temp-hysteresis = <5000>;
+		rockchip,low-temp = <0>;
+		rockchip,low-temp-min-volt = <900000>;
+
 		nvmem-cells = <&cpub_leakage>;
 		nvmem-cell-names = "cpu_leakage";
 
@@ -144,7 +152,7 @@
 		rockchip,pvtm-error = <1000>;
 		rockchip,pvtm-ref-temp = <41>;
 		rockchip,pvtm-temp-prop = <71 35>;
-		rockchip,pvtm-thermal-zone = "soc-thermal";
+		rockchip,thermal-zone = "soc-thermal";
 
 		opp-408000000 {
 			opp-hz = /bits/ 64 <408000000>;
@@ -223,6 +231,11 @@
 
 	gpu_opp_table: opp-table2 {
 		compatible = "operating-points-v2";
+
+		rockchip,thermal-zone = "soc-thermal";
+		rockchip,temp-hysteresis = <5000>;
+		rockchip,low-temp = <0>;
+		rockchip,low-temp-min-volt = <900000>;
 
 		nvmem-cells = <&gpu_leakage>;
 		nvmem-cell-names = "gpu_leakage";
