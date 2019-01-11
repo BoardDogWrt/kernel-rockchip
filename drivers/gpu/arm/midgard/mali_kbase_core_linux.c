@@ -515,11 +515,19 @@ copy_failed:
 	case KBASE_FUNC_JOB_SUBMIT:
 		{
 			struct kbase_uk_job_submit *job = args;
+			char __user *user_buf;
 
 			if (sizeof(*job) != args_size)
 				goto bad_size;
 
-			if (kbase_jd_submit(kctx, job->addr.value,
+#ifdef CONFIG_COMPAT
+			if (kbase_ctx_flag(kctx, KCTX_COMPAT))
+				user_buf = compat_ptr(job->addr.compat_value);
+			else
+#endif
+				user_buf = job->addr.value;
+
+			if (kbase_jd_submit(kctx, user_buf,
 						job->nr_atoms,
 						job->stride,
 						false) != 0)
@@ -531,11 +539,19 @@ copy_failed:
 	case KBASE_FUNC_JOB_SUBMIT_UK6:
 		{
 			struct kbase_uk_job_submit *job = args;
+			char __user *user_buf;
 
 			if (sizeof(*job) != args_size)
 				goto bad_size;
 
-			if (kbase_jd_submit(kctx, job->addr.value,
+#ifdef CONFIG_COMPAT
+			if (kbase_ctx_flag(kctx, KCTX_COMPAT))
+				user_buf = compat_ptr(job->addr.compat_value);
+			else
+#endif
+				user_buf = job->addr.value;
+
+			if (kbase_jd_submit(kctx, user_buf,
 						job->nr_atoms,
 						job->stride,
 						true) != 0)
