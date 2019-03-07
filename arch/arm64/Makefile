@@ -181,10 +181,24 @@ rklogo: $(LOGO) $(LOGO_KERNEL)
 ifeq ($(CONFIG_MACH_NANOPI4),y)
 DTBS := rockchip/rk3399-nanopi4-rev*.dtb
 
-PHONY += nanopi4-images
+PHONY += nanopi4-images nanopi4-bootimg
 nanopi4-images: dtbs kernel.img rklogo
 	$(Q)scripts/resource_tool --dtbname $(objtree)/arch/arm64/boot/dts/$(DTBS) $(LOGO) $(LOGO_KERNEL)
 	@echo '  Image:  resource.img (with $(DTBS) $(LOGO) $(LOGO_KERNEL)) is ready'
+
+nanopi4-bootimg: nanopi4-images
+	$(Q) if [ -x $(srctree)/scripts/mkbootimg ]; then \
+		$(srctree)/scripts/mkbootimg \
+			--kernel $(objtree)/arch/arm64/boot/Image \
+			--second resource.img \
+			-o boot.img && \
+		echo '  Image:  boot.img (with Image resource.img) is ready'; \
+		$(srctree)/scripts/mkbootimg \
+			--kernel $(objtree)/arch/arm64/boot/Image.lz4 \
+			--second resource.img \
+			-o zboot.img && \
+		echo '  Image:  zboot.img (with Image.lz4 resource.img) is ready'; \
+	fi
 
 endif
 
