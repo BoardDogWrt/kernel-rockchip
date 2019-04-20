@@ -94,6 +94,15 @@
 		default-brightness-level = <200>;
 	};
 
+	charge-animation {
+		compatible = "rockchip,uboot-charge";
+		rockchip,uboot-charge-on = <0>;
+		rockchip,android-charge-on = <1>;
+		rockchip,uboot-low-power-voltage = <3500>;
+		rockchip,screen-on-voltage = <3600>;
+		status = "okay";
+	};
+
 	rk809-sound {
 		compatible = "simple-audio-card";
 		simple-audio-card,format = "i2s";
@@ -164,14 +173,14 @@
 
 	wireless-bluetooth {
 		compatible = "bluetooth-platdata";
-		/*clocks = <&rk809 1>;*/
-		/*clock-names = "ext_clock";*/
+		clocks = <&rk809 1>;
+		clock-names = "ext_clock";
 		uart_rts_gpios = <&gpio1 RK_PC3 GPIO_ACTIVE_LOW>;
 		pinctrl-names = "default","rts_gpio";
 		pinctrl-0 = <&uart1_rts>;
 		pinctrl-1 = <&uart1_rts_gpio>;
-		BT,reset_gpio = <&gpio0 RK_PC1 GPIO_ACTIVE_HIGH>;
-		BT,wake_gpio = <&gpio0 RK_PA1 GPIO_ACTIVE_HIGH>;
+		BT,reset_gpio = <&gpio0 RK_PA1 GPIO_ACTIVE_HIGH>;
+		BT,wake_gpio = <&gpio2 RK_PB0 GPIO_ACTIVE_HIGH>;
 		BT,wake_host_irq = <&gpio0 RK_PB3 GPIO_ACTIVE_HIGH>;
 		status = "okay";
 	};
@@ -274,6 +283,19 @@
 	};
 };
 
+&dsi_in_vopb {
+	status = "okay";
+};
+
+&dsi_in_vopl {
+	status = "disabled";
+};
+
+&route_dsi {
+	connect = <&vopb_out_dsi>;
+	status = "okay";
+};
+
 &bus_apll {
 	bus-supply = <&vdd_logic>;
 	status = "okay";
@@ -281,10 +303,6 @@
 
 &cpu0 {
 	cpu-supply = <&vdd_arm>;
-};
-
-&dsi_in_vopl {
-	status = "disabled";
 };
 
 &dfi {
@@ -309,11 +327,7 @@
 
 &gmac {
 	phy-supply = <&vcc_phy>;
-	assigned-clocks = <&cru SCLK_GMAC>;
-	assigned-clock-parents = <&gmac_clkin>;
-	clock_in_out = "input";
-	pinctrl-names = "default";
-	pinctrl-0 = <&rmii_pins &mac_refclk>;
+	clock_in_out = "output";
 	snps,reset-gpio = <&gpio2 13 GPIO_ACTIVE_LOW>;
 	snps,reset-active-low;
 	snps,reset-delays-us = <0 50000 50000>;
@@ -433,7 +447,7 @@
 				regulator-initial-mode = <0x2>;
 				regulator-name = "vcc_3v0";
 				regulator-state-mem {
-					regulator-off-in-suspend;
+					regulator-on-in-suspend;
 					regulator-suspend-microvolt = <3000000>;
 				};
 			};
@@ -566,15 +580,13 @@
 				};
 			};
 
-			vcc3v3_lcd: SWITCH_REG1 {
-				regulator-boot-on;
-				regulator-name = "vcc3v3_lcd";
+			vcc5v0_host: SWITCH_REG1 {
+				regulator-name = "vcc5v0_host";
 			};
 
-			vcc5v0_host: SWITCH_REG2 {
-				regulator-always-on;
+			vcc3v3_lcd: SWITCH_REG2 {
 				regulator-boot-on;
-				regulator-name = "vcc5v0_host";
+				regulator-name = "vcc3v3_lcd";
 			};
 		};
 
@@ -671,10 +683,6 @@
 
 &isp_mmu {
 	status = "disabled";
-};
-
-&mipi_dphy {
-	status = "okay";
 };
 
 &mipi_dphy_rx0 {
@@ -783,10 +791,6 @@
 	rockchip,sleep-debug-en = <1>;
 };
 
-&route_dsi {
-	status = "okay";
-};
-
 &saradc {
 	status = "okay";
 	vref-supply = <&vcc1v8_soc>;
@@ -822,7 +826,7 @@
 };
 
 &tsadc {
-	pinctrl-names = "init", "default";
+	pinctrl-names = "gpio", "otpout";
 	pinctrl-0 = <&tsadc_otp_gpio>;
 	pinctrl-1 = <&tsadc_otp_out>;
 	status = "okay";
@@ -876,4 +880,25 @@
 
 &vpu_combo {
 	status = "okay";
+};
+
+&firmware_android {
+	compatible = "android,firmware";
+	fstab {
+		compatible = "android,fstab";
+		system {
+			compatible = "android,system";
+			dev = "/dev/block/by-name/system";
+			type = "ext4";
+			mnt_flags = "ro,barrier=1,inode_readahead_blks=8";
+			fsmgr_flags = "wait";
+		};
+		vendor {
+			compatible = "android,vendor";
+			dev = "/dev/block/by-name/vendor";
+			type = "ext4";
+			mnt_flags = "ro,barrier=1,inode_readahead_blks=8";
+			fsmgr_flags = "wait";
+		};
+	};
 };

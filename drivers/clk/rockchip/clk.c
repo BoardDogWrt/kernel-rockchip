@@ -179,6 +179,19 @@ static void rockchip_fractional_approximation(struct clk_hw *hw,
 	u32 div;
 
 	p_rate = clk_hw_get_rate(clk_hw_get_parent(hw));
+
+	if (strstr(clk_hw_get_name(hw), "uart")) {
+		if (rate <= 24000000) {
+			*parent_rate = 24000000;
+		} else {
+			if (fd->max_prate)
+				*parent_rate = fd->max_prate;
+			else
+				*parent_rate = 480000000;
+		}
+		goto frac_ration;
+	}
+
 	if (((rate * 20 > p_rate) && (p_rate % rate != 0)) ||
 	    (fd->max_prate && fd->max_prate < p_rate)) {
 		p_parent = clk_hw_get_parent(clk_hw_get_parent(hw));
@@ -195,14 +208,15 @@ static void rockchip_fractional_approximation(struct clk_hw *hw,
 		}
 
 		if (*parent_rate < rate * 20) {
-			pr_err("%s parent_rate(%ld) is low than rate(%ld)*20, fractional div is not allowed\n",
-			       clk_hw_get_name(hw), *parent_rate, rate);
+			pr_warn("%s p_rate(%ld) is low than rate(%ld)*20, use integer or half-div\n",
+				clk_hw_get_name(hw), *parent_rate, rate);
 			*m = 0;
 			*n = 1;
 			return;
 		}
 	}
 
+frac_ration:
 	/*
 	 * Get rate closer to *parent_rate to guarantee there is no overflow
 	 * for m and n. In the result it will be the nearest rate left shifted
@@ -410,8 +424,6 @@ struct rockchip_clk_provider * __init rockchip_clk_init(struct device_node *np,
 	spin_lock_init(&ctx->lock);
 	ctx->grf = syscon_regmap_lookup_by_phandle(ctx->cru_node,
 						   "rockchip,grf");
-	ctx->boost = syscon_regmap_lookup_by_phandle(ctx->cru_node,
-						   "rockchip,boost");
 
 	return ctx;
 
@@ -455,8 +467,7 @@ void __init rockchip_clk_register_plls(struct rockchip_clk_provider *ctx,
 				list->con_offset, grf_lock_offset,
 				list->lock_shift, list->mode_offset,
 				list->mode_shift, list->rate_table,
-				list->flags, list->pll_flags,
-				list->boost_enabled);
+				list->flags, list->pll_flags);
 		if (IS_ERR(clk)) {
 			pr_err("%s: failed to register clock %s\n", __func__,
 				list->name);

@@ -41,13 +41,22 @@
 	};
 };
 
+&rk_timer_rtc {
+	status = "okay";
+};
+
 &acodec_sound {
 	status = "disabled";
 };
 
-&dummy_codec {
-	status = "disabled";
+&bluetooth_sound {
+	status = "okay";
+};
+
+&i2s_2ch_0 {
+	status = "okay";
 	#sound-dai-cells = <0>;
+	rockchip,clk-trcm = <1>;
 };
 
 &pdm_8ch {

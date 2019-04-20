@@ -8,7 +8,6 @@
 #include "flash.h"
 #include "rkflash_api.h"
 #include "rk_sftl.h"
-#include "typedef.h"
 
 int sftl_flash_init(void __iomem *reg_addr)
 {
@@ -33,16 +32,34 @@ unsigned int sftl_flash_get_capacity(void)
 	return sftl_get_density();
 }
 
-int sftl_flash_write(u32 sec, u32 n_sec, void *p_data)
-{
-	sftl_write(sec, n_sec, p_data);
-	return 0;
-}
-
 int sftl_flash_read(u32 sec, u32 n_sec, void *p_data)
 {
-	sftl_read(sec, n_sec, p_data);
-	return 0;
+	return sftl_read(sec, n_sec, p_data);
+}
+
+int sftl_flash_write(u32 sec, u32 n_sec, void *p_data)
+{
+	return sftl_write(sec, n_sec, p_data);
+}
+
+int sftl_flash_vendor_read(u32 sec, u32 n_sec, void *p_data)
+{
+	return sftl_vendor_read(sec, n_sec, p_data);
+}
+
+int sftl_flash_vendor_write(u32 sec, u32 n_sec, void *p_data)
+{
+	return sftl_vendor_write(sec, n_sec, p_data);
+}
+
+int sftl_flash_gc(void)
+{
+	return sftl_gc();
+}
+
+int sftl_flash_discard(u32 sec, u32 n_sec)
+{
+	return sftl_discard(sec, n_sec);
 }
 
 void sftl_flash_deinit(void)

@@ -38,10 +38,22 @@ Optional properties:
   You need to add the property on dts:
   - rockchip,adc-grps-route = <3 0 2 1>;
 
+- rockchip,delay-loopback-handle-ms: This property points out that the delay for
+  handling ADC after enable PAs during loopback.
+- rockchip,delay-start-play-ms: This property points out the delay ms of start
+  playback according to different amplifier performance.
+- rockchip,en-always-grps: This property will keep the needed ADCs enabled
+  always after enabling once.
 - rockchip,loopback-grp: It points out the ADC group which is the loopback used.
 - rockchip,no-deep-low-power: The codec will not enter deep low power mode
   during suspend.
+- rockchip,no-hp-det: If there is no headphone on boards, we don't need to
+  enable headphone detection.
+- rockchip,internal-micbias: Using internal micbias which are from codec.
 - hp-ctl-gpios: The gpio of head phone controller.
+- pa-drv-gpios: The gpio of poweramplifier controller
+- rockchip,delay-pa-drv-ms: This property points out that the delay for
+  power on amplifier
 - spk-ctl-gpios: The gpio of speak controller.
 
 Example for rk3308 internal codec:
@@ -56,6 +68,7 @@ acodec: acodec@ff560000 {
 	reset-names = "acodec-reset";
 	rockchip,loopback-grp = <0>;
 	hp-ctl-gpios = <&gpio0 1 GPIO_ACTIVE_HIGH>;
+	pa-drv-gpios = <&gpio0 RK_PC0 GPIO_ACTIVE_HIGH>;
 	spk-ctl-gpios = <&gpio0 5 GPIO_ACTIVE_HIGH>;
 	status = "okay";
 };

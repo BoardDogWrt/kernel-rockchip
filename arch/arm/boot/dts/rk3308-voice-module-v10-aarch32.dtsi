@@ -11,7 +11,7 @@
 	compatible = "rockchip,rk3308-vmb-v10", "rockchip,rk3308";
 
 	chosen {
-		bootargs = "earlycon=uart8250,mmio32,0xff0c0000 swiotlb=1 console=ttyFIQ0 root=PARTUUID=614e0000-0000 rootfstype=squashfs rootwait";
+		bootargs = "earlycon=uart8250,mmio32,0xff0c0000 swiotlb=1 console=ttyFIQ0 root=PARTUUID=614e0000-0000 rootfstype=squashfs rootwait snd_aloop.index=7 snd_aloop.use_raw_jiffies=1";
 	};
 
 	adc-keys {
@@ -21,9 +21,33 @@
 		poll-interval = <100>;
 		keyup-threshold-microvolt = <1800000>;
 
-		recovery-key {
-			linux,code = <KEY_FN>;
-			label = "recovery";
+		esc-key {
+			linux,code = <KEY_MICMUTE>;
+			label = "micmute";
+			press-threshold-microvolt = <1130000>;
+		};
+
+		home-key {
+			linux,code = <KEY_MODE>;
+			label = "mode";
+			press-threshold-microvolt = <901000>;
+		};
+
+		menu-key {
+			linux,code = <KEY_PLAY>;
+			label = "play";
+			press-threshold-microvolt = <624000>;
+		};
+
+		vol-down-key {
+			linux,code = <KEY_VOLUMEDOWN>;
+			label = "volume down";
+			press-threshold-microvolt = <300000>;
+		};
+
+		vol-up-key {
+			linux,code = <KEY_VOLUMEUP>;
+			label = "volume up";
 			press-threshold-microvolt = <18000>;
 		};
 	};
@@ -70,6 +94,18 @@
 		rockchip,mclk-fs = <256>;
 		rockchip,cpu = <&i2s_8ch_2>;
 		rockchip,codec = <&acodec>;
+		status = "disabled";
+	};
+
+	bluetooth_sound: bluetooth-sound {
+		status = "disabled";
+		compatible = "rockchip,multicodecs-card";
+		rockchip,card-name = "rockchip,rk3308-pcm";
+		rockchip,mclk-fs = <128>;
+		rockchip,cpu = <&i2s_2ch_0>;
+		rockchip,codec = <&dummy_codec>;
+		rockchip,format = "dsp_b";
+		rockchip,wait-card-locked = <0>;
 	};
 
 	spdif_tx_sound: spdif-tx-sound {
@@ -82,6 +118,15 @@
 		simple-audio-card,codec {
 			sound-dai = <&dummy_codec>;
 		};
+	};
+
+	vad-sound {
+		status = "okay";
+		compatible = "rockchip,multicodecs-card";
+		rockchip,card-name = "rockchip,rk3308-vad";
+		rockchip,codec-hp-det;
+		rockchip,cpu = <&i2s_8ch_2>;
+		rockchip,codec = <&acodec>, <&vad>;
 	};
 
 	vdd_log: vdd_core: vdd-core {
@@ -147,6 +192,8 @@
 &acodec {
 	status = "disabled";
 
+	rockchip,no-hp-det;
+	rockchip,delay-start-play-ms = <200>;
 	rockchip,loopback-grp = <1>;
 	spk-ctl-gpios = <&gpio0 RK_PA5 GPIO_ACTIVE_HIGH>;
 };
@@ -175,6 +222,10 @@
 	vccio5-supply = <&vcc_io>;
 };
 
+&i2s_2ch_0 {
+	status = "okay";
+};
+
 &i2s_8ch_2 {
 	status = "okay";
 };
@@ -192,6 +243,10 @@
 	console-size = <0x0 0x20000>;
 };
 
+&rk_timer_rtc {
+	status = "okay";
+};
+
 &rockchip_suspend {
 	rockchip,pwm-regulator-config = <
 		(0
@@ -199,6 +254,17 @@
 		)
 	>;
 
+	rockchip,wakeup-config = <
+		(0
+		| RKPM_GPIO0_WAKEUP_EN
+		| RKPM_TIMER_WAKEUP_EN
+		)
+	>;
+
+	status = "okay";
+};
+
+&rng {
 	status = "okay";
 };
 
@@ -261,6 +327,11 @@
 	pinctrl-0 = <&pwm0_pin_pull_down>;
 };
 
+&sfc {
+	u-boot,dm-pre-reloc;
+	status = "okay";
+};
+
 &tsadc {
 	rockchip,hw-tshut-mode = <0>; /* tshut mode 0:CRU 1:GPIO */
 	rockchip,hw-tshut-polarity = <1>; /* tshut polarity 0:LOW 1:HIGH */
@@ -290,4 +361,13 @@
 
 &usb_host0_ohci{
 	status = "okay";
+};
+
+&vad {
+	status = "okay";
+	rockchip,audio-src = <&i2s_8ch_2>;
+	rockchip,det-channel = <0>;
+	rockchip,mode = <1>;
+	rockchip,buffer-time-ms = <500>;
+	#sound-dai-cells = <0>;
 };

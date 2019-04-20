@@ -37,6 +37,7 @@
 #include <video/mipi_display.h>
 #include <linux/of_device.h>
 #include <video/of_display_timing.h>
+#include <linux/of_graph.h>
 #include <video/videomode.h>
 
 struct cmd_ctrl_hdr {
@@ -121,6 +122,7 @@ struct panel_simple {
 
 	struct panel_cmds *on_cmds;
 	struct panel_cmds *off_cmds;
+	struct device_node *np_crtc;
 };
 
 enum rockchip_cmd_type {
@@ -128,6 +130,20 @@ enum rockchip_cmd_type {
 	CMD_TYPE_SPI,
 	CMD_TYPE_MCU
 };
+
+enum MCU_IOCTL {
+	MCU_WRCMD = 0,
+	MCU_WRDATA,
+	MCU_SETBYPASS,
+};
+
+static void panel_simple_sleep(unsigned int msec)
+{
+	if (msec > 20)
+		msleep(msec);
+	else
+		usleep_range(msec * 1000, (msec + 1) * 1000);
+}
 
 static inline int get_panel_cmd_type(const char *s)
 {
@@ -164,7 +180,7 @@ static int panel_simple_parse_cmds(struct device *dev,
 				   const u8 *data, int blen,
 				   struct panel_cmds *pcmds)
 {
-	int len;
+	unsigned int len;
 	char *buf, *bp;
 	struct cmd_ctrl_hdr *dchdr;
 	int i, cnt;
@@ -256,6 +272,32 @@ static void panel_simple_spi_write_cmd(struct panel_simple *panel,
 	gpiod_direction_output(panel->spi_cs_gpio, 1);
 }
 
+static int panel_simple_mcu_send_cmds(struct panel_simple *panel,
+				      struct panel_cmds *cmds)
+{
+	int i;
+
+	if (!cmds)
+		return -EINVAL;
+
+	rockchip_drm_crtc_send_mcu_cmd(panel->base.drm,
+				       panel->np_crtc, MCU_SETBYPASS, 1);
+	for (i = 0; i < cmds->cmd_cnt; i++) {
+		struct cmd_desc *cmd = &cmds->cmds[i];
+		u32 value = 0;
+
+		value = cmd->payload[0];
+		rockchip_drm_crtc_send_mcu_cmd(panel->base.drm, panel->np_crtc,
+					       cmd->dchdr.dtype, value);
+		if (cmd->dchdr.wait)
+			panel_simple_sleep(cmd->dchdr.wait);
+	}
+	rockchip_drm_crtc_send_mcu_cmd(panel->base.drm,
+				       panel->np_crtc, MCU_SETBYPASS, 0);
+
+	return 0;
+}
+
 static int panel_simple_spi_send_cmds(struct panel_simple *panel,
 				      struct panel_cmds *cmds)
 {
@@ -275,7 +317,7 @@ static int panel_simple_spi_send_cmds(struct panel_simple *panel,
 		panel_simple_spi_write_cmd(panel, cmd->dchdr.dtype, value);
 
 		if (cmd->dchdr.wait)
-			msleep(cmd->dchdr.wait);
+			panel_simple_sleep(cmd->dchdr.wait);
 	}
 
 	return 0;
@@ -317,7 +359,7 @@ static int panel_simple_dsi_send_cmds(struct panel_simple *panel,
 				err);
 
 		if (cmd->dchdr.wait)
-			msleep(cmd->dchdr.wait);
+			panel_simple_sleep(cmd->dchdr.wait);
 	}
 
 	return 0;
@@ -505,6 +547,7 @@ static int panel_simple_regulator_disable(struct drm_panel *panel)
 
 static int panel_simple_loader_protect(struct drm_panel *panel, bool on)
 {
+	struct panel_simple *p = to_panel_simple(panel);
 	int err;
 
 	if (on) {
@@ -514,8 +557,11 @@ static int panel_simple_loader_protect(struct drm_panel *panel, bool on)
 				err);
 			return err;
 		}
+
+		p->prepared = true;
+		p->enabled = true;
 	} else {
-		panel_simple_regulator_disable(panel);
+		/* do nothing */
 	}
 
 	return 0;
@@ -524,18 +570,21 @@ static int panel_simple_loader_protect(struct drm_panel *panel, bool on)
 static int panel_simple_disable(struct drm_panel *panel)
 {
 	struct panel_simple *p = to_panel_simple(panel);
+	int err = 0;
 
 	if (!p->enabled)
 		return 0;
 
-	if (p->backlight) {
-		p->backlight->props.power = FB_BLANK_POWERDOWN;
-		backlight_update_status(p->backlight);
-	}
+	backlight_disable(p->backlight);
 
 	if (p->desc && p->desc->delay.disable)
-		msleep(p->desc->delay.disable);
+		panel_simple_sleep(p->desc->delay.disable);
 
+	if (p->cmd_type == CMD_TYPE_MCU) {
+		err = panel_simple_mcu_send_cmds(p, p->off_cmds);
+		if (err)
+			dev_err(p->dev, "failed to send mcu off cmds\n");
+	}
 	p->enabled = false;
 
 	return 0;
@@ -567,7 +616,7 @@ static int panel_simple_unprepare(struct drm_panel *panel)
 	panel_simple_regulator_disable(panel);
 
 	if (p->desc && p->desc->delay.unprepare)
-		msleep(p->desc->delay.unprepare);
+		panel_simple_sleep(p->desc->delay.unprepare);
 
 	p->prepared = false;
 
@@ -592,19 +641,19 @@ static int panel_simple_prepare(struct drm_panel *panel)
 		gpiod_direction_output(p->enable_gpio, 1);
 
 	if (p->desc && p->desc->delay.prepare)
-		msleep(p->desc->delay.prepare);
+		panel_simple_sleep(p->desc->delay.prepare);
 
 	if (p->reset_gpio)
 		gpiod_direction_output(p->reset_gpio, 1);
 
 	if (p->desc && p->desc->delay.reset)
-		msleep(p->desc->delay.reset);
+		panel_simple_sleep(p->desc->delay.reset);
 
 	if (p->reset_gpio)
 		gpiod_direction_output(p->reset_gpio, 0);
 
 	if (p->desc && p->desc->delay.init)
-		msleep(p->desc->delay.init);
+		panel_simple_sleep(p->desc->delay.init);
 
 	if (p->on_cmds) {
 		if (p->dsi)
@@ -623,17 +672,20 @@ static int panel_simple_prepare(struct drm_panel *panel)
 static int panel_simple_enable(struct drm_panel *panel)
 {
 	struct panel_simple *p = to_panel_simple(panel);
+	int err = 0;
 
 	if (p->enabled)
 		return 0;
 
-	if (p->desc && p->desc->delay.enable)
-		msleep(p->desc->delay.enable);
-
-	if (p->backlight) {
-		p->backlight->props.power = FB_BLANK_UNBLANK;
-		backlight_update_status(p->backlight);
+	if (p->cmd_type == CMD_TYPE_MCU) {
+		err = panel_simple_mcu_send_cmds(p, p->on_cmds);
+		if (err)
+			dev_err(p->dev, "failed to send mcu on cmds\n");
 	}
+	if (p->desc && p->desc->delay.enable)
+		panel_simple_sleep(p->desc->delay.enable);
+
+	backlight_enable(p->backlight);
 
 	p->enabled = true;
 
@@ -692,6 +744,52 @@ static const struct drm_panel_funcs panel_simple_funcs = {
 	.enable = panel_simple_enable,
 	.get_modes = panel_simple_get_modes,
 	.get_timings = panel_simple_get_timings,
+};
+
+static int dcs_bl_update_status(struct backlight_device *bl)
+{
+	struct panel_simple *p = bl_get_data(bl);
+	struct mipi_dsi_device *dsi = p->dsi;
+	int ret;
+
+	if (!p->prepared)
+		return 0;
+
+	dsi->mode_flags &= ~MIPI_DSI_MODE_LPM;
+
+	ret = mipi_dsi_dcs_set_display_brightness(dsi, bl->props.brightness);
+	if (ret < 0)
+		return ret;
+
+	dsi->mode_flags |= MIPI_DSI_MODE_LPM;
+
+	return 0;
+}
+
+static int dcs_bl_get_brightness(struct backlight_device *bl)
+{
+	struct panel_simple *p = bl_get_data(bl);
+	struct mipi_dsi_device *dsi = p->dsi;
+	u16 brightness = bl->props.brightness;
+	int ret;
+
+	if (!p->prepared)
+		return 0;
+
+	dsi->mode_flags &= ~MIPI_DSI_MODE_LPM;
+
+	ret = mipi_dsi_dcs_get_display_brightness(dsi, &brightness);
+	if (ret < 0)
+		return ret;
+
+	dsi->mode_flags |= MIPI_DSI_MODE_LPM;
+
+	return brightness & 0xff;
+}
+
+static const struct backlight_ops dcs_bl_ops = {
+	.update_status = dcs_bl_update_status,
+	.get_brightness = dcs_bl_get_brightness,
 };
 
 static int panel_simple_probe(struct device *dev, const struct panel_desc *desc)
@@ -793,6 +891,24 @@ static int panel_simple_probe(struct device *dev, const struct panel_desc *desc)
 		gpiod_direction_output(panel->spi_cs_gpio, 1);
 		gpiod_direction_output(panel->spi_sdi_gpio, 1);
 		gpiod_direction_output(panel->spi_scl_gpio, 1);
+	} else if (panel->cmd_type == CMD_TYPE_MCU) {
+		struct device_node *port, *endpoint;
+		struct device_node *np;
+
+		port = of_graph_get_port_by_id(dev->of_node, 0);
+		if (port) {
+			endpoint = of_get_next_child(port, NULL);
+			/* get connect device node */
+			np = of_graph_get_remote_port_parent(endpoint);
+
+			port = of_graph_get_port_by_id(np, 0);
+			if (port) {
+				endpoint = of_get_next_child(port, NULL);
+				/* get crtc device node */
+				np = of_graph_get_remote_port_parent(endpoint);
+				panel->np_crtc = np;
+			}
+		}
 	}
 	panel->power_invert =
 			of_property_read_bool(dev->of_node, "power-invert");
@@ -865,7 +981,16 @@ static void panel_simple_shutdown(struct device *dev)
 	struct panel_simple *panel = dev_get_drvdata(dev);
 
 	panel_simple_disable(&panel->base);
-	panel_simple_unprepare(&panel->base);
+
+	if (panel->prepared) {
+		if (panel->reset_gpio)
+			gpiod_direction_output(panel->reset_gpio, 1);
+
+		if (panel->enable_gpio)
+			gpiod_direction_output(panel->enable_gpio, 0);
+
+		panel_simple_regulator_disable(&panel->base);
+	}
 }
 
 static const struct drm_display_mode ampire_am800480r3tmqwa1h_mode = {
@@ -2282,6 +2407,7 @@ MODULE_DEVICE_TABLE(of, dsi_of_match);
 
 static int panel_simple_dsi_probe(struct mipi_dsi_device *dsi)
 {
+	struct device *dev = &dsi->dev;
 	struct panel_simple *panel;
 	const struct panel_desc_dsi *desc;
 	const struct of_device_id *id;
@@ -2289,7 +2415,7 @@ static int panel_simple_dsi_probe(struct mipi_dsi_device *dsi)
 	int err;
 	u32 val;
 
-	id = of_match_node(dsi_of_match, dsi->dev.of_node);
+	id = of_match_node(dsi_of_match, dev->of_node);
 	if (!id)
 		return -ENODEV;
 
@@ -2304,20 +2430,40 @@ static int panel_simple_dsi_probe(struct mipi_dsi_device *dsi)
 		pdesc = NULL;
 	}
 
-	err = panel_simple_probe(&dsi->dev, pdesc);
+	err = panel_simple_probe(dev, pdesc);
 	if (err < 0)
 		return err;
 
-	panel = dev_get_drvdata(&dsi->dev);
+	panel = dev_get_drvdata(dev);
 	panel->dsi = dsi;
 
-	if (!of_property_read_u32(dsi->dev.of_node, "dsi,flags", &val))
+	if (!panel->backlight) {
+		struct backlight_properties props;
+
+		memset(&props, 0, sizeof(props));
+		props.type = BACKLIGHT_RAW;
+		props.brightness = 255;
+		props.max_brightness = 255;
+
+		panel->backlight =
+			devm_backlight_device_register(dev, "dcs-backlight",
+						       dev, panel, &dcs_bl_ops,
+						       &props);
+		if (IS_ERR(panel->backlight)) {
+			err = PTR_ERR(panel->backlight);
+			dev_err(dev, "failed to register dcs backlight: %d\n",
+				err);
+			return err;
+		}
+	}
+
+	if (!of_property_read_u32(dev->of_node, "dsi,flags", &val))
 		dsi->mode_flags = val;
 
-	if (!of_property_read_u32(dsi->dev.of_node, "dsi,format", &val))
+	if (!of_property_read_u32(dev->of_node, "dsi,format", &val))
 		dsi->format = val;
 
-	if (!of_property_read_u32(dsi->dev.of_node, "dsi,lanes", &val))
+	if (!of_property_read_u32(dev->of_node, "dsi,lanes", &val))
 		dsi->lanes = val;
 
 	return mipi_dsi_attach(dsi);

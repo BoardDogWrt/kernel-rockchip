@@ -873,7 +873,7 @@ static int put_v4l2_ext_controls32(struct file *file,
 	    get_user(kcontrols, &kp->controls))
 		return -EFAULT;
 
-	if (!count)
+	if (!count || count > (U32_MAX/sizeof(*ucontrols)))
 		return 0;
 	if (get_user(p, &up->controls))
 		return -EFAULT;
@@ -913,7 +913,11 @@ struct v4l2_event32 {
 	__u32				type;
 	union {
 		compat_s64		value64;
+#ifdef	CONFIG_USB_CONFIGFS_F_UVC_ROCKCHIP
+		__u8			data[4100];
+#else
 		__u8			data[64];
+#endif
 	} u;
 	__u32				pending;
 	__u32				sequence;

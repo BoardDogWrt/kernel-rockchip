@@ -357,7 +357,7 @@ struct tty_driver *tty_find_polling_driver(char *name, int *line)
 	mutex_lock(&tty_mutex);
 	/* Search through the tty devices to look for a match */
 	list_for_each_entry(p, &tty_drivers, tty_drivers) {
-		if (strncmp(name, p->name, len) != 0)
+		if (!len || strncmp(name, p->name, len) != 0)
 			continue;
 		stp = str;
 		if (*stp == ',')
@@ -1546,6 +1546,9 @@ struct tty_struct *tty_init_dev(struct tty_driver *driver, int idx)
 			"%s: %s driver does not set tty->port. This will crash the kernel later. Fix the driver!\n",
 			__func__, tty->driver->name);
 
+	retval = tty_ldisc_lock(tty, 5 * HZ);
+	if (retval)
+		goto err_release_lock;
 	tty->port->itty = tty;
 
 	/*
@@ -1556,6 +1559,7 @@ struct tty_struct *tty_init_dev(struct tty_driver *driver, int idx)
 	retval = tty_ldisc_setup(tty, tty->link);
 	if (retval)
 		goto err_release_tty;
+	tty_ldisc_unlock(tty);
 	/* Return the tty locked so that it cannot vanish under the caller */
 	return tty;
 
@@ -1569,9 +1573,11 @@ err_module_put:
 
 	/* call the tty release_tty routine to clean out this slot */
 err_release_tty:
-	tty_unlock(tty);
+	tty_ldisc_unlock(tty);
 	printk_ratelimited(KERN_INFO "tty_init_dev: ldisc open failed, "
 				 "clearing slot %d\n", idx);
+err_release_lock:
+	tty_unlock(tty);
 	release_tty(tty, idx);
 	return ERR_PTR(retval);
 }

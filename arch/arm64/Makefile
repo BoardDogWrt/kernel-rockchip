@@ -10,7 +10,7 @@
 #
 # Copyright (C) 1995-2001 by Russell King
 
-LDFLAGS_vmlinux	:=-p --no-undefined -X
+LDFLAGS_vmlinux	:=--no-undefined -X
 CPPFLAGS_vmlinux.lds = -DTEXT_OFFSET=$(TEXT_OFFSET)
 OBJCOPYFLAGS	:=-O binary -R .note -R .note.gnu.build-id -R .comment -S
 GZFLAGS		:=-9
@@ -163,11 +163,11 @@ define archhelp
   echo  '                  install to $$(INSTALL_PATH) and run lilo'
 endef
 
-kernel.img: Image
-	$(Q)$(srctree)/scripts/mkkrnlimg $(objtree)/arch/arm64/boot/Image $(objtree)/kernel.img >/dev/null
+kernel.img: Image.lz4
+	$(Q)scripts/mkkrnlimg $(objtree)/arch/arm64/boot/Image $(objtree)/kernel.img >/dev/null
 	@echo '  Image:  kernel.img is ready'
 ifdef CONFIG_MODULES
-	$(Q)$(MAKE) modules
+	$(Q)if [ "$(srctree)" = "$(objtree)" ]; then $(MAKE) modules; fi
 endif
 
 LOGO := $(notdir $(wildcard $(srctree)/logo.bmp))
@@ -183,14 +183,29 @@ DTBS := rockchip/rk3399-nanopi4-rev*.dtb
 
 PHONY += nanopi4-images
 nanopi4-images: dtbs kernel.img rklogo
-	$(Q)$(srctree)/scripts/resource_tool --dtbname $(objtree)/arch/arm64/boot/dts/$(DTBS) $(LOGO) $(LOGO_KERNEL)
+	$(Q)scripts/resource_tool --dtbname $(objtree)/arch/arm64/boot/dts/$(DTBS) $(LOGO) $(LOGO_KERNEL)
 	@echo '  Image:  resource.img (with $(DTBS) $(LOGO) $(LOGO_KERNEL)) is ready'
 
 endif
 
-%.img: rockchip/%.dtb kernel.img rklogo
-	$(Q)$(srctree)/scripts/resource_tool $(objtree)/arch/arm64/boot/dts/rockchip/$*.dtb $(LOGO) $(LOGO_KERNEL)
-	@echo '  Image:  resource.img (with $*.dtb $(LOGO) $(LOGO_KERNEL)) is ready'
-	$(Q) if [ -x $(srctree)/scripts/mkbootimg ]; then $(srctree)/scripts/mkbootimg --kernel $(objtree)/arch/arm64/boot/Image --second resource.img -o boot.img && echo '  Image:  boot.img (with Image resource.img) is ready'; fi
+RAMDISK_IMG := $(notdir $(wildcard $(objtree)/ramdisk.img))
+make_boot_img := \
+	$(srctree)/scripts/mkbootimg \
+		--kernel $(objtree)/arch/arm64/boot/Image \
+		$(if $(RAMDISK_IMG),--ramdisk $(objtree)/ramdisk.img) \
+		--second resource.img \
+		-o boot.img && \
+	echo '  Image:  boot.img (with Image $(if $(RAMDISK_IMG),'ramdisk.img ')resource.img) is ready'; \
+	$(srctree)/scripts/mkbootimg \
+		--kernel $(objtree)/arch/arm64/boot/Image.lz4 \
+		$(if $(RAMDISK_IMG),--ramdisk $(objtree)/ramdisk.img) \
+		--second resource.img \
+		-o zboot.img && \
+	echo '  Image:  zboot.img (with Image.lz4 $(if $(RAMDISK_IMG),'ramdisk.img ')resource.img) is ready'
 
-CLEAN_FILES += boot.img kernel.img resource.img
+%.img: rockchip/%.dtb kernel.img rklogo
+	$(Q)scripts/resource_tool $(objtree)/arch/arm64/boot/dts/rockchip/$*.dtb $(LOGO) $(LOGO_KERNEL)
+	@echo '  Image:  resource.img (with $*.dtb $(LOGO) $(LOGO_KERNEL)) is ready'
+	$(Q) if [ -x $(srctree)/scripts/mkbootimg ]; then $(make_boot_img); fi
+
+CLEAN_FILES += boot.img kernel.img resource.img zboot.img

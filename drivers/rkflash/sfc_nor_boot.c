@@ -8,7 +8,6 @@
 #include "sfc.h"
 #include "sfc_nor.h"
 #include "rkflash_api.h"
-#include "typedef.h"
 
 #define VENDOR_PART_NUM			4
 
@@ -93,6 +92,11 @@ int snor_vendor_write(u32 sec, u32 n_sec, void *p_data)
 	ret = snor_write(&sfnor_dev, sec, n_sec, p_data);
 
 	return (u32)ret == n_sec ? 0 : ret;
+}
+
+int snor_gc(void)
+{
+	return 0;
 }
 
 unsigned int snor_capacity(void)

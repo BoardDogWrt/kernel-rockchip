@@ -162,6 +162,7 @@ enum cif_isp10_cid {
 	CIF_ISP10_CID_VBLANKING                   = 17,
 	CIF_ISP10_CID_ISO_SENSITIVITY             = 18,
 	CIF_ISP10_CID_MIN_BUFFER_FOR_CAPTURE      = 19,
+	CIF_ISP10_CID_TEST_PATTERN                = 20,
 
 };
 
@@ -242,10 +243,20 @@ enum cif_isp10_image_effect {
 	(!CIF_ISP10_PIX_FMT_IS_YUV(pix_fmt) ||\
 	!CIF_ISP10_PIX_FMT_YUV_GET_NUM_CPLANES(pix_fmt))
 
+#define CIF_ISP10_PIX_FMT_IS_Y_ONLY(pix_fmt) \
+	((CIF_ISP10_PIX_FMT_IS_YUV(pix_fmt) == 1) && \
+	(CIF_ISP10_PIX_FMT_YUV_GET_X_SUBS(pix_fmt) == 0) && \
+	(CIF_ISP10_PIX_FMT_YUV_GET_Y_SUBS(pix_fmt) == 0) && \
+	(CIF_ISP10_PIX_FMT_YUV_IS_YC_SWAPPED(pix_fmt) == 0))
+
+#define CIF_ISP10_IMG_SRC_DATA_NUM	6
+
 enum cif_isp10_pix_fmt {
 	/* YUV */
 	CIF_YUV400			= 0x10008000,
 	CIF_YVU400			= 0x10008004,
+	CIF_Y10				= 0x1000a000,
+	CIF_Y12				= 0x10010000,
 
 	CIF_YUV420I			= 0x1000c220,
 	CIF_YUV420SP			= 0x1000c221,	/* NV12 */
@@ -437,6 +448,7 @@ struct cif_isp10_mi_path_config {
 	u32 y_size;
 	u32 cb_size;
 	u32 cr_size;
+	u32 burst_len;
 	bool busy;
 
 	/* FOR BT655: 0 = ODD, 1 = EVEN */
@@ -469,6 +481,7 @@ struct cif_isp10_buffer {
 struct cif_isp10_metadata_s {
 	unsigned int cnt;
 	unsigned int vmas;
+	spinlock_t spinlock;
 	unsigned char *d;
 };
 
@@ -552,7 +565,7 @@ struct cif_isp10_mi_state {
 
 struct cif_isp10_img_src_exp {
 	struct list_head list;
-	struct cif_isp10_img_src_ext_ctrl *exp;
+	struct cif_isp10_img_src_ext_ctrl exp;
 };
 
 struct cif_isp10_img_src_data {
@@ -565,12 +578,15 @@ struct cif_isp10_img_src_exps {
 	struct list_head list;
 
 	struct mutex mutex;	/* protect frm_exp */
-	struct cif_isp10_img_src_data data[2];
-	unsigned char exp_valid_frms;
+	struct cif_isp10_img_src_data data[CIF_ISP10_IMG_SRC_DATA_NUM];
+	unsigned char exp_idx;
+	unsigned char exp_valid_frms[2];
+	bool inited;
 };
 
 enum cif_isp10_isp_vs_cmd {
-	CIF_ISP10_VS_EXP = 0,
+	CIF_ISP10_VS_EXIT = 0,
+	CIF_ISP10_VS_EXP = 1
 };
 
 struct cif_isp10_isp_vs_work {
@@ -657,6 +673,8 @@ struct cif_isp10_device {
 
 	struct pltfrm_soc_cfg soc_cfg;
 	void *nodes;
+
+	struct mutex api_mutex; /* user api mutex */
 
 };
 
@@ -778,21 +796,19 @@ int cif_isp10_s_ctrl(
 	const enum cif_isp10_cid id,
 	int val);
 
-void cif_isp10_dbgfs_fill_sensor_aec_para(
-	struct cif_isp10_device *cif_isp10_dev,
-	s32 exp_time,
-	u16 gain);
-
-int cif_isp10_s_isp_metadata(
+int cif_isp10_s_vb_metadata(
 	struct cif_isp10_device *dev,
-	struct cif_isp10_isp_readout_work *readout_work,
-	struct cifisp_isp_other_cfg *new_other,
-	struct cifisp_isp_meas_cfg *new_meas,
-	struct cifisp_stat_buffer *new_stats);
+	struct cif_isp10_isp_readout_work *readout_work);
 
 int cif_isp10_s_exp(
 	struct cif_isp10_device *dev,
-	struct cif_isp10_img_src_ext_ctrl *exp_ctrl);
+	struct cif_isp10_img_src_ext_ctrl *exp_ctrl,
+	bool cls_exp);
+
+int cif_isp10_s_vcm(
+	struct cif_isp10_device *dev,
+	unsigned int id,
+	int val);
 
 void cif_isp10_sensor_mode_data_sync(
 	struct cif_isp10_device *dev,
