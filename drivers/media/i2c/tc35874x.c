@@ -1956,7 +1956,7 @@ static int tc35874x_probe(struct i2c_client *client,
 	struct tc35874x_platform_data *pdata = client->dev.platform_data;
 	struct v4l2_subdev *sd;
 	struct v4l2_subdev_edid def_edid;
-	int err, data;
+	int err, data = -1;
 
 	if (!i2c_check_functionality(client->adapter, I2C_FUNC_SMBUS_BYTE_DATA))
 		return -EIO;
@@ -1989,9 +1989,9 @@ static int tc35874x_probe(struct i2c_client *client,
 	tc35874x_set_power(state, 1);
 
 	/* i2c access */
-	data = i2c_rd16(sd, CHIPID) & MASK_CHIPID;
+	i2c_rd(sd, CHIPID, (u8 __force *)&data, 2);
 
-	switch (data) {
+	switch (data & MASK_CHIPID) {
 	case 0x0000:
 	case 0x4700:
 		break;
