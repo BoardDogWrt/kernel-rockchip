@@ -1619,6 +1619,7 @@ int sensor_probe(struct i2c_client *client, const struct i2c_device_id *devid)
 		dev_err(&client->dev, "no device tree\n");
 		return -EINVAL;
 	}
+
 	pdata = devm_kzalloc(&client->dev, sizeof(*pdata), GFP_KERNEL);
 	if (!pdata) {
 		result = -ENOMEM;
@@ -2038,6 +2039,7 @@ static const struct i2c_device_id sensor_id[] = {
 	{"lsm330_gyro", GYRO_ID_LSM330},
 	/*light sensor*/
 	{"lightsensor", LIGHT_ID_ALL},
+	{"light_bh1750", LIGHT_ID_BH1750},
 	{"light_cm3217", LIGHT_ID_CM3217},
 	{"light_cm3218", LIGHT_ID_CM3218},
 	{"light_cm3232", LIGHT_ID_CM3232},
@@ -2090,6 +2092,7 @@ static struct of_device_id sensor_dt_ids[] = {
 	{ .compatible = "lsm330_gyro" },
 
 	/*light sensor*/
+	{ .compatible = "light_bh1750" },
 	{ .compatible = "light_cm3217" },
 	{ .compatible = "light_cm3232" },
 	{ .compatible = "light_al3006" },

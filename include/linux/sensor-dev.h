@@ -61,6 +61,7 @@ enum sensor_id {
 	ACCEL_ID_LSM330,
 	ACCEL_ID_BMA2XX,
 	ACCEL_ID_STK8BAXX,
+
 	COMPASS_ID_ALL,
 	COMPASS_ID_AK8975,
 	COMPASS_ID_AK8963,
@@ -85,7 +86,9 @@ enum sensor_id {
 	GYRO_ID_MPU6500,
 	GYRO_ID_MPU6880,
 	GYRO_ID_LSM330,
+
 	LIGHT_ID_ALL,
+	LIGHT_ID_BH1750,
 	LIGHT_ID_CM3217,
 	LIGHT_ID_CM3218,
 	LIGHT_ID_CM3232,
@@ -131,7 +134,6 @@ struct sensor_flag {
 	long long delay;
 	wait_queue_head_t open_wq;
 };
-
 
 struct sensor_operate {
 	char *name;
@@ -183,6 +185,9 @@ struct sensor_private_data {
 	struct miscdevice miscdev;
 #ifdef CONFIG_HAS_EARLYSUSPEND
 	struct early_suspend early_suspend;
+#endif
+#ifdef CONFIG_LS_BH1750
+	void *driver_data;
 #endif
 };
 
