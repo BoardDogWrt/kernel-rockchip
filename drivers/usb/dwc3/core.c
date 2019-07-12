@@ -1576,7 +1576,7 @@ static int dwc3_probe(struct platform_device *pdev)
 	if (dev->of_node) {
 		dwc->num_clks = ARRAY_SIZE(dwc3_core_clks);
 
-		ret = clk_bulk_get(dev, dwc->num_clks, dwc->clks);
+		ret = devm_clk_bulk_get(dev, dwc->num_clks, dwc->clks);
 		if (ret == -EPROBE_DEFER)
 			goto assert_reset;
 		/*
@@ -1589,7 +1589,7 @@ static int dwc3_probe(struct platform_device *pdev)
 
 	ret = clk_bulk_prepare(dwc->num_clks, dwc->clks);
 	if (ret)
-		goto put_clks;
+		goto assert_reset;
 
 	ret = clk_bulk_enable(dwc->num_clks, dwc->clks);
 	if (ret)
@@ -1670,8 +1670,6 @@ err1:
 	clk_bulk_disable(dwc->num_clks, dwc->clks);
 unprepare_clks:
 	clk_bulk_unprepare(dwc->num_clks, dwc->clks);
-put_clks:
-	clk_bulk_put(dwc->num_clks, dwc->clks);
 assert_reset:
 	reset_control_assert(dwc->reset);
 
@@ -1696,7 +1694,6 @@ static int dwc3_remove(struct platform_device *pdev)
 
 	dwc3_free_event_buffers(dwc);
 	dwc3_free_scratch_buffers(dwc);
-	clk_bulk_put(dwc->num_clks, dwc->clks);
 
 	return 0;
 }
