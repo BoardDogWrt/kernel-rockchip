@@ -4,7 +4,8 @@ dtb-$(CONFIG_ARCH_ROCKCHIP) += \
 	rk3399-nanopi4-rev00.dtb \
 	rk3399-nanopi4-rev01.dtb \
 	rk3399-nanopi4-rev04.dtb \
-	rk3399-nanopi4-rev06.dtb
+	rk3399-nanopi4-rev06.dtb \
+	rk3399-nanopi4-rev21.dtb
 
 else
 
