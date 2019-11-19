@@ -89,6 +89,15 @@
 		regulator-boot-on;
 	};
 
+	vcc_host_vbus: host-vbus-regulator {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc_host_vbus";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <5000000>;
+		regulator-max-microvolt = <5000000>;
+	};
+
 	dfi: dfi@ff790000 {
 		reg = <0x00 0xff790000 0x00 0x400>;
 		compatible = "rockchip,rk3328-dfi";
@@ -160,7 +169,6 @@
 			opp-microvolt-L1 = <1150000>;
 		};
 	};
-
 };
 
 &cpu0 {
@@ -494,6 +502,19 @@
 	status = "okay";
 };
 
+&u3phy {
+	vbus-supply = <&vcc_host_vbus>;
+	status = "okay";
+};
+
+&u3phy_utmi {
+	status = "okay";
+};
+
+&u3phy_pipe {
+	status = "okay";
+};
+
 &usb20_otg {
 	status = "okay";
 };
@@ -503,5 +524,13 @@
 };
 
 &usb_host0_ohci {
+	status = "okay";
+};
+
+&usbdrd3 {
+	status = "okay";
+};
+
+&usbdrd_dwc3 {
 	status = "okay";
 };
