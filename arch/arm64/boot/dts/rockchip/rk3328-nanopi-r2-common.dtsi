@@ -458,7 +458,7 @@
 	num-slots = <1>;
 	pinctrl-names = "default";
 	pinctrl-0 = <&sdmmc0ext_clk &sdmmc0ext_cmd &sdmmc0ext_bus4>;
-	rockchip,default-sample-phase = <180>;
+	rockchip,default-sample-phase = <120>;
 	supports-sdio;
 	sd-uhs-sdr104;
 	#address-cells = <1>;
