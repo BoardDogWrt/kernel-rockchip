@@ -356,19 +356,19 @@
 
 	sdmmc0ext {
 		sdmmc0ext_clk: sdmmc0ext-clk {
-			rockchip,pins = <3 RK_PA2 3 &pcfg_pull_none_4ma>;
+			rockchip,pins = <3 RK_PA2 3 &pcfg_pull_none_2ma>;
 		};
 
 		sdmmc0ext_cmd: sdmmc0ext-cmd {
-			rockchip,pins = <3 RK_PA0 3 &pcfg_pull_up_4ma>;
+			rockchip,pins = <3 RK_PA0 3 &pcfg_pull_up_2ma>;
 		};
 
 		sdmmc0ext_bus4: sdmmc0ext-bus4 {
 			rockchip,pins =
-				<3 RK_PA4 3 &pcfg_pull_up_4ma>,
-				<3 RK_PA5 3 &pcfg_pull_up_4ma>,
-				<3 RK_PA6 3 &pcfg_pull_up_4ma>,
-				<3 RK_PA7 3 &pcfg_pull_up_4ma>;
+				<3 RK_PA4 3 &pcfg_pull_up_2ma>,
+				<3 RK_PA5 3 &pcfg_pull_up_2ma>,
+				<3 RK_PA6 3 &pcfg_pull_up_2ma>,
+				<3 RK_PA7 3 &pcfg_pull_up_2ma>;
 		};
 	};
 
