@@ -189,6 +189,7 @@
 	cap-mmc-highspeed;
 	max-frequency = <150000000>;
 	mmc-hs200-1_8v;
+	no-sd;
 	non-removable;
 	pinctrl-names = "default";
 	pinctrl-0 = <&emmc_clk &emmc_cmd &emmc_bus8>;
