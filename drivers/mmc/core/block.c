@@ -2322,6 +2322,10 @@ static struct mmc_blk_data *mmc_blk_alloc_req(struct mmc_card *card,
 	if (area_type & (MMC_BLK_DATA_AREA_RPMB | MMC_BLK_DATA_AREA_BOOT))
 		md->disk->flags |= GENHD_FL_NO_PART_SCAN
 				   | GENHD_FL_SUPPRESS_PARTITION_INFO;
+#if defined(CONFIG_RK_PARTITION)
+	else if (card->host->caps2 & MMC_CAP2_NO_SD)
+		md->disk->flags |= GENHD_FL_RKPART;
+#endif
 
 	/*
 	 * As discussed on lkml, GENHD_FL_REMOVABLE should:
