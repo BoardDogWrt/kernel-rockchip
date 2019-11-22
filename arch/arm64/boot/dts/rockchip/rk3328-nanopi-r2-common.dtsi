@@ -15,6 +15,10 @@
 	compatible = "friendlyelec,nanopi-r2",
 		   "rockchip,rk3328";
 
+	aliases {
+		ethernet1 = &r8153;
+	};
+
 	chosen {
 		bootargs = "swiotlb=1 coherent_pool=1m consoleblank=0";
 		stdout-path = "serial2:1500000n8";
@@ -556,4 +560,12 @@
 
 &usbdrd_dwc3 {
 	status = "okay";
+	#address-cells = <1>;
+	#size-cells = <0>;
+
+	r8153: device@2 {
+		compatible = "usbbda:8153";
+		reg = <2>;
+		local-mac-address = [00 00 00 00 00 00];
+	};
 };
