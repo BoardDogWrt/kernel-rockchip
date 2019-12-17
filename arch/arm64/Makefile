@@ -207,8 +207,8 @@ repack_boot_img := \
 		-o zboot.img && \
 	echo '  Image:  zboot.img ($(BOOT_IMG) + Image.lz4 + resource.img) is ready'
 
-ifeq ($(CONFIG_MACH_NANOPI4),y)
-DTBS := rockchip/rk3399-nanopi4-rev*.dtb
+ifeq ($(CONFIG_VENDOR_FRIENDLYELEC),y)
+DTBS := rockchip/rk33*-nanopi*-rev*.dtb
 
 PHONY += nanopi4-images nanopi4-bootimg
 nanopi4-images: dtbs kernel.img rklogo
@@ -222,22 +222,9 @@ nanopi4-bootimg: nanopi4-images
 		$(make_boot_img); \
 	fi
 
-endif
-
-ifeq ($(CONFIG_MACH_NANOPI_R2),y)
-DTBS := rockchip/rk3328-nanopi-r2-rev*.dtb
-
 PHONY += nanopi-r2-images nanopi-r2-bootimg
-nanopi-r2-images: dtbs kernel.img rklogo
-	$(Q)scripts/resource_tool --dtbname $(objtree)/arch/arm64/boot/dts/$(DTBS) $(LOGO) $(LOGO_KERNEL)
-	@echo '  Image:  resource.img (with $(DTBS) $(LOGO) $(LOGO_KERNEL)) is ready'
-
-nanopi-r2-bootimg: nanopi-r2-images
-	$(Q) if [ -f "$(BOOT_IMG)" -a -x $(srctree)/scripts/repack-bootimg ]; then \
-		$(repack_boot_img); \
-	elif [ -x $(srctree)/scripts/mkbootimg ]; then \
-		$(make_boot_img); \
-	fi
+nanopi-r2-images: nanopi4-images
+nanopi-r2-bootimg: nanopi4-bootimg
 
 endif
 
