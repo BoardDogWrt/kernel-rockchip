@@ -224,6 +224,23 @@ nanopi4-bootimg: nanopi4-images
 
 endif
 
+ifeq ($(CONFIG_MACH_NANOPI_R2),y)
+DTBS := rockchip/rk3328-nanopi-r2-rev*.dtb
+
+PHONY += nanopi-r2-images nanopi-r2-bootimg
+nanopi-r2-images: dtbs kernel.img rklogo
+	$(Q)scripts/resource_tool --dtbname $(objtree)/arch/arm64/boot/dts/$(DTBS) $(LOGO) $(LOGO_KERNEL)
+	@echo '  Image:  resource.img (with $(DTBS) $(LOGO) $(LOGO_KERNEL)) is ready'
+
+nanopi-r2-bootimg: nanopi-r2-images
+	$(Q) if [ -f "$(BOOT_IMG)" -a -x $(srctree)/scripts/repack-bootimg ]; then \
+		$(repack_boot_img); \
+	elif [ -x $(srctree)/scripts/mkbootimg ]; then \
+		$(make_boot_img); \
+	fi
+
+endif
+
 %.img: rockchip/%.dtb kernel.img $(LOGO) $(LOGO_KERNEL)
 	$(Q) if [ -f $(srctree)/$(LOGO) -a -e $(srctree)/scripts/bmpconvert ]; then $(srctree)/scripts/bmpconvert $(srctree)/$(LOGO); fi
 	$(Q) if [ -f $(srctree)/$(LOGO_KERNEL) -a -e $(srctree)/scripts/bmpconvert ]; then $(srctree)/scripts/bmpconvert $(srctree)/$(LOGO_KERNEL); fi
