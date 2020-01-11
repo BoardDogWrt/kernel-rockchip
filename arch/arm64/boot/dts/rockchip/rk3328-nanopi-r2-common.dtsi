@@ -36,6 +36,8 @@
 		machine = "NANOPI-R2";
 		hwrev = <255>;
 		model = "NanoPi R2 Series";
+		nvmem-cells = <&efuse_id>, <&efuse_cpu_version>;
+		nvmem-cell-names = "id", "cpu-version";
 	};
 
 	leds: gpio-leds {
