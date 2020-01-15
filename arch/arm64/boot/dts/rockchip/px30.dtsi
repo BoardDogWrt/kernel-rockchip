@@ -1237,7 +1237,7 @@
 		status = "disabled";
 	};
 
-	sdmmc: dwmmc@ff370000 {
+	sdmmc: mmc@ff370000 {
 		compatible = "rockchip,px30-dw-mshc", "rockchip,rk3288-dw-mshc";
 		reg = <0x0 0xff370000 0x0 0x4000>;
 		max-frequency = <150000000>;
@@ -1254,7 +1254,7 @@
 		status = "disabled";
 	};
 
-	sdio: dwmmc@ff380000 {
+	sdio: mmc@ff380000 {
 		compatible = "rockchip,px30-dw-mshc", "rockchip,rk3288-dw-mshc";
 		reg = <0x0 0xff380000 0x0 0x4000>;
 		max-frequency = <150000000>;
@@ -1271,7 +1271,7 @@
 		status = "disabled";
 	};
 
-	emmc: dwmmc@ff390000 {
+	emmc: mmc@ff390000 {
 		compatible = "rockchip,px30-dw-mshc", "rockchip,rk3288-dw-mshc";
 		reg = <0x0 0xff390000 0x0 0x4000>;
 		max-frequency = <150000000>;
