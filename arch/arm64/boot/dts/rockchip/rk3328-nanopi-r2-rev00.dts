@@ -62,6 +62,10 @@
 	status = "okay";
 };
 
+&pwm2 {
+	status = "okay";
+};
+
 &rk805 {
 	interrupt-parent = <&gpio1>;
 	interrupts = <RK_PD0 IRQ_TYPE_LEVEL_LOW>;
