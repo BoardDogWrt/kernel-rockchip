@@ -60,6 +60,23 @@
 
 &leds {
 	status = "okay";
+
+	led@2 {
+		gpios = <&gpio2 RK_PB7 GPIO_ACTIVE_HIGH>;
+		label = "lan_led";
+	};
+
+	led@3 {
+		gpios = <&gpio2 RK_PC2 GPIO_ACTIVE_HIGH>;
+		label = "wan_led";
+	};
+};
+
+&leds_gpio {
+	rockchip,pins =
+		<0 RK_PA2 RK_FUNC_GPIO &pcfg_pull_none>,
+		<2 RK_PB7 RK_FUNC_GPIO &pcfg_pull_none>,
+		<2 RK_PC2 RK_FUNC_GPIO &pcfg_pull_none>;
 };
 
 &pwm2 {
