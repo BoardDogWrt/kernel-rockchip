@@ -35,8 +35,8 @@ static int battery_status		= POWER_SUPPLY_STATUS_DISCHARGING;
 static int battery_health		= POWER_SUPPLY_HEALTH_GOOD;
 static int battery_present		= 1; /* true */
 static int battery_technology		= POWER_SUPPLY_TECHNOLOGY_LION;
-static int battery_capacity		= 50;
-static int battery_voltage		= 3300;
+static int battery_capacity		= 100;
+static int battery_voltage		= 4200;
 
 static bool module_initialized;
 
@@ -113,7 +113,7 @@ static int test_power_get_battery_property(struct power_supply *psy,
 		val->intval = 3600;
 		break;
 	case POWER_SUPPLY_PROP_TEMP:
-		val->intval = 26;
+		val->intval = 260;
 		break;
 	case POWER_SUPPLY_PROP_VOLTAGE_NOW:
 		val->intval = battery_voltage;
