@@ -243,6 +243,7 @@ struct dw_hdmi {
 	} phy;
 
 	struct drm_display_mode previous_mode;
+	int preferred_mode;
 
 	struct i2c_adapter *ddc;
 	void __iomem *regs;
@@ -2634,8 +2635,8 @@ static int dw_hdmi_connector_get_modes(struct drm_connector *connector)
 							       def_modes,
 							       31, i);
 			if (mode) {
-				if (!i)
-					mode->type = DRM_MODE_TYPE_PREFERRED;
+				if (def_modes[i] == hdmi->preferred_mode)
+					mode->type |= DRM_MODE_TYPE_PREFERRED;
 				drm_mode_probed_add(connector, mode);
 				ret++;
 			}
@@ -3704,6 +3705,11 @@ __dw_hdmi_probe(struct platform_device *pdev,
 			goto err_iahb;
 		}
 	}
+
+	if (!of_property_read_u32(np, "rockchip,defaultmode", &val))
+		hdmi->preferred_mode = val;
+	else
+		hdmi->preferred_mode = 4;
 
 	/* Product and revision IDs */
 	hdmi->version = (hdmi_readb(hdmi, HDMI_DESIGN_ID) << 8)
