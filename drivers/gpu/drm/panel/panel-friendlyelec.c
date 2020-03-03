@@ -195,7 +195,7 @@ static struct {
 	{ "HD101B",	&hd101,	CTP_GOODIX  },
 	{ "S701",	&s70,	CTP_GOODIX  },
 
-	{ "LC116LF1L01",&k116e,	CTP_FT5X06  },
+	{ "LC116LF1L01",&k116e,	CTP_FT5526_KR },
 
 	{ "EDID",	NULL,	CTP_AUTO    },
 };
