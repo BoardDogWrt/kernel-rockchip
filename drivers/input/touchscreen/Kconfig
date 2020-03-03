@@ -439,6 +439,8 @@ config TOUCHSCREEN_GSL3673_800X1280
 	help
 	  gsl3673 touchpad driver for rk3326 board
 
+if !TOUCHSCREEN_FE_PANELS
+
 config TOUCHSCREEN_GT9XX
 	tristate "Goodix gt9xx support for rockchip platform"
 	depends on I2C && ARCH_ROCKCHIP
@@ -447,6 +449,8 @@ config TOUCHSCREEN_GT9XX
 	  on Rockchip platform, and your board-specific initialization
 	  code includes that in its table of IIC devices.
 	  If unsure, say N.
+
+endif
 
 config TOUCHSCREEN_HIDEEP
 	tristate "HiDeep Touch IC"
@@ -1362,5 +1366,7 @@ config TOUCHSCREEN_VTL_CT36X
 
 config TOUCHSCREEN_GT1X
 	tristate "GT1X touchscreens support"
+
+source "drivers/input/touchscreen/friendlyelec/Kconfig"
 
 endif
