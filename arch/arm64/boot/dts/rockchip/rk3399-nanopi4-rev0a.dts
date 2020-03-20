@@ -17,6 +17,7 @@
  */
 
 /dts-v1/;
+#include <dt-bindings/soc/rockchip-io-domain.h>
 #include "rk3399-nanopi4-common.dtsi"
 
 / {
@@ -156,4 +157,13 @@
 			rockchip,pins = <4 26 RK_FUNC_GPIO &pcfg_pull_none>;
 		};
 	};
+};
+
+&io_domains {
+	uboot-set = <(RK3399_BT656_VDD_1V8 | RK3399_AUDIO_VDD_1V8 |
+		      RK3399_GPIO1833_VDD_3V3)>;
+};
+
+&pmu_io_domains {
+	uboot-set = <RK3399_PMU1830_VDD_3V0>;
 };
