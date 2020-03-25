@@ -1,4 +1,18 @@
 # SPDX-License-Identifier: GPL-2.0
+
+ifeq ($(CONFIG_MACH_NANOPI4),y)
+
+dtb-$(CONFIG_ARCH_ROCKCHIP) += \
+	rk3399-nanopi4-rev00.dtb \
+	rk3399-nanopi4-rev01.dtb \
+	rk3399-nanopi4-rev04.dtb \
+	rk3399-nanopi4-rev06.dtb \
+	rk3399-nanopi4-rev07.dtb \
+	rk3399-nanopi4-rev21.dtb \
+	rk3399-nanopi4-rev22.dtb
+
+else
+
 dtb-$(CONFIG_ARCH_ROCKCHIP) += px30-ad-d6-anx6345.dtb
 dtb-$(CONFIG_ARCH_ROCKCHIP) += px30-ad-r35-mb-rk618-dual-lvds.dtb
 dtb-$(CONFIG_ARCH_ROCKCHIP) += px30-ad-r35-mb-rk618-hdmi.dtb
@@ -55,3 +69,5 @@ dtb-$(CONFIG_ARCH_ROCKCHIP) += rk3399-sapphire.dtb
 dtb-$(CONFIG_ARCH_ROCKCHIP) += rk3399-sapphire-excavator.dtb
 dtb-$(CONFIG_ARCH_ROCKCHIP) += rk3399-sapphire-excavator-edp-avb.dtb
 dtb-$(CONFIG_ARCH_ROCKCHIP) += rk3399-tve1030g-avb.dtb
+
+endif
