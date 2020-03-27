@@ -879,6 +879,7 @@ static int edt_ft5x06_ts_identify(struct i2c_client *client,
 		case 0x50:   /* EDT EP0500M09 */
 		case 0x57:   /* EDT EP0570M09 */
 		case 0x70:   /* EDT EP0700M09 */
+		case 0x79:   /* EDT EP0790M09 */
 			tsdata->version = EDT_M09;
 			snprintf(model_name, EDT_NAME_LEN, "EP0%i%i0M09",
 				rdbuf[0] >> 4, rdbuf[0] & 0x0F);
@@ -1081,26 +1082,21 @@ static int edt_ft5x06_ts_probe(struct i2c_client *client,
 	input->id.bustype = BUS_I2C;
 	input->dev.parent = &client->dev;
 
-	max_x = tsdata->num_x * 64 - 1;
-	max_y = tsdata->num_y * 64 - 1;
+	if (tsdata->version == EDT_M06 ||
+	    tsdata->version == EDT_M09 ||
+	    tsdata->version == EDT_M12) {
+		max_x = tsdata->num_x * 64 - 1;
+		max_y = tsdata->num_y * 64 - 1;
+	} else {
+		/* Unknown maximum values. Specify via devicetree */
+		max_x = max_y = 65535;
+	}
 #if defined(CONFIG_DRM_PANEL_FRIENDLYELEC)
 	panel_get_display_size(&max_x, &max_y);
 #endif
 
-	if (tsdata->version == EDT_M06 ||
-	    tsdata->version == EDT_M09 ||
-	    tsdata->version == EDT_M12) {
-		input_set_abs_params(input, ABS_MT_POSITION_X,
-				     0, max_x, 0, 0);
-		input_set_abs_params(input, ABS_MT_POSITION_Y,
-				     0, max_y, 0, 0);
-	} else {
-		/* Unknown maximum values. Specify via devicetree */
-		input_set_abs_params(input, ABS_MT_POSITION_X,
-				     0, 65535, 0, 0);
-		input_set_abs_params(input, ABS_MT_POSITION_Y,
-				     0, 65535, 0, 0);
-	}
+	input_set_abs_params(input, ABS_MT_POSITION_X, 0, max_x, 0, 0);
+	input_set_abs_params(input, ABS_MT_POSITION_Y, 0, max_y, 0, 0);
 
 	touchscreen_parse_properties(input, true, &tsdata->prop);
 #if defined(CONFIG_DRM_PANEL_FRIENDLYELEC)
