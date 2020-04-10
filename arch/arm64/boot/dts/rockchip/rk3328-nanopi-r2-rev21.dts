@@ -20,7 +20,7 @@
 #include "rk3328-nanopi-r2-common.dtsi"
 
 / {
-	model = "FriendlyElec NanoPi R2S";
+	model = "FriendlyElec NanoPi R2 Pro";
 	compatible = "friendlyelec,nanopi-r2", "rockchip,rk3328";
 
 	gpio-keys {
@@ -34,8 +34,8 @@
 
 		button@0 {
 			gpios = <&gpio0 RK_PA0 GPIO_ACTIVE_LOW>;
-			label = "reset";
-			linux,code = <BTN_1>;
+			linux,code = <KEY_POWER>;
+			label = "GPIO Key Power";
 			linux,input-type = <1>;
 			gpio-key,wakeup = <1>;
 			debounce-interval = <100>;
@@ -57,12 +57,12 @@
 };
 
 &mach {
-	hwrev = <0>;
-	model = "NanoPi R2S";
+	hwrev = <0x21>;
+	model = "NanoPi R2 Pro";
 };
 
 &emmc {
-	status = "disabled";
+	status = "okay";
 };
 
 &i2c0 {
@@ -79,11 +79,12 @@
 };
 
 &rk_wlan {
-	status = "disabled";
+	status = "okay";
+	WIFI,host_wake_irq = <&gpio3 RK_PA1 GPIO_ACTIVE_HIGH>;
 };
 
 &rk_bluetooth {
-	status = "disabled";
+	status = "okay";
 };
 
 &vccio_sd {
@@ -102,12 +103,8 @@
 	status = "okay";
 };
 
-&sdmmc_ext {
-	status = "disabled";
-};
-
 &sdio_pwrseq {
-	status = "disabled";
+	status = "okay";
 };
 
 &pinctrl {
