@@ -750,6 +750,13 @@ static int qmi_wwan_bind(struct usbnet *dev, struct usb_interface *intf)
 	}
 	dev->net->netdev_ops = &qmi_wwan_netdev_ops;
 	dev->net->sysfs_groups[0] = &qmi_wwan_sysfs_attr_group;
+
+	if (dev->udev->descriptor.idVendor == cpu_to_le16(0x2C7C)) {
+		info->flags |= QMI_WWAN_FLAG_RAWIP;
+		qmi_wwan_netdev_setup(dev->net);
+		dev_info(&intf->dev, "Quectel EC21&EC25 work on RawIP mode\n");
+	}
+
 err:
 	return status;
 }

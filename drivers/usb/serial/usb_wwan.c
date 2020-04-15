@@ -506,10 +506,17 @@ static struct urb *usb_wwan_setup_urb(struct usb_serial_port *port,
 		urb->transfer_flags |= URB_ZERO_PACKET;
 
 	if (dir == USB_DIR_OUT) {
-		if ((desc->idVendor == cpu_to_le16(0x1286) &&
-		     desc->idProduct == cpu_to_le16(0x4e3c)))
+#define DEV_MATCH(udesc, vid, pid) \
+	(udesc->idVendor == cpu_to_le16(vid) && desc->idProduct == cpu_to_le16(pid))
+		if (DEV_MATCH(desc, 0x1286, 0x4e3c) ||
+		    DEV_MATCH(desc, 0x05C6, 0x9090) ||
+		    DEV_MATCH(desc, 0x05C6, 0x9003) ||
+		    DEV_MATCH(desc, 0x05C6, 0x9215) ||
+		    (desc->idVendor == cpu_to_le16(0x2C7C)))
 			urb->transfer_flags |= URB_ZERO_PACKET;
+#undef DEV_MATCH
 	}
+
 	return urb;
 }
 
