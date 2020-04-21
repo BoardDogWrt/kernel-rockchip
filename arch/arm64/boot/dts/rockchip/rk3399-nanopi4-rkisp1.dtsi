@@ -32,7 +32,7 @@
 	};
 
 	dw9718_0: dw9718@0c {
-		compatible = "silicon touch,dw9718";
+		compatible = "dongwoon,dw9718";
 		reg = <0x0c>;
 		rockchip,camera-module-index = <0>;
 		rockchip,camera-module-facing = "back";
@@ -183,7 +183,7 @@
 	};
 
 	dw9718_1: dw9718@0c {
-		compatible = "silicon touch,dw9718";
+		compatible = "dongwoon,dw9718";
 		reg = <0x0c>;
 		rockchip,camera-module-index = <1>;
 		rockchip,camera-module-facing = "front";
