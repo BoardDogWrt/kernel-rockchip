@@ -3260,6 +3260,22 @@ DECLARE_PCI_FIXUP_RESUME_EARLY(PCI_VENDOR_ID_INTEL, 0x156d,
 			       quirk_apple_wait_for_thunderbolt);
 #endif
 
+/* Ugly hack for RK3399 to prevent kernel abort */
+int pci_asme_bus_quirk(struct pci_bus *bus, int devfn)
+{
+#if defined(CONFIG_PCIE_ROCKCHIP)
+	struct pci_dev *bridge = bus->self;
+
+	if (pci_pcie_type(bridge) == PCI_EXP_TYPE_UPSTREAM &&
+		bridge->device == 0x1182 &&
+		devfn != (3 << 3) && devfn != (7 << 3)) {
+		return -ENODEV;
+	}
+#endif
+
+	return 0;
+}
+
 static void pci_do_fixups(struct pci_dev *dev, struct pci_fixup *f,
 			  struct pci_fixup *end)
 {

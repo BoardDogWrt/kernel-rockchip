@@ -1590,6 +1590,12 @@ bool pci_bus_read_dev_vendor_id(struct pci_bus *bus, int devfn, u32 *l,
 {
 	int delay = 1;
 
+	if (bus->self) {
+		if (bus->self->vendor == PCI_VENDOR_ID_ASMEDIA &&
+			pci_asme_bus_quirk(bus, devfn) < 0)
+			return false;
+	}
+
 	if (pci_bus_read_config_dword(bus, devfn, PCI_VENDOR_ID, l))
 		return false;
 
