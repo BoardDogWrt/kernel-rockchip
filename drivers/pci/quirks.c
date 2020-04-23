@@ -5047,6 +5047,22 @@ int pci_idt_bus_quirk(struct pci_bus *bus, int devfn, u32 *l, int timeout)
 	return found;
 }
 
+/* Ugly hack for RK3399 to prevent kernel abort */
+bool pci_asme_bus_quirk(struct pci_bus *bus, int devfn, u32 *l, int timeout)
+{
+#if defined(CONFIG_PCIE_ROCKCHIP)
+	struct pci_dev *bridge = bus->self;
+
+	if (pci_pcie_type(bridge) == PCI_EXP_TYPE_UPSTREAM &&
+		bridge->device == 0x1182 &&
+		devfn != (3 << 3) && devfn != (7 << 3)) {
+		return false;
+	}
+#endif
+
+	return pci_bus_generic_read_dev_vendor_id(bus, devfn, l, timeout);
+}
+
 /*
  * Microsemi Switchtec NTB uses devfn proxy IDs to move TLPs between
  * NT endpoints via the internal switch fabric. These IDs replace the
