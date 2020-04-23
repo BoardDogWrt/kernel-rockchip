@@ -65,4 +65,5 @@
 	pinctrl-names = "default";
 	pinctrl-0 = <&pcie_gpios>;
 	num-lanes = <4>;
+	max-link-speed = <2>;
 };
