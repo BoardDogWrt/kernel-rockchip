@@ -124,19 +124,12 @@
 		rockchip,pwm_voltage = <900000>;
 	};
 
-	hdmi_sound: hdmi-sound {
-		status = "disabled";
-		compatible = "simple-audio-card";
-		simple-audio-card,format = "i2s";
-		simple-audio-card,mclk-fs = <256>;
-		simple-audio-card,name = "rockchip,hdmi";
 
-		simple-audio-card,cpu {
-			sound-dai = <&i2s2>;
-		};
-		simple-audio-card,codec {
-			sound-dai = <&hdmi>;
-		};
+	dp_sound: dp-sound {
+		status = "okay";
+		compatible = "rockchip,cdndp-sound";
+		rockchip,cpu = <&spdif>;
+		rockchip,codec = <&cdn_dp 1>;
 	};
 
 	rt5651_card: rt5651-sound {
@@ -167,8 +160,24 @@
 		};
 	};
 
-	spdif-sound {
+	hdmi_sound: hdmi-sound {
 		status = "okay";
+		compatible = "simple-audio-card";
+		simple-audio-card,format = "i2s";
+		simple-audio-card,mclk-fs = <256>;
+		simple-audio-card,name = "rockchip,hdmi";
+
+		simple-audio-card,cpu {
+			sound-dai = <&i2s2>;
+		};
+		simple-audio-card,codec {
+			sound-dai = <&hdmi>;
+		};
+	};
+
+	/* if enable dp_sound, should disable spdif_sound and spdif_out */
+	spdif-sound {
+		status = "disabled";
 		compatible = "simple-audio-card";
 		simple-audio-card,name = "ROCKCHIP,SPDIF";
 		simple-audio-card,cpu {
@@ -180,7 +189,7 @@
 	};
 
 	spdif_out: spdif-out {
-		status = "okay";
+		status = "disabled";
 		compatible = "linux,spdif-dit";
 		#sound-dai-cells = <0>;
 	};
@@ -464,10 +473,6 @@
 
 &hdmi_in_vopl {
 	status = "disabled";
-};
-
-&hdmi_dp_sound {
-	status = "okay";
 };
 
 &route_hdmi {
