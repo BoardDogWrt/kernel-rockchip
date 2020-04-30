@@ -40,6 +40,8 @@
 #include <linux/workqueue.h>
 #include <linux/v4l2-dv-timings.h>
 #include <linux/hdmi.h>
+#include <linux/version.h>
+#include <linux/rk-camera-module.h>
 #include <media/v4l2-dv-timings.h>
 #include <media/v4l2-device.h>
 #include <media/v4l2-ctrls.h>
@@ -59,6 +61,8 @@ MODULE_AUTHOR("Mikhail Khelik <mkhelik@cisco.com>");
 MODULE_AUTHOR("Mats Randgaard <matrandg@cisco.com>");
 MODULE_LICENSE("GPL");
 
+#define DRIVER_VERSION			KERNEL_VERSION(0, 0x01, 0x3)
+
 #define EDID_NUM_BLOCKS_MAX 8
 #define EDID_BLOCK_SIZE 128
 
@@ -66,10 +70,14 @@ MODULE_LICENSE("GPL");
 
 #define POLL_INTERVAL_MS	1000
 
-#define TC35874X_LINK_FREQ_300MHZ	300000000
-#define TC35874X_PIXEL_RATE		(TC35874X_LINK_FREQ_300MHZ * 2 * 2 / 8)
+/* PIXEL_RATE = MIPI_FREQ * 2 * lane / 8bit */
+#define TC35874X_LINK_FREQ_310MHZ	310000000
+#define TC35874X_PIXEL_RATE		TC35874X_LINK_FREQ_310MHZ
+
+#define TC35874X_NAME			"tc35874x"
+
 static const s64 link_freq_menu_items[] = {
-	TC35874X_LINK_FREQ_300MHZ,
+	TC35874X_LINK_FREQ_310MHZ,
 };
 
 static const struct v4l2_dv_timings_cap tc35874x_timings_cap = {
@@ -137,6 +145,7 @@ struct tc35874x_state {
 	struct v4l2_ctrl *detect_tx_5v_ctrl;
 	struct v4l2_ctrl *audio_sampling_rate_ctrl;
 	struct v4l2_ctrl *audio_present_ctrl;
+	struct v4l2_ctrl *vblank;
 
 	struct delayed_work delayed_work_enable_hotplug;
 
@@ -151,6 +160,11 @@ struct tc35874x_state {
 	u8 csi_lanes_in_use;
 
 	struct gpio_desc *reset_gpio;
+
+	u32 module_index;
+	const char *module_facing;
+	const char *module_name;
+	const char *len_name;
 };
 
 static void tc35874x_enable_interrupts(struct v4l2_subdev *sd,
@@ -507,7 +521,7 @@ static void print_avi_infoframe(struct v4l2_subdev *sd)
 
 	i2c_rd(sd, PK_AVI_0HEAD, buffer, HDMI_INFOFRAME_SIZE(AVI));
 
-	if (hdmi_infoframe_unpack(&frame, buffer) < 0) {
+	if (hdmi_infoframe_unpack(&frame, buffer, sizeof(buffer)) < 0) {
 		v4l2_err(sd, "%s: unpack of AVI infoframe failed\n", __func__);
 		return;
 	}
@@ -602,8 +616,10 @@ static inline void enable_stream(struct v4l2_subdev *sd, bool enable)
 
 	mutex_lock(&state->confctl_mutex);
 	i2c_wr16_and_or(sd, CONFCTL, ~(MASK_VBUFEN | MASK_ABUFEN),
-			enable ? (MASK_VBUFEN | MASK_ABUFEN) : 0x0);
+			enable ? (MASK_VBUFEN | MASK_ABUFEN) : MASK_ABUFEN);
 	mutex_unlock(&state->confctl_mutex);
+
+	i2c_wr8(sd, FORCE_MUTE, !enable);
 }
 
 static void tc35874x_set_pll(struct v4l2_subdev *sd)
@@ -817,7 +833,7 @@ static void tc35874x_set_hdmi_audio(struct v4l2_subdev *sd)
 	struct tc35874x_state *state = to_state(sd);
 
 	/* Default settings from REF_02, sheet "Source HDMI" */
-	i2c_wr8(sd, FORCE_MUTE, 0x00);
+	i2c_wr8(sd, FORCE_MUTE, 0x01);
 	i2c_wr8(sd, AUTO_CMD0, MASK_AUTO_MUTE7 | MASK_AUTO_MUTE6 |
 			MASK_AUTO_MUTE5 | MASK_AUTO_MUTE4 |
 			MASK_AUTO_MUTE1 | MASK_AUTO_MUTE0);
@@ -864,6 +880,10 @@ static void tc35874x_initial_setup(struct v4l2_subdev *sd)
 	tc35874x_reset(sd, MASK_CTXRST | MASK_HDMIRST);
 	tc35874x_sleep_mode(sd, false);
 
+	/* Reset audio block logic and enable I2S output */
+	tc35874x_reset(sd, (1 << 14));
+	i2c_wr16_and_or(sd, SYSCTL, ~(1 << 7), 0);
+
 	i2c_wr16(sd, FIFOCTL, pdata->fifo_level);
 
 	tc35874x_set_ref_clk(sd);
@@ -902,7 +922,7 @@ static void tc35874x_format_change(struct v4l2_subdev *sd)
 		v4l2_dbg(1, debug, sd, "%s: No signal\n",
 				__func__);
 	} else {
-		if (!v4l2_match_dv_timings(&state->timings, &timings, 0)) {
+		if (!v4l2_match_dv_timings(&state->timings, &timings, 0, false)) {
 			enable_stream(sd, false);
 			/* automaticly set timing rather than set by userspace */
 			tc35874x_s_dv_timings(sd, &timings);
@@ -1368,9 +1388,9 @@ static irqreturn_t tc35874x_irq_handler(int irq, void *dev_id)
 	return handled ? IRQ_HANDLED : IRQ_NONE;
 }
 
-static void tc35874x_irq_poll_timer(unsigned long arg)
+static void tc35874x_irq_poll_timer(struct timer_list *t)
 {
-	struct tc35874x_state *state = (struct tc35874x_state *)arg;
+	struct tc35874x_state *state = from_timer(state, t, timer);
 
 	schedule_work(&state->work_i2c_poll);
 
@@ -1424,7 +1444,7 @@ static int tc35874x_s_dv_timings(struct v4l2_subdev *sd,
 		v4l2_print_dv_timings(sd->name, "tc35874x_s_dv_timings: ",
 				timings, false);
 
-	if (v4l2_match_dv_timings(&state->timings, timings, 0)) {
+	if (v4l2_match_dv_timings(&state->timings, timings, 0, false)) {
 		v4l2_dbg(1, debug, sd, "%s: no change\n", __func__);
 		return 0;
 	}
@@ -1537,6 +1557,15 @@ static int tc35874x_s_stream(struct v4l2_subdev *sd, int enable)
 	return 0;
 }
 
+static int tc35874x_g_frame_interval(struct v4l2_subdev *sd,
+		struct v4l2_subdev_frame_interval *fi)
+{
+	fi->interval.numerator = 10000;
+	fi->interval.denominator = 60 * 10000;
+
+	return 0;
+}
+
 /* --------------- PAD OPS --------------- */
 
 static int tc35874x_enum_mbus_code(struct v4l2_subdev *sd,
@@ -1545,14 +1574,44 @@ static int tc35874x_enum_mbus_code(struct v4l2_subdev *sd,
 {
 	switch (code->index) {
 	case 0:
-		code->code = MEDIA_BUS_FMT_RGB888_1X24;
-		break;
-	case 1:
 		code->code = MEDIA_BUS_FMT_UYVY8_2X8;
 		break;
 	default:
 		return -EINVAL;
 	}
+
+	return 0;
+}
+
+static int tc35874x_enum_frame_sizes(struct v4l2_subdev *sd,
+		struct v4l2_subdev_pad_config *cfg,
+		struct v4l2_subdev_frame_size_enum *fse)
+{
+	struct tc35874x_state *state = to_state(sd);
+
+	if (fse->index > 0)
+		return -EINVAL;
+
+	fse->max_width  = fse->min_width  = state->timings.bt.width;
+	fse->max_height = fse->min_height = state->timings.bt.height;
+
+	return 0;
+}
+
+static int tc35874x_enum_frame_interval(struct v4l2_subdev *sd,
+		struct v4l2_subdev_pad_config *cfg,
+		struct v4l2_subdev_frame_interval_enum *fie)
+{
+	struct tc35874x_state *state = to_state(sd);
+
+	if (fie->index > 0)
+		return -EINVAL;
+
+	fie->width = state->timings.bt.width;
+	fie->height = state->timings.bt.height;
+	fie->interval.numerator = 10000;
+	fie->interval.denominator = 60 * 10000;
+
 	return 0;
 }
 
@@ -1703,6 +1762,76 @@ static int tc35874x_s_edid(struct v4l2_subdev *sd,
 	return 0;
 }
 
+static void tc35874x_get_module_inf(struct tc35874x_state *tc35874x,
+				  struct rkmodule_inf *inf)
+{
+	memset(inf, 0, sizeof(*inf));
+	strlcpy(inf->base.sensor, TC35874X_NAME, sizeof(inf->base.sensor));
+	strlcpy(inf->base.module, tc35874x->module_name,
+		sizeof(inf->base.module));
+	strlcpy(inf->base.lens, tc35874x->len_name, sizeof(inf->base.lens));
+}
+
+static long tc35874x_ioctl(struct v4l2_subdev *sd, unsigned int cmd, void *arg)
+{
+	struct tc35874x_state *tc35874x = to_state(sd);
+	long ret = 0;
+
+	switch (cmd) {
+	case RKMODULE_GET_MODULE_INFO:
+		tc35874x_get_module_inf(tc35874x, (struct rkmodule_inf *)arg);
+		break;
+	default:
+		ret = -ENOIOCTLCMD;
+		break;
+	}
+
+	return ret;
+}
+
+#ifdef CONFIG_COMPAT
+static long tc35874x_compat_ioctl32(struct v4l2_subdev *sd,
+				  unsigned int cmd, unsigned long arg)
+{
+	void __user *up = compat_ptr(arg);
+	struct rkmodule_inf *inf;
+	struct rkmodule_awb_cfg *cfg;
+	long ret;
+
+	switch (cmd) {
+	case RKMODULE_GET_MODULE_INFO:
+		inf = kzalloc(sizeof(*inf), GFP_KERNEL);
+		if (!inf) {
+			ret = -ENOMEM;
+			return ret;
+		}
+
+		ret = tc35874x_ioctl(sd, cmd, inf);
+		if (!ret)
+			ret = copy_to_user(up, inf, sizeof(*inf));
+		kfree(inf);
+		break;
+	case RKMODULE_AWB_CFG:
+		cfg = kzalloc(sizeof(*cfg), GFP_KERNEL);
+		if (!cfg) {
+			ret = -ENOMEM;
+			return ret;
+		}
+
+		ret = copy_from_user(cfg, up, sizeof(*cfg));
+		if (!ret)
+			ret = tc35874x_ioctl(sd, cmd, cfg);
+		kfree(cfg);
+		break;
+	default:
+		ret = -ENOIOCTLCMD;
+		break;
+	}
+
+	return ret;
+}
+#endif
+
 /* -------------------------------------------------------------------------- */
 
 static const struct v4l2_subdev_core_ops tc35874x_core_ops = {
@@ -1714,6 +1843,10 @@ static const struct v4l2_subdev_core_ops tc35874x_core_ops = {
 	.interrupt_service_routine = tc35874x_isr,
 	.subscribe_event = tc35874x_subscribe_event,
 	.unsubscribe_event = v4l2_event_subdev_unsubscribe,
+	.ioctl = tc35874x_ioctl,
+#ifdef CONFIG_COMPAT
+	.compat_ioctl32 = tc35874x_compat_ioctl32,
+#endif
 };
 
 static const struct v4l2_subdev_video_ops tc35874x_video_ops = {
@@ -1721,12 +1854,15 @@ static const struct v4l2_subdev_video_ops tc35874x_video_ops = {
 	.s_dv_timings = tc35874x_s_dv_timings,
 	.g_dv_timings = tc35874x_g_dv_timings,
 	.query_dv_timings = tc35874x_query_dv_timings,
+	.g_frame_interval = tc35874x_g_frame_interval,
 	.g_mbus_config = tc35874x_g_mbus_config,
 	.s_stream = tc35874x_s_stream,
 };
 
 static const struct v4l2_subdev_pad_ops tc35874x_pad_ops = {
 	.enum_mbus_code = tc35874x_enum_mbus_code,
+	.enum_frame_size = tc35874x_enum_frame_sizes,
+	.enum_frame_interval = tc35874x_enum_frame_interval,
 	.set_fmt = tc35874x_set_fmt,
 	.get_fmt = tc35874x_get_fmt,
 	.get_edid = tc35874x_g_edid,
@@ -1763,6 +1899,32 @@ static const struct v4l2_ctrl_config tc35874x_ctrl_audio_present = {
 	.step = 1,
 	.def = 0,
 	.flags = V4L2_CTRL_FLAG_READ_ONLY,
+};
+
+/* --------------- RKISP CTRLS --------------- */
+
+static int tc35874x_s_ctrl(struct v4l2_ctrl *ctrl)
+{
+	struct tc35874x_state *state = container_of(ctrl->handler,
+			struct tc35874x_state, hdl);
+
+	switch (ctrl->id) {
+	case V4L2_CID_VBLANK:
+	case V4L2_CID_EXPOSURE:
+	case V4L2_CID_TEST_PATTERN:
+		break;
+
+	default:
+		v4l2_dbg(3, debug, &state->sd, "%s Unhandled id:0x%x, val:0x%x\n",
+				__func__, ctrl->id, ctrl->val);
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+static const struct v4l2_ctrl_ops tc35874x_ctrl_ops = {
+	.s_ctrl = tc35874x_s_ctrl,
 };
 
 /* --------------- PROBE / REMOVE --------------- */
@@ -1912,7 +2074,15 @@ static int tc35874x_probe(struct i2c_client *client,
 	struct tc35874x_platform_data *pdata = client->dev.platform_data;
 	struct v4l2_subdev *sd;
 	struct v4l2_subdev_edid def_edid;
-	int err, data;
+	struct device *dev = &client->dev;
+	struct device_node *node = dev->of_node;
+	char facing[2];
+	int err, data = -1;
+
+	dev_info(dev, "driver version: %02x.%02x.%02x",
+		DRIVER_VERSION >> 16,
+		(DRIVER_VERSION & 0xff00) >> 8,
+		DRIVER_VERSION & 0x00ff);
 
 	if (!i2c_check_functionality(client->adapter, I2C_FUNC_SMBUS_BYTE_DATA))
 		return -EIO;
@@ -1923,6 +2093,19 @@ static int tc35874x_probe(struct i2c_client *client,
 			GFP_KERNEL);
 	if (!state)
 		return -ENOMEM;
+
+	err = of_property_read_u32(node, RKMODULE_CAMERA_MODULE_INDEX,
+				   &state->module_index);
+	err |= of_property_read_string(node, RKMODULE_CAMERA_MODULE_FACING,
+				       &state->module_facing);
+	err |= of_property_read_string(node, RKMODULE_CAMERA_MODULE_NAME,
+				       &state->module_name);
+	err |= of_property_read_string(node, RKMODULE_CAMERA_LENS_NAME,
+				       &state->len_name);
+	if (err) {
+		dev_err(dev, "could not get module information!\n");
+		return -EINVAL;
+	}
 
 	state->i2c_client = client;
 
@@ -1943,8 +2126,8 @@ static int tc35874x_probe(struct i2c_client *client,
 	sd->flags |= V4L2_SUBDEV_FL_HAS_DEVNODE | V4L2_SUBDEV_FL_HAS_EVENTS;
 
 	/* i2c access */
-	data = i2c_rd16(sd, CHIPID) & MASK_CHIPID;
-	switch (data) {
+	i2c_rd(sd, CHIPID, (u8 __force *)&data, 2);
+	switch (data & MASK_CHIPID) {
 	case 0x0000:
 	case 0x4700:
 		break;
@@ -1955,7 +2138,7 @@ static int tc35874x_probe(struct i2c_client *client,
 	}
 
 	/* control handlers */
-	v4l2_ctrl_handler_init(&state->hdl, 4);
+	v4l2_ctrl_handler_init(&state->hdl, 6);
 
 	v4l2_ctrl_new_int_menu(&state->hdl, NULL, V4L2_CID_LINK_FREQ,
 			       0, 0, link_freq_menu_items);
@@ -1965,6 +2148,9 @@ static int tc35874x_probe(struct i2c_client *client,
 
 	state->detect_tx_5v_ctrl = v4l2_ctrl_new_std(&state->hdl, NULL,
 			V4L2_CID_DV_RX_POWER_PRESENT, 0, 1, 0, 0);
+
+	state->vblank = v4l2_ctrl_new_std(&state->hdl, &tc35874x_ctrl_ops,
+			V4L2_CID_VBLANK, 1, 8, 1, 4);
 
 	/* custom controls */
 	state->audio_sampling_rate_ctrl = v4l2_ctrl_new_custom(&state->hdl,
@@ -1985,14 +2171,23 @@ static int tc35874x_probe(struct i2c_client *client,
 	}
 
 	state->pad.flags = MEDIA_PAD_FL_SOURCE;
-	sd->entity.type = MEDIA_ENT_T_V4L2_SUBDEV_SENSOR;
-	err = media_entity_init(&sd->entity, 1, &state->pad, 0);
+	sd->entity.function = MEDIA_ENT_F_CAM_SENSOR;
+	err = media_entity_pads_init(&sd->entity, 1, &state->pad);
 	if (err < 0)
 		goto err_hdl;
 
 	state->mbus_fmt_code = MEDIA_BUS_FMT_UYVY8_2X8;
 
 	sd->dev = &client->dev;
+	memset(facing, 0, sizeof(facing));
+	if (strcmp(state->module_facing, "back") == 0)
+		facing[0] = 'b';
+	else
+		facing[0] = 'f';
+
+	snprintf(sd->name, sizeof(sd->name), "m%02d_%s_%s %s",
+		 state->module_index, facing,
+		 TC35874X_NAME, dev_name(sd->dev));
 	err = v4l2_async_register_subdev(sd);
 	if (err < 0)
 		goto err_hdl;
@@ -2028,8 +2223,7 @@ static int tc35874x_probe(struct i2c_client *client,
 	} else {
 		INIT_WORK(&state->work_i2c_poll,
 			  tc35874x_work_i2c_poll);
-		state->timer.data = (unsigned long)state;
-		state->timer.function = tc35874x_irq_poll_timer;
+		timer_setup(&state->timer, tc35874x_irq_poll_timer, 0);
 		state->timer.expires = jiffies +
 				       msecs_to_jiffies(POLL_INTERVAL_MS);
 		add_timer(&state->timer);
@@ -2096,7 +2290,7 @@ MODULE_DEVICE_TABLE(of, tc35874x_of_match);
 
 static struct i2c_driver tc35874x_driver = {
 	.driver = {
-		.name = "tc35874x",
+		.name = TC35874X_NAME,
 		.of_match_table = of_match_ptr(tc35874x_of_match),
 	},
 	.probe = tc35874x_probe,
@@ -2104,4 +2298,15 @@ static struct i2c_driver tc35874x_driver = {
 	.id_table = tc35874x_id,
 };
 
-module_i2c_driver(tc35874x_driver);
+static int __init tc35874x_driver_init(void)
+{
+	return i2c_add_driver(&tc35874x_driver);
+}
+
+static void __exit tc35874x_driver_exit(void)
+{
+	i2c_del_driver(&tc35874x_driver);
+}
+
+late_initcall(tc35874x_driver_init);
+module_exit(tc35874x_driver_exit);

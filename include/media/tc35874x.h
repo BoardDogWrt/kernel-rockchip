@@ -125,8 +125,8 @@ struct tc35874x_platform_data {
 
 /* custom controls */
 /* Audio sample rate in Hz */
-#define TC35874X_CID_AUDIO_SAMPLING_RATE (V4L2_CID_USER_TC35874X_BASE + 0)
+#define TC35874X_CID_AUDIO_SAMPLING_RATE (V4L2_CID_USER_TC358743_BASE + 0)
 /* Audio present status */
-#define TC35874X_CID_AUDIO_PRESENT       (V4L2_CID_USER_TC35874X_BASE + 1)
+#define TC35874X_CID_AUDIO_PRESENT       (V4L2_CID_USER_TC358743_BASE + 1)
 
 #endif
