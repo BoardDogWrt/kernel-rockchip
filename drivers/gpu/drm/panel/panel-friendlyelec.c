@@ -453,6 +453,36 @@ static int panel_enable(struct drm_panel *panel)
 	return 0;
 }
 
+static int panel_loader_protect(struct drm_panel *panel, bool on)
+{
+	struct panel_desc *p = to_panel_desc(panel);
+	int err;
+
+	if (!panel_is_lcd_connected()) {
+		if (panel->connector)
+			panel->connector->status = connector_status_disconnected;
+
+		return -ENODEV;
+	}
+
+	if (on) {
+		err = regulator_enable(p->supply);
+		if (err < 0) {
+			dev_err(panel->dev, "failed to enable supply: %d\n", err);
+			return err;
+		}
+
+		if (p->enable_gpio)
+			gpiod_set_value_cansleep(p->enable_gpio, 1);
+
+		p->prepared = true;
+	} else {
+		/* do nothing */
+	}
+
+	return 0;
+}
+
 static int panel_get_modes(struct drm_panel *panel)
 {
 	struct drm_connector *connector = panel->connector;
@@ -495,6 +525,7 @@ static const struct drm_panel_funcs panel_funcs = {
 	.prepare = panel_prepare,
 	.enable = panel_enable,
 	.get_modes = panel_get_modes,
+	.loader_protect = panel_loader_protect,
 };
 
 /* -------------------------------------------------------------- */

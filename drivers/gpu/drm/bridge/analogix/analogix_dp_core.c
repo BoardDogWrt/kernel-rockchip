@@ -1154,9 +1154,14 @@ analogix_dp_best_encoder(struct drm_connector *connector)
 static int analogix_dp_loader_protect(struct drm_connector *connector, bool on)
 {
 	struct analogix_dp_device *dp = to_dp(connector);
+	int ret;
 
-	if (dp->plat_data->panel)
-		drm_panel_loader_protect(dp->plat_data->panel, on);
+	if (dp->plat_data->panel) {
+		ret = drm_panel_loader_protect(dp->plat_data->panel, on);
+		if (ret == -ENODEV)
+			connector->status = connector_status_disconnected;
+	}
+
 	if (on)
 		pm_runtime_get_sync(dp->dev);
 	else
@@ -1179,7 +1184,7 @@ analogix_dp_detect(struct drm_connector *connector, bool force)
 	int ret;
 
 	if (dp->plat_data->panel)
-		return connector_status_connected;
+		return connector->status;
 
 	ret = analogix_dp_prepare_panel(dp, true, false);
 	if (ret) {
@@ -1251,6 +1256,7 @@ static int analogix_dp_bridge_attach(struct drm_bridge *bridge)
 	}
 
 	if (dp->plat_data->panel) {
+		connector->status = connector_status_connected;
 		ret = drm_panel_attach(dp->plat_data->panel, &dp->connector);
 		if (ret) {
 			DRM_ERROR("Failed to attach panel\n");
