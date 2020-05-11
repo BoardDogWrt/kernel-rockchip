@@ -141,6 +141,13 @@ static int dw_wdt_start(struct watchdog_device *wdd)
 	struct dw_wdt *dw_wdt = to_dw_wdt(wdd);
 
 	dw_wdt_set_timeout(wdd, wdd->timeout);
+
+	/*
+	 * Add an explicit pat to handle versions of the watchdog that
+	 * don't have TOPINIT.  This won't hurt on versions that have it.
+	 */
+	dw_wdt_ping(wdd);
+
 	dw_wdt_arm_system_reset(dw_wdt);
 
 	return 0;
