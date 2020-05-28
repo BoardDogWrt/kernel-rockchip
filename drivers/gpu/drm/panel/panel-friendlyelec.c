@@ -229,18 +229,25 @@ static int panel_setup_lcd(char *str)
 			if (!strcasecmp(cfg->name, str)) {
 				lcd->width = cfg->width;
 				lcd->height = cfg->height;
-				goto __ret;
+				break;
 			}
 		}
 
 		/* parse <xres>x<yres> */
-		if (sscanf(str + 4, "%dx%d", &w, &h) == 2) {
-			if (w >= 640 && w < 1920 && h >= 480 && h < 1080) {
+		if (i >=ARRAY_SIZE(panel_hdmi_modes) &&
+			sscanf(str + 4, "%dx%d", &w, &h) == 2) {
+			if (w > 1920 || h > 1080) {
+				lcd->width = w / 2;
+				lcd->height = h / 2;
+			} else if (w > 640 && h > 480) {
 				lcd->width = w;
 				lcd->height = h;
-				goto __ret;
 			}
 		}
+
+		printk("Panel: using mode %dx%d for %s\n",
+				lcd->width, lcd->height, str);
+		goto __ret;
 	}
 
 	for (i = 1; i < ARRAY_SIZE(panel_lcd_list); i++) {
@@ -252,10 +259,10 @@ static int panel_setup_lcd(char *str)
 		}
 	}
 
+	printk("Panel: %s selected\n", str);
+
 __ret:
 	panel_set_touch_id(panel_lcd_list[lcd_idx].ctp);
-
-	printk("Display: %s selected\n", str);
 	return 0;
 }
 early_param("lcd", panel_setup_lcd);
