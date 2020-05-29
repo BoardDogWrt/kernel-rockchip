@@ -15,9 +15,11 @@
 #include <linux/dma-mapping.h>
 
 struct mpp_dma_buffer {
-	struct list_head list;
-	struct mpp_dma_session *dma;
+	/* link to dma session buffer list */
+	struct list_head link;
 
+	/* dma session belong */
+	struct mpp_dma_session *dma;
 	/* DMABUF information */
 	struct dma_buf *dmabuf;
 	struct dma_buf_attachment *attach;
@@ -25,7 +27,6 @@ struct mpp_dma_buffer {
 	struct sg_table *copy_sgt;
 	enum dma_data_direction dir;
 
-	int fd;
 	dma_addr_t iova;
 	unsigned long size;
 	void *vaddr;
@@ -35,6 +36,7 @@ struct mpp_dma_buffer {
 };
 
 struct mpp_dma_session {
+	/* the buffer used in session */
 	struct list_head buffer_list;
 	/* the mutex for the above buffer list */
 	struct mutex list_mutex;
@@ -46,10 +48,25 @@ struct mpp_dma_session {
 	struct device *dev;
 };
 
+struct mpp_rk_iommu {
+	struct list_head link;
+	u32 grf_val;
+	int mmu_num;
+	u32 base_addr[2];
+	void __iomem *bases[2];
+	u32 dte_addr;
+	u32 is_paged;
+};
+
 struct mpp_iommu_info {
-	struct device	*dev;
+	struct rw_semaphore rw_sem;
+
+	struct device *dev;
+	struct platform_device *pdev;
 	struct iommu_domain *domain;
 	struct iommu_group *group;
+	struct mpp_rk_iommu *iommu;
+	iommu_fault_handler_t hdl;
 };
 
 struct mpp_dma_session *
@@ -64,6 +81,8 @@ int mpp_dma_free(struct mpp_dma_session *dma,
 struct mpp_dma_buffer *
 mpp_dma_import_fd(struct mpp_iommu_info *iommu_info,
 		  struct mpp_dma_session *dma, int fd);
+int mpp_dma_release(struct mpp_dma_session *dma,
+		    struct mpp_dma_buffer *buffer);
 int mpp_dma_release_fd(struct mpp_dma_session *dma, int fd);
 
 int mpp_dma_unmap_kernel(struct mpp_dma_session *dma,
@@ -77,5 +96,10 @@ int mpp_iommu_remove(struct mpp_iommu_info *info);
 
 int mpp_iommu_attach(struct mpp_iommu_info *info);
 int mpp_iommu_detach(struct mpp_iommu_info *info);
+
+bool mpp_iommu_is_paged(struct mpp_rk_iommu *iommu);
+u32 mpp_iommu_get_dte_addr(struct mpp_rk_iommu *iommu);
+int mpp_iommu_enable(struct mpp_rk_iommu *iommu);
+int mpp_iommu_disable(struct mpp_rk_iommu *iommu);
 
 #endif

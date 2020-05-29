@@ -469,9 +469,15 @@
 
 		pmu_pvtm: pmu-pvtm {
 			compatible = "rockchip,px30-pmu-pvtm";
-			clocks = <&pmucru SCLK_PVTM_PMU>;
-			clock-names = "pmu";
+			#address-cells = <1>;
+			#size-cells = <0>;
 			status = "okay";
+
+			pvtm@1 {
+				reg = <1>;
+				clocks = <&pmucru SCLK_PVTM_PMU>;
+				clock-names = "clk";
+			};
 		};
 	};
 
@@ -690,9 +696,15 @@
 
 		pvtm: pvtm {
 			compatible = "rockchip,px30-pvtm";
-			clocks = <&cru SCLK_PVTM>;
-			clock-names = "core";
+			#address-cells = <1>;
+			#size-cells = <0>;
 			status = "okay";
+
+			pvtm@0 {
+				reg = <0>;
+				clocks = <&cru SCLK_PVTM>;
+				clock-names = "clk";
+			};
 		};
 	};
 
@@ -1408,7 +1420,7 @@
 	};
 
 	vdpu: vdpu@ff442400 {
-		compatible = "rockchip,vpu-decoder-v2";
+		compatible = "rockchip,vpu-decoder-px30";
 		reg = <0x0 0xff442400 0x0 0x400>;
 		interrupts = <GIC_SPI 79 IRQ_TYPE_LEVEL_HIGH>;
 		interrupt-names = "irq_dec";
@@ -1437,7 +1449,7 @@
 	};
 
 	vepu: vepu@ff442000 {
-		compatible = "rockchip,vpu-encoder-v2";
+		compatible = "rockchip,vpu-encoder-px30";
 		reg = <0x0 0xff442000 0x0 0x400>;
 		interrupts = <GIC_SPI 80 IRQ_TYPE_LEVEL_HIGH>;
 		interrupt-names = "irq_enc";
@@ -1454,7 +1466,7 @@
 	};
 
 	hevc: hevc@ff440000 {
-		compatible = "rockchip,hevc-decoder";
+		compatible = "rockchip,hevc-decoder-px30";
 		reg = <0x0 0xff440000 0x0 0x400>;
 		interrupts = <GIC_SPI 49 IRQ_TYPE_LEVEL_HIGH>;
 		interrupt-names = "irq_dec";

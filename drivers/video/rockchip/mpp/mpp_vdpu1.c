@@ -60,7 +60,10 @@
 
 #define VDPU1_REG_SYS_CTRL		0x00c
 #define VDPU1_REG_SYS_CTRL_INDEX	(3)
+#define VDPU1_RGE_WIDTH_INDEX		(4)
 #define	VDPU1_GET_FORMAT(x)		(((x) >> 28) & 0xf)
+#define VDPU1_GET_PROD_NUM(x)		(((x) >> 16) & 0xffff)
+#define VDPU1_GET_WIDTH(x)		(((x) & 0xff800000) >> 19)
 #define	VDPU1_FMT_H264D			0
 #define	VDPU1_FMT_MPEG4D		1
 #define	VDPU1_FMT_H263D			2
@@ -87,9 +90,13 @@
 #define to_vdpu_dev(dev)		\
 		container_of(dev, struct vdpu_dev, mpp)
 
+enum VPUD1_HW_ID {
+	VDPU1_ID_0102 = 0x0102,
+	VDPU1_ID_9190 = 0x6731,
+};
+
 struct vdpu_task {
 	struct mpp_task mpp_task;
-	struct mpp_hw_info *hw_info;
 	/* enable of post process */
 	bool pp_enable;
 
@@ -119,7 +126,6 @@ struct vdpu_dev {
 
 	struct reset_control *rst_a;
 	struct reset_control *rst_h;
-	struct vdpu_task *current_task;
 };
 
 static struct mpp_hw_info vdpu_v1_hw_info = {
@@ -278,6 +284,7 @@ static int vdpu_extract_task_msg(struct vdpu_task *task,
 	int ret;
 	struct mpp_request *req;
 	struct reg_offset_info *off_inf = &task->off_inf;
+	struct mpp_hw_info *hw_info = task->mpp_task.hw_info;
 
 	for (i = 0; i < msgs->req_cnt; i++) {
 		u32 off_s, off_e;
@@ -288,8 +295,8 @@ static int vdpu_extract_task_msg(struct vdpu_task *task,
 
 		switch (req->cmd) {
 		case MPP_CMD_SET_REG_WRITE: {
-			off_s = task->hw_info->reg_start * sizeof(u32);
-			off_e = task->hw_info->reg_end * sizeof(u32);
+			off_s = hw_info->reg_start * sizeof(u32);
+			off_e = hw_info->reg_end * sizeof(u32);
 			ret = mpp_check_req(req, 0, sizeof(task->reg),
 					    off_s, off_e);
 			if (ret)
@@ -303,8 +310,8 @@ static int vdpu_extract_task_msg(struct vdpu_task *task,
 			       req, sizeof(*req));
 		} break;
 		case MPP_CMD_SET_REG_READ: {
-			off_s = task->hw_info->reg_start * sizeof(u32);
-			off_e = task->hw_info->reg_end * sizeof(u32);
+			off_s = hw_info->reg_start * sizeof(u32);
+			off_e = hw_info->reg_end * sizeof(u32);
 			ret = mpp_check_req(req, 0, sizeof(task->reg),
 					    off_s, off_e);
 			if (ret)
@@ -341,7 +348,8 @@ static void *vdpu_alloc_task(struct mpp_session *session,
 			     struct mpp_task_msgs *msgs)
 {
 	int ret;
-	struct vdpu_task *task;
+	struct mpp_task *mpp_task = NULL;
+	struct vdpu_task *task = NULL;
 	struct mpp_dev *mpp = session->mpp;
 
 	mpp_debug_enter();
@@ -350,14 +358,15 @@ static void *vdpu_alloc_task(struct mpp_session *session,
 	if (!task)
 		return NULL;
 
-	mpp_task_init(session, &task->mpp_task);
-
+	mpp_task = &task->mpp_task;
+	mpp_task_init(session, mpp_task);
 	if (session->device_type == MPP_DEVICE_VDPU1_PP) {
 		task->pp_enable = true;
-		task->hw_info = &vdpu_pp_v1_hw_info;
+		mpp_task->hw_info = &vdpu_pp_v1_hw_info;
 	} else {
-		task->hw_info = mpp->var->hw_info;
+		mpp_task->hw_info = mpp->var->hw_info;
 	}
+	mpp_task->reg = task->reg;
 	/* extract reqs for current task */
 	ret = vdpu_extract_task_msg(task, msgs);
 	if (ret)
@@ -372,18 +381,14 @@ static void *vdpu_alloc_task(struct mpp_session *session,
 
 	mpp_debug_leave();
 
-	return &task->mpp_task;
+	return mpp_task;
 
 fail:
-	mpp_task_finalize(session, &task->mpp_task);
+	mpp_task_dump_mem_region(mpp, mpp_task);
+	mpp_task_dump_reg(mpp, mpp_task);
+	mpp_task_finalize(session, mpp_task);
 	kfree(task);
 	return NULL;
-}
-
-static int vdpu_prepare(struct mpp_dev *mpp,
-			struct mpp_task *task)
-{
-	return -EINVAL;
 }
 
 static int vdpu_run(struct mpp_dev *mpp,
@@ -391,18 +396,14 @@ static int vdpu_run(struct mpp_dev *mpp,
 {
 	u32 i;
 	u32 reg_en;
-	struct vdpu_task *task = NULL;
-	struct vdpu_dev *dec = NULL;
+	struct vdpu_task *task = to_vdpu_task(mpp_task);
 
 	mpp_debug_enter();
-
-	task = to_vdpu_task(mpp_task);
-	dec = to_vdpu_dev(mpp);
 
 	/* clear cache */
 	mpp_write_relaxed(mpp, VDPU1_REG_CLR_CACHE_BASE, 1);
 	/* set registers for hardware */
-	reg_en = task->hw_info->reg_en;
+	reg_en = mpp_task->hw_info->reg_en;
 	for (i = 0; i < task->w_req_cnt; i++) {
 		struct mpp_request *req = &task->w_reqs[i];
 		int s = req->offset / sizeof(u32);
@@ -411,7 +412,7 @@ static int vdpu_run(struct mpp_dev *mpp,
 		mpp_write_req(mpp, task->reg, s, e, reg_en);
 	}
 	/* init current task */
-	dec->current_task = task;
+	mpp->cur_task = mpp_task;
 	/* Flush the register before the start the device */
 	wmb();
 	mpp_write(mpp, VDPU1_REG_DEC_INT_EN,
@@ -590,6 +591,51 @@ static int vdpu_get_freq(struct mpp_dev *mpp,
 	return 0;
 }
 
+static int vdpu_probe_width(struct mpp_dev *mpp,
+			    struct mpp_task *mpp_task)
+{
+	u32 width = 0;
+	struct vdpu_task *task = to_vdpu_task(mpp_task);
+	u32 prod_num = VDPU1_GET_PROD_NUM(mpp->var->hw_info->hw_id);
+
+	switch (prod_num) {
+	case VDPU1_ID_0102:
+	case VDPU1_ID_9190:
+		width = VDPU1_GET_WIDTH(task->reg[VDPU1_RGE_WIDTH_INDEX]);
+		break;
+	}
+
+	return width;
+}
+
+static int vdpu_3288_get_freq(struct mpp_dev *mpp,
+			      struct mpp_task *mpp_task)
+{
+	struct vdpu_task *task = to_vdpu_task(mpp_task);
+	u32 width = vdpu_probe_width(mpp, mpp_task);
+
+	if (width > 2560)
+		task->aclk_freq = 600;
+	else
+		task->aclk_freq = 300;
+
+	return 0;
+}
+
+static int vdpu_3368_get_freq(struct mpp_dev *mpp,
+			      struct mpp_task *mpp_task)
+{
+	struct vdpu_task *task = to_vdpu_task(mpp_task);
+	u32 width = vdpu_probe_width(mpp, mpp_task);
+
+	if (width > 2560)
+		task->aclk_freq = 600;
+	else
+		task->aclk_freq = 300;
+
+	return 0;
+}
+
 static int vdpu_set_freq(struct mpp_dev *mpp,
 			 struct mpp_task *mpp_task)
 {
@@ -632,19 +678,16 @@ static int vdpu_isr(struct mpp_dev *mpp)
 {
 	u32 err_mask;
 	struct vdpu_task *task = NULL;
-	struct mpp_task *mpp_task = NULL;
-	struct vdpu_dev *dec = to_vdpu_dev(mpp);
+	struct mpp_task *mpp_task = mpp->cur_task;
 
 	/* FIXME use a spin lock here */
-	task = dec->current_task;
-	if (!task) {
-		dev_err(dec->mpp.dev, "no current task\n");
+	if (!mpp_task) {
+		dev_err(mpp->dev, "no current task\n");
 		return IRQ_HANDLED;
 	}
-
-	mpp_task = &task->mpp_task;
 	mpp_time_diff(mpp_task);
-	dec->current_task = NULL;
+	mpp->cur_task = NULL;
+	task = to_vdpu_task(mpp_task);
 	task->irq_status = mpp->irq_status;
 	mpp_debug(DEBUG_IRQ_STATUS, "irq_status: %08x\n",
 		  task->irq_status);
@@ -698,9 +741,28 @@ static struct mpp_hw_ops vdpu_v1_hw_ops = {
 	.reset = vdpu_reset,
 };
 
+static struct mpp_hw_ops vdpu_3288_hw_ops = {
+	.init = vdpu_init,
+	.power_on = vdpu_power_on,
+	.power_off = vdpu_power_off,
+	.get_freq = vdpu_3288_get_freq,
+	.set_freq = vdpu_set_freq,
+	.reduce_freq = vdpu_reduce_freq,
+	.reset = vdpu_reset,
+};
+
+static struct mpp_hw_ops vdpu_3368_hw_ops = {
+	.init = vdpu_init,
+	.power_on = vdpu_power_on,
+	.power_off = vdpu_power_off,
+	.get_freq = vdpu_3368_get_freq,
+	.set_freq = vdpu_set_freq,
+	.reduce_freq = vdpu_reduce_freq,
+	.reset = vdpu_reset,
+};
+
 static struct mpp_dev_ops vdpu_v1_dev_ops = {
 	.alloc_task = vdpu_alloc_task,
-	.prepare = vdpu_prepare,
 	.run = vdpu_run,
 	.irq = vdpu_irq,
 	.isr = vdpu_isr,
@@ -717,6 +779,22 @@ static const struct mpp_dev_var vdpu_v1_data = {
 	.dev_ops = &vdpu_v1_dev_ops,
 };
 
+static const struct mpp_dev_var vdpu_3288_data = {
+	.device_type = MPP_DEVICE_VDPU1,
+	.hw_info = &vdpu_v1_hw_info,
+	.trans_info = vdpu_v1_trans,
+	.hw_ops = &vdpu_3288_hw_ops,
+	.dev_ops = &vdpu_v1_dev_ops,
+};
+
+static const struct mpp_dev_var vdpu_3368_data = {
+	.device_type = MPP_DEVICE_VDPU1,
+	.hw_info = &vdpu_v1_hw_info,
+	.trans_info = vdpu_v1_trans,
+	.hw_ops = &vdpu_3368_hw_ops,
+	.dev_ops = &vdpu_v1_dev_ops,
+};
+
 static const struct mpp_dev_var avsd_plus_data = {
 	.device_type = MPP_DEVICE_AVSPLUS_DEC,
 	.hw_info = &vdpu_v1_hw_info,
@@ -729,6 +807,14 @@ static const struct of_device_id mpp_vdpu1_dt_match[] = {
 	{
 		.compatible = "rockchip,vpu-decoder-v1",
 		.data = &vdpu_v1_data,
+	},
+	{
+		.compatible = "rockchip,vpu-decoder-rk3288",
+		.data = &vdpu_3288_data,
+	},
+	{
+		.compatible = "rockchip,vpu-decoder-rk3368",
+		.data = &vdpu_3368_data,
 	},
 	{
 		.compatible = "rockchip,avs-plus-decoder",
@@ -810,7 +896,7 @@ static void vdpu_shutdown(struct platform_device *pdev)
 
 	atomic_inc(&mpp->srv->shutdown_request);
 	ret = readx_poll_timeout(atomic_read,
-				 &mpp->total_running,
+				 &mpp->task_count,
 				 val, val == 0, 20000, 200000);
 	if (ret == -ETIMEDOUT)
 		dev_err(dev, "wait total running time out\n");

@@ -33,6 +33,7 @@
 #include <linux/pm_runtime.h>
 #include <linux/soc/rockchip/rk_vendor_storage.h>
 #include "stmmac_platform.h"
+#include "dwmac-rk-tool.h"
 
 struct rk_priv_data;
 struct rk_gmac_ops {
@@ -1293,14 +1294,17 @@ static int rk_gmac_clk_init(struct plat_stmmacenet_data *plat)
 			clk_set_rate(bsp_priv->clk_mac, 50000000);
 	}
 
-	if (plat->phy_node && bsp_priv->integrated_phy) {
+	if (plat->phy_node) {
 		bsp_priv->clk_phy = of_clk_get(plat->phy_node, 0);
-		if (IS_ERR(bsp_priv->clk_phy)) {
-			ret = PTR_ERR(bsp_priv->clk_phy);
-			dev_err(dev, "Cannot get PHY clock: %d\n", ret);
-			return -EINVAL;
+		/* If it is not integrated_phy, clk_phy is optional */
+		if (bsp_priv->integrated_phy) {
+			if (IS_ERR(bsp_priv->clk_phy)) {
+				ret = PTR_ERR(bsp_priv->clk_phy);
+				dev_err(dev, "Cannot get PHY clock: %d\n", ret);
+				return -EINVAL;
+			}
+			clk_set_rate(bsp_priv->clk_phy, 50000000);
 		}
-		clk_set_rate(bsp_priv->clk_phy, 50000000);
 	}
 
 	return 0;
@@ -1569,6 +1573,40 @@ static void rk_fix_speed(void *priv, unsigned int speed)
 	}
 }
 
+void dwmac_rk_set_rgmii_delayline(struct stmmac_priv *priv,
+				  int tx_delay, int rx_delay)
+{
+	struct rk_priv_data *bsp_priv = priv->plat->bsp_priv;
+
+	if (bsp_priv->ops->set_to_rgmii) {
+		bsp_priv->ops->set_to_rgmii(bsp_priv, tx_delay, rx_delay);
+		bsp_priv->tx_delay = tx_delay;
+		bsp_priv->rx_delay = rx_delay;
+	}
+}
+EXPORT_SYMBOL(dwmac_rk_set_rgmii_delayline);
+
+void dwmac_rk_get_rgmii_delayline(struct stmmac_priv *priv,
+				  int *tx_delay, int *rx_delay)
+{
+	struct rk_priv_data *bsp_priv = priv->plat->bsp_priv;
+
+	if (!bsp_priv->ops->set_to_rgmii)
+		return;
+
+	*tx_delay = bsp_priv->tx_delay;
+	*rx_delay = bsp_priv->rx_delay;
+}
+EXPORT_SYMBOL(dwmac_rk_get_rgmii_delayline);
+
+int dwmac_rk_get_phy_interface(struct stmmac_priv *priv)
+{
+	struct rk_priv_data *bsp_priv = priv->plat->bsp_priv;
+
+	return bsp_priv->phy_iface;
+}
+EXPORT_SYMBOL(dwmac_rk_get_phy_interface);
+
 void __weak rk_devinfo_get_eth_mac(u8 *mac)
 {
 }
@@ -1648,6 +1686,10 @@ static int rk_gmac_probe(struct platform_device *pdev)
 	if (ret)
 		goto err_gmac_powerdown;
 
+	ret = dwmac_rk_create_loopback_sysfs(&pdev->dev);
+	if (ret)
+		goto err_gmac_powerdown;
+
 	return 0;
 
 err_gmac_powerdown:
@@ -1664,6 +1706,7 @@ static int rk_gmac_remove(struct platform_device *pdev)
 	int ret = stmmac_dvr_remove(&pdev->dev);
 
 	rk_gmac_powerdown(bsp_priv);
+	dwmac_rk_remove_loopback_sysfs(&pdev->dev);
 
 	return ret;
 }

@@ -110,10 +110,10 @@
 			3               31
 		>;
 		rockchip,pvtm-voltage-sel = <
-			0        14300   0
-			14301    15000   1
-			15001    16000   2
-			16001    99999   3
+			0        15300   0
+			15301    16000   1
+			16001    17000   2
+			17001    99999   3
 		>;
 		rockchip,pvtm-freq = <408000>;
 		rockchip,pvtm-volt = <1000000>;
@@ -1155,11 +1155,24 @@
 
 		pvtm: pvtm {
 			compatible = "rockchip,rk3288-pvtm";
-			clocks = <&cru SCLK_PVTM_CORE>, <&cru SCLK_PVTM_GPU>;
-			clock-names = "core", "gpu";
-			resets = <&cru SRST_CORE_PVTM>, <&cru SRST_GPU_PVTM>;
-			reset-names = "core", "gpu";
+			#address-cells = <1>;
+			#size-cells = <0>;
 			status = "okay";
+
+			pvtm@0 {
+				reg = <0>;
+				clocks = <&cru SCLK_PVTM_CORE>;
+				clock-names = "clk";
+				resets = <&cru SRST_CORE_PVTM>;
+				reset-names = "rst";
+			};
+			pvtm@1 {
+				reg = <1>;
+				clocks = <&cru SCLK_PVTM_GPU>;
+				clock-names = "clk";
+				resets = <&cru SRST_GPU_PVTM>;
+				reset-names = "rst";
+			};
 		};
 	};
 
@@ -1668,7 +1681,7 @@
 	};
 
 	vdpu: vdpu@ff9a0400 {
-		compatible = "rockchip,vpu-decoder-v1";
+		compatible = "rockchip,vpu-decoder-rk3288", "rockchip,vpu-decoder-v1";
 		reg = <0x0 0xff9a0400 0x0 0x400>;
 		interrupts = <GIC_SPI 10 IRQ_TYPE_LEVEL_HIGH>;
 		interrupt-names = "irq_dec";

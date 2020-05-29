@@ -45,9 +45,9 @@ static int sfc_erase_mtd(struct mtd_info *mtd, struct erase_info *instr)
 	while (len) {
 		ret = sfc_nand_erase_block(0, addr >> mtd->writesize_shift);
 		if (ret) {
-			rkflash_print_dio("sfc_nand_erase addr 0x%x ret=%d\n",
-					  addr, ret);
-			instr->state = MTD_ERASE_FAILED;
+			rkflash_print_error("%s fail addr 0x%x ret=%d\n",
+					    __func__, addr, ret);
+			instr->fail_addr = addr;
 			mutex_unlock(p_dev->lock);
 			return -EIO;
 		}
@@ -57,8 +57,6 @@ static int sfc_erase_mtd(struct mtd_info *mtd, struct erase_info *instr)
 	}
 
 	mutex_unlock(p_dev->lock);
-
-	instr->state = MTD_ERASE_DONE;
 
 	return 0;
 }
@@ -190,18 +188,26 @@ static int sfc_markbad_mtd(struct mtd_info *mtd, loff_t ofs)
 	/* Erase block before marking it bad. */
 	ret = sfc_nand_erase_block(0, ofs >> mtd->writesize_shift);
 	if (ret)
-		goto out;
+		rkflash_print_error("%s erase fail ofs 0x%llx ret=%d\n",
+				    __func__, ofs, ret);
+
 	/* Mark bad. */
 	ret = sfc_nand_mark_bad_block(0, ofs >> mtd->writesize_shift);
 	if (ret)
-		goto out;
+		rkflash_print_error("%s mark fail ofs 0x%llx ret=%d\n",
+				    __func__, ofs, ret);
 
-out:
-	mutex_unlock(p_dev->lock);
-	if (!ret) {
+	/* Mark bad recheck */
+	if (sfc_nand_check_bad_block(0, ofs >> mtd->writesize_shift)) {
 		mtd->ecc_stats.badblocks++;
+		ret = 0;
+	} else {
+		rkflash_print_error("%s recheck fail ofs 0x%llx ret=%d\n",
+				    __func__, ofs, ret);
 		ret = -EIO;
 	}
+
+	mutex_unlock(p_dev->lock);
 
 	return ret;
 }

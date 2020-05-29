@@ -1990,7 +1990,7 @@ static void dw_mci_set_xfer_timeout(struct dw_mci *host)
 				   host->bus_hz);
 
 	/* add a bit spare time */
-	xfer_ms += 10;
+	xfer_ms += 100;
 
 	spin_lock_irqsave(&host->irq_lock, irqflags);
 	if (!test_bit(EVENT_XFER_COMPLETE, &host->pending_events))
@@ -3123,7 +3123,7 @@ exit:
 
 static void dw_mci_xfer_timer(struct timer_list *t)
 {
-	struct dw_mci *host = from_timer(host, t, dto_timer);
+	struct dw_mci *host = from_timer(host, t, xfer_timer);
 	unsigned long irqflags;
 
 	spin_lock_irqsave(&host->irq_lock, irqflags);

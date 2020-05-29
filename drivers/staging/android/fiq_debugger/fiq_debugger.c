@@ -54,6 +54,10 @@
 #include "fiq_debugger_priv.h"
 #include "fiq_debugger_ringbuf.h"
 
+#ifdef CONFIG_ROCKCHIP_DEBUG
+#include "../../../soc/rockchip/rockchip_debug.h"
+#endif
+
 #define DEBUG_MAX 64
 #define CMD_COUNT 0x0f
 #define MAX_UNHANDLED_FIQ_COUNT 1000000
@@ -489,6 +493,9 @@ static char cmd_buf[][16] = {
 		{"reboot"},
 		{"irqs"},
 		{"kmsg"},
+#ifdef CONFIG_ROCKCHIP_DEBUG
+		{"pcsr"},
+#endif
 		{"version"},
 		{"sleep"},
 		{"nosleep"},
@@ -515,6 +522,9 @@ static void fiq_debugger_help(struct fiq_debugger_state *state)
 				" reset [<c>]   Hard reset with command <c>\n"
 				" irqs          Interupt status\n");
 	fiq_debugger_printf(&state->output,
+#ifdef CONFIG_ROCKCHIP_DEBUG
+				" pcsr          Dump all cpus pc by DBGPCSR\n"
+#endif
 				" kmsg          Kernel log\n"
 				" version       Kernel version\n");
 	fiq_debugger_printf(&state->output,
@@ -623,6 +633,10 @@ static bool fiq_debugger_fiq_exec(struct fiq_debugger_state *state,
 		fiq_debugger_dump_irqs(state);
 	} else if (!strcmp(cmd, "kmsg")) {
 		fiq_debugger_dump_kernel_log(state);
+#ifdef CONFIG_ROCKCHIP_DEBUG
+	} else if (!strcmp(cmd, "pcsr")) {
+		rockchip_debug_dump_pcsr(&state->output);
+#endif
 	} else if (!strcmp(cmd, "version")) {
 		fiq_debugger_printf(&state->output, "%s\n", linux_banner);
 	} else if (!strcmp(cmd, "sleep")) {
@@ -869,6 +883,9 @@ static bool fiq_debugger_handle_uart_interrupt(struct fiq_debugger_state *state,
 	static int last_c;
 	int count = 0;
 	bool signal_helper = false;
+
+	if (state->current_cpu == -1)
+		state->current_cpu = this_cpu;
 
 	if (this_cpu != state->current_cpu) {
 		if (state->in_fiq)
@@ -1395,6 +1412,7 @@ static int fiq_debugger_probe(struct platform_device *pdev)
 	state->no_sleep = initial_no_sleep;
 	state->debug_enable = initial_debug_enable;
 	state->console_enable = initial_console_enable;
+	state->current_cpu = -1;
 
 	state->fiq = fiq;
 	state->uart_irq = uart_irq;
@@ -1524,6 +1542,10 @@ console_out:
 	register_console(&state->console);
 	fiq_debugger_tty_init_one(state);
 #endif
+
+	/* switch to cpu0 default */
+	fiq_debugger_switch_cpu(state, 0);
+
 	return 0;
 
 err_register_irq:

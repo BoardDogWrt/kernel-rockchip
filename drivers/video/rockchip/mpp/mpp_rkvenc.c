@@ -32,6 +32,8 @@
 /* The maximum registers number of all the version */
 #define RKVENC_REG_L1_NUM			780
 #define RKVENC_REG_L2_NUM			200
+#define RKVENC_REG_START_INDEX			0
+#define RKVENC_REG_END_INDEX			131
 /* rkvenc register info */
 #define RKVENC_REG_NUM				112
 #define RKVENC_REG_HW_ID_INDEX			0
@@ -116,7 +118,6 @@ enum RKVENC_MODE {
 
 struct rkvenc_task {
 	struct mpp_task mpp_task;
-	struct mpp_hw_info *hw_info;
 
 	int link_flags;
 	int fmt;
@@ -159,10 +160,6 @@ struct rkvenc_dev {
 	struct reset_control *rst_a;
 	struct reset_control *rst_h;
 	struct reset_control *rst_core;
-
-	void *current_task;
-
-	struct mpp_dma_buffer *buffer;
 };
 
 struct link_table_elem {
@@ -176,6 +173,8 @@ static struct mpp_hw_info rkvenc_hw_info = {
 	.reg_num = RKVENC_REG_NUM,
 	.reg_id = RKVENC_REG_HW_ID_INDEX,
 	.reg_en = RKVENC_ENC_START_INDEX,
+	.reg_start = RKVENC_REG_START_INDEX,
+	.reg_end = RKVENC_REG_END_INDEX,
 };
 
 /*
@@ -267,9 +266,8 @@ static int rkvenc_extract_task_msg(struct rkvenc_task *task,
 			       req, sizeof(*req));
 		} break;
 		case MPP_CMD_SET_REG_ADDR_OFFSET: {
-			int off = off_inf->cnt * sizeof(off_inf->elem[0]);
-
-			ret = mpp_check_req(req, off, sizeof(off_inf->elem),
+			ret = mpp_check_req(req, req->offset,
+					    sizeof(off_inf->elem),
 					    0, sizeof(off_inf->elem));
 			if (ret)
 				return ret;
@@ -295,8 +293,8 @@ static void *rkvenc_alloc_task(struct mpp_session *session,
 			       struct mpp_task_msgs *msgs)
 {
 	int ret;
-
-	struct rkvenc_task *task;
+	struct mpp_task *mpp_task = NULL;
+	struct rkvenc_task *task = NULL;
 	struct mpp_dev *mpp = session->mpp;
 
 	mpp_debug_enter();
@@ -305,9 +303,10 @@ static void *rkvenc_alloc_task(struct mpp_session *session,
 	if (!task)
 		return NULL;
 
-	mpp_task_init(session, &task->mpp_task);
-	task->hw_info = mpp->var->hw_info;
-
+	mpp_task = &task->mpp_task;
+	mpp_task_init(session, mpp_task);
+	mpp_task->hw_info = mpp->var->hw_info;
+	mpp_task->reg = task->reg;
 	/* extract reqs for current task */
 	ret = rkvenc_extract_task_msg(task, msgs);
 	if (ret)
@@ -315,29 +314,25 @@ static void *rkvenc_alloc_task(struct mpp_session *session,
 	/* process fd in register */
 	if (!(msgs->flags & MPP_FLAGS_REG_FD_NO_TRANS)) {
 		ret = mpp_translate_reg_address(session,
-						&task->mpp_task, task->fmt,
+						mpp_task, task->fmt,
 						task->reg, &task->off_inf);
 		if (ret)
 			goto fail;
-		mpp_translate_reg_offset_info(&task->mpp_task,
+		mpp_translate_reg_offset_info(mpp_task,
 					      &task->off_inf, task->reg);
 	}
 	task->link_mode = RKVENC_MODE_ONEFRAME;
 
 	mpp_debug_leave();
 
-	return &task->mpp_task;
+	return mpp_task;
 
 fail:
-	mpp_task_finalize(session, &task->mpp_task);
+	mpp_task_dump_mem_region(mpp, mpp_task);
+	mpp_task_dump_reg(mpp, mpp_task);
+	mpp_task_finalize(session, mpp_task);
 	kfree(task);
 	return NULL;
-}
-
-static int rkvenc_prepare(struct mpp_dev *mpp,
-			  struct mpp_task *task)
-{
-	return -EINVAL;
 }
 
 static int rkvenc_write_req_l2(struct mpp_dev *mpp,
@@ -371,7 +366,6 @@ static int rkvenc_read_req_l2(struct mpp_dev *mpp,
 static int rkvenc_run(struct mpp_dev *mpp,
 		      struct mpp_task *mpp_task)
 {
-	struct rkvenc_dev *enc = to_rkvenc_dev(mpp);
 	struct rkvenc_task *task = to_rkvenc_task(mpp_task);
 
 	mpp_debug_enter();
@@ -382,8 +376,15 @@ static int rkvenc_run(struct mpp_dev *mpp,
 	case RKVENC_MODE_ONEFRAME: {
 		int i;
 		struct mpp_request *req;
-		u32 reg_en = task->hw_info->reg_en;
+		u32 reg_en = mpp_task->hw_info->reg_en;
 
+		/*
+		 * Tips: ensure osd plt clock is 0 before setting register,
+		 * otherwise, osd setting will not work
+		 */
+		mpp_write_relaxed(mpp, RKVENC_OSD_CFG_BASE, 0);
+		/* ensure clear finish */
+		wmb();
 		for (i = 0; i < task->w_req_cnt; i++) {
 			int s, e;
 
@@ -403,7 +404,7 @@ static int rkvenc_run(struct mpp_dev *mpp,
 			}
 		}
 		/* init current task */
-		enc->current_task = task;
+		mpp->cur_task = mpp_task;
 		/* Flush the register before the start the device */
 		wmb();
 		mpp_write(mpp, RKVENC_ENC_START_BASE, task->reg[reg_en]);
@@ -440,21 +441,18 @@ static int rkvenc_irq(struct mpp_dev *mpp)
 static int rkvenc_isr(struct mpp_dev *mpp)
 {
 	struct rkvenc_task *task = NULL;
-	struct mpp_task *mpp_task = NULL;
-	struct rkvenc_dev *enc = to_rkvenc_dev(mpp);
+	struct mpp_task *mpp_task = mpp->cur_task;
 
 	/* FIXME use a spin lock here */
-	task = (struct rkvenc_task *)enc->current_task;
-	if (!task) {
-		dev_err(enc->mpp.dev, "no current task\n");
+	if (!mpp_task) {
+		dev_err(mpp->dev, "no current task\n");
 		return IRQ_HANDLED;
 	}
 
-	mpp_task = &task->mpp_task;
 	mpp_time_diff(mpp_task);
-	enc->current_task = NULL;
+	mpp->cur_task = NULL;
+	task = to_rkvenc_task(mpp_task);
 	task->irq_status = mpp->irq_status;
-
 	mpp_debug(DEBUG_IRQ_STATUS, "irq_status: %08x\n", task->irq_status);
 
 	if (task->irq_status & RKVENC_INT_ERROR_BITS) {
@@ -758,7 +756,6 @@ static struct mpp_hw_ops rkvenc_hw_ops = {
 
 static struct mpp_dev_ops rkvenc_dev_ops = {
 	.alloc_task = rkvenc_alloc_task,
-	.prepare = rkvenc_prepare,
 	.run = rkvenc_run,
 	.irq = rkvenc_irq,
 	.isr = rkvenc_isr,
@@ -856,7 +853,7 @@ static void rkvenc_shutdown(struct platform_device *pdev)
 
 	atomic_inc(&mpp->srv->shutdown_request);
 	ret = readx_poll_timeout(atomic_read,
-				 &mpp->total_running,
+				 &mpp->task_count,
 				 val, val == 0, 1000, 200000);
 	if (ret == -ETIMEDOUT)
 		dev_err(dev, "wait total running time out\n");

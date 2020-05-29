@@ -500,6 +500,65 @@ static int rockchip_pd_power_off(struct generic_pm_domain *domain)
 	return rockchip_pd_power(pd, false);
 }
 
+int rockchip_pmu_pd_on(struct device *dev)
+{
+	struct generic_pm_domain *genpd;
+	struct rockchip_pm_domain *pd;
+
+	if (IS_ERR_OR_NULL(dev))
+		return -EINVAL;
+
+	if (IS_ERR_OR_NULL(dev->pm_domain))
+		return -EINVAL;
+
+	genpd = pd_to_genpd(dev->pm_domain);
+	pd = to_rockchip_pd(genpd);
+
+	return rockchip_pd_power(pd, true);
+}
+EXPORT_SYMBOL(rockchip_pmu_pd_on);
+
+int rockchip_pmu_pd_off(struct device *dev)
+{
+	struct generic_pm_domain *genpd;
+	struct rockchip_pm_domain *pd;
+
+	if (IS_ERR_OR_NULL(dev))
+		return -EINVAL;
+
+	if (IS_ERR_OR_NULL(dev->pm_domain))
+		return -EINVAL;
+
+	genpd = pd_to_genpd(dev->pm_domain);
+	pd = to_rockchip_pd(genpd);
+
+	return rockchip_pd_power(pd, false);
+}
+EXPORT_SYMBOL(rockchip_pmu_pd_off);
+
+bool rockchip_pmu_pd_is_on(struct device *dev)
+{
+	struct generic_pm_domain *genpd;
+	struct rockchip_pm_domain *pd;
+	bool is_on;
+
+	if (IS_ERR_OR_NULL(dev))
+		return false;
+
+	if (IS_ERR_OR_NULL(dev->pm_domain))
+		return false;
+
+	genpd = pd_to_genpd(dev->pm_domain);
+	pd = to_rockchip_pd(genpd);
+
+	rockchip_pmu_lock(pd);
+	is_on = rockchip_pmu_domain_is_on(pd);
+	rockchip_pmu_unlock(pd);
+
+	return is_on;
+}
+EXPORT_SYMBOL(rockchip_pmu_pd_is_on);
+
 static int rockchip_pd_attach_dev(struct generic_pm_domain *genpd,
 				  struct device *dev)
 {
@@ -1096,7 +1155,7 @@ static const struct rockchip_domain_info rk3399_pm_domains[] = {
 	[RK3399_PD_VOPL]	= DOMAIN_RK3399_PROTECT(0, 	 0,	  BIT(8),  false),
 	[RK3399_PD_ISP0]	= DOMAIN_RK3399(BIT(22), BIT(22), BIT(9),  false),
 	[RK3399_PD_ISP1]	= DOMAIN_RK3399(BIT(23), BIT(23), BIT(10), false),
-	[RK3399_PD_HDCP]	= DOMAIN_RK3399(BIT(24), BIT(24), BIT(11), false),
+	[RK3399_PD_HDCP]	= DOMAIN_RK3399_PROTECT(BIT(24), BIT(24), BIT(11), false),
 	[RK3399_PD_GMAC]	= DOMAIN_RK3399(BIT(25), BIT(25), BIT(23), true),
 	[RK3399_PD_EMMC]	= DOMAIN_RK3399(BIT(26), BIT(26), BIT(24), true),
 	[RK3399_PD_USB3]	= DOMAIN_RK3399(BIT(27), BIT(27), BIT(12), true),

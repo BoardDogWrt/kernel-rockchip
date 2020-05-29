@@ -213,6 +213,16 @@ static void rockchip_fractional_approximation(struct clk_hw *hw,
 		}
 
 		if (*parent_rate < rate * 20) {
+			/*
+			 * Fractional frequency divider to do
+			 * integer frequency divider does not
+			 * need 20 times the limit.
+			 */
+			if (!(*parent_rate % rate)) {
+				*m = 1;
+				*n = *parent_rate / rate;
+				return;
+			}
 			pr_warn("%s p_rate(%ld) is low than rate(%ld)*20, use integer or half-div\n",
 				clk_hw_get_name(hw), *parent_rate, rate);
 			*m = 0;
@@ -488,7 +498,8 @@ void __init rockchip_clk_register_branches(
 					list->parent_names, list->num_parents,
 					flags,
 					ctx->reg_base + list->muxdiv_offset,
-					list->mux_shift, list->mux_width,
+					list->mux_shift,
+					BIT(list->mux_width) - 1,
 					list->mux_flags, list->mux_table,
 					&ctx->lock);
 			else
@@ -600,6 +611,16 @@ void __init rockchip_clk_register_branches(
 				list->mux_width, list->div_shift,
 				list->div_width, list->div_flags,
 				ctx->reg_base);
+			break;
+		case branch_dclk_divider:
+			clk = rockchip_clk_register_dclk_branch(list->name,
+				list->parent_names, list->num_parents,
+				ctx->reg_base, list->muxdiv_offset, list->mux_shift,
+				list->mux_width, list->mux_flags,
+				list->div_offset, list->div_shift, list->div_width,
+				list->div_flags, list->div_table,
+				list->gate_offset, list->gate_shift,
+				list->gate_flags, flags, list->max_prate, &ctx->lock);
 			break;
 		}
 

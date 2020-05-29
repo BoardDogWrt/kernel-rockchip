@@ -11,9 +11,12 @@
 #ifdef CONFIG_ARM_DMA_USE_IOMMU
 #include <asm/dma-iommu.h>
 #endif
+#include <linux/delay.h>
 #include <linux/dma-buf.h>
 #include <linux/dma-iommu.h>
 #include <linux/iommu.h>
+#include <linux/of.h>
+#include <linux/of_platform.h>
 #include <linux/kref.h>
 #include <linux/slab.h>
 
@@ -33,13 +36,12 @@ mpp_dma_find_buffer_fd(struct mpp_dma_session *dma, int fd)
 
 	mutex_lock(&dma->list_mutex);
 	list_for_each_entry_safe(buffer, n,
-				 &dma->buffer_list, list) {
+				 &dma->buffer_list, link) {
 		/*
-		 * As long as the last reference is hold by the buffer pool,
-		 * the same fd won't be assigned to the other application.
+		 * fd may dup several and point the same dambuf.
+		 * thus, here should be distinguish with the dmabuf.
 		 */
-		if (buffer->fd == fd &&
-		    buffer->dmabuf == dmabuf) {
+		if (buffer->dmabuf == dmabuf) {
 			out = buffer;
 			break;
 		}
@@ -57,7 +59,7 @@ static void mpp_dma_release_buffer(struct kref *ref)
 		container_of(ref, struct mpp_dma_buffer, ref);
 
 	buffer->dma->buffer_count--;
-	list_del_init(&buffer->list);
+	list_del_init(&buffer->link);
 
 	dma_buf_unmap_attachment(buffer->attach, buffer->sgt, buffer->dir);
 	dma_buf_detach(buffer->dmabuf, buffer->attach);
@@ -77,7 +79,7 @@ mpp_dma_remove_extra_buffer(struct mpp_dma_session *dma)
 		mutex_lock(&dma->list_mutex);
 		list_for_each_entry_safe(buffer, n,
 					 &dma->buffer_list,
-					 list) {
+					 link) {
 			if (ktime_to_ns(oldest_time) == 0 ||
 			    ktime_after(oldest_time, buffer->last_used)) {
 				oldest_time = buffer->last_used;
@@ -88,6 +90,16 @@ mpp_dma_remove_extra_buffer(struct mpp_dma_session *dma)
 			kref_put(&oldest->ref, mpp_dma_release_buffer);
 		mutex_unlock(&dma->list_mutex);
 	}
+
+	return 0;
+}
+
+int mpp_dma_release(struct mpp_dma_session *dma,
+		    struct mpp_dma_buffer *buffer)
+{
+	mutex_lock(&dma->list_mutex);
+	kref_put(&buffer->ref, mpp_dma_release_buffer);
+	mutex_unlock(&dma->list_mutex);
 
 	return 0;
 }
@@ -192,18 +204,19 @@ struct mpp_dma_buffer *mpp_dma_import_fd(struct mpp_iommu_info *iommu_info,
 	}
 
 	buffer->dmabuf = dmabuf;
-	buffer->fd = fd;
 	buffer->dir = DMA_BIDIRECTIONAL;
 	buffer->last_used = ktime_get();
 
 	attach = dma_buf_attach(buffer->dmabuf, dma->dev);
 	if (IS_ERR(attach)) {
+		mpp_err("dma_buf_attach fd %d failed\n", fd);
 		ret = PTR_ERR(attach);
 		goto fail_attach;
 	}
 
 	sgt = dma_buf_map_attachment(attach, buffer->dir);
 	if (IS_ERR(sgt)) {
+		mpp_err("dma_buf_map_attachment fd %d failed\n", fd);
 		ret = PTR_ERR(sgt);
 		goto fail_map;
 	}
@@ -216,11 +229,11 @@ struct mpp_dma_buffer *mpp_dma_import_fd(struct mpp_iommu_info *iommu_info,
 	kref_init(&buffer->ref);
 	/* Increase the reference for used outside the buffer pool */
 	kref_get(&buffer->ref);
-	INIT_LIST_HEAD(&buffer->list);
+	INIT_LIST_HEAD(&buffer->link);
 
 	mutex_lock(&dma->list_mutex);
 	dma->buffer_count++;
-	list_add_tail(&buffer->list, &dma->buffer_list);
+	list_add_tail(&buffer->link, &dma->buffer_list);
 	mutex_unlock(&dma->list_mutex);
 
 	return buffer;
@@ -296,7 +309,7 @@ int mpp_dma_session_destroy(struct mpp_dma_session *dma)
 	mutex_lock(&dma->list_mutex);
 	list_for_each_entry_safe(buffer, n,
 				 &dma->buffer_list,
-				 list) {
+				 link) {
 		kref_put(&buffer->ref, mpp_dma_release_buffer);
 	}
 	mutex_unlock(&dma->list_mutex);
@@ -350,22 +363,33 @@ struct mpp_iommu_info *
 mpp_iommu_probe(struct device *dev)
 {
 	int ret = 0;
+	struct device_node *np = NULL;
+	struct platform_device *pdev = NULL;
 	struct mpp_iommu_info *info = NULL;
 #ifdef CONFIG_ARM_DMA_USE_IOMMU
 	struct dma_iommu_mapping *mapping;
 #endif
+	info = devm_kzalloc(dev, sizeof(*info), GFP_KERNEL);
+	if (!info)
+		return ERR_PTR(-ENOMEM);
 
-	info = kzalloc(sizeof(*info), GFP_KERNEL);
-	if (!info) {
-		ret = -ENOMEM;
-		goto err;
+	np = of_parse_phandle(dev->of_node, "iommus", 0);
+	if (!np || !of_device_is_available(np)) {
+		mpp_err("failed to get device node\n");
+		return ERR_PTR(-ENODEV);
 	}
-	info->dev = dev;
+
+	pdev = of_find_device_by_node(np);
+	of_node_put(np);
+	if (!pdev) {
+		mpp_err("failed to get platform device\n");
+		return ERR_PTR(-ENODEV);
+	}
 
 	info->group = iommu_group_get(dev);
 	if (!info->group) {
 		ret = -EINVAL;
-		goto err_free_info;
+		goto err_put_pdev;
 	}
 
 	/*
@@ -388,13 +412,17 @@ mpp_iommu_probe(struct device *dev)
 		}
 	}
 
+	info->dev = dev;
+	info->pdev = pdev;
+	init_rwsem(&info->rw_sem);
+
 	return info;
 
 err_put_group:
 	iommu_group_put(info->group);
-err_free_info:
-	kfree(info);
-err:
+err_put_pdev:
+	platform_device_put(pdev);
+
 	return ERR_PTR(ret);
 }
 
@@ -407,7 +435,130 @@ int mpp_iommu_remove(struct mpp_iommu_info *info)
 	arm_iommu_release_mapping(mapping);
 #endif
 	iommu_group_put(info->group);
-	kfree(info);
+	platform_device_put(info->pdev);
+
+	return 0;
+}
+
+#define RK_MMU_DTE_ADDR			0x00 /* Directory table address */
+#define RK_MMU_STATUS			0x04
+#define RK_MMU_COMMAND			0x08
+#define RK_MMU_INT_MASK			0x1C /* IRQ enable */
+
+/* RK_MMU_COMMAND command values */
+#define RK_MMU_CMD_ENABLE_PAGING	0 /* Enable memory translation */
+#define RK_MMU_CMD_DISABLE_PAGING	1 /* Disable memory translation */
+#define RK_MMU_CMD_ENABLE_STALL		2 /* Stall paging to allow other cmds */
+#define RK_MMU_CMD_DISABLE_STALL	3 /* Stop stall re-enables paging */
+#define RK_MMU_CMD_ZAP_CACHE		4 /* Shoot down entire IOTLB */
+#define RK_MMU_CMD_PAGE_FAULT_DONE	5 /* Clear page fault */
+#define RK_MMU_CMD_FORCE_RESET		6 /* Reset all registers */
+
+/* RK_MMU_INT_* register fields */
+#define RK_MMU_IRQ_MASK			0x03
+/* RK_MMU_STATUS fields */
+#define RK_MMU_STATUS_PAGING_ENABLED	BIT(0)
+#define RK_MMU_STATUS_STALL_ACTIVE	BIT(2)
+
+bool mpp_iommu_is_paged(struct mpp_rk_iommu *iommu)
+{
+	int i;
+	u32 status;
+	bool active = true;
+
+	for (i = 0; i < iommu->mmu_num; i++) {
+		status = readl(iommu->bases[i] + RK_MMU_STATUS);
+		active &= !!(status & RK_MMU_STATUS_PAGING_ENABLED);
+	}
+
+	return active;
+}
+
+u32 mpp_iommu_get_dte_addr(struct mpp_rk_iommu *iommu)
+{
+	return readl(iommu->bases[0] + RK_MMU_DTE_ADDR);
+}
+
+int mpp_iommu_enable(struct mpp_rk_iommu *iommu)
+{
+	int i;
+
+	/* iommu should be paging disable */
+	if (mpp_iommu_is_paged(iommu)) {
+		mpp_err("iommu disable failed\n");
+		return -ENOMEM;
+	}
+
+	/* enable stall */
+	for (i = 0; i < iommu->mmu_num; i++)
+		writel(RK_MMU_CMD_ENABLE_STALL,
+		       iommu->bases[i] + RK_MMU_COMMAND);
+	udelay(2);
+	/* force reset */
+	for (i = 0; i < iommu->mmu_num; i++)
+		writel(RK_MMU_CMD_FORCE_RESET,
+		       iommu->bases[i] + RK_MMU_COMMAND);
+	udelay(2);
+
+	for (i = 0; i < iommu->mmu_num; i++) {
+		/* restore dte and status */
+		writel(iommu->dte_addr,
+		       iommu->bases[i] + RK_MMU_DTE_ADDR);
+		/* zap cache */
+		writel(RK_MMU_CMD_ZAP_CACHE,
+		       iommu->bases[i] + RK_MMU_COMMAND);
+		/* irq mask */
+		writel(RK_MMU_IRQ_MASK,
+		       iommu->bases[i] + RK_MMU_INT_MASK);
+	}
+	udelay(2);
+	/* enable paging */
+	for (i = 0; i < iommu->mmu_num; i++)
+		writel(RK_MMU_CMD_ENABLE_PAGING,
+		       iommu->bases[i] + RK_MMU_COMMAND);
+	udelay(2);
+	/* disable stall */
+	for (i = 0; i < iommu->mmu_num; i++)
+		writel(RK_MMU_CMD_DISABLE_STALL,
+		       iommu->bases[i] + RK_MMU_COMMAND);
+	udelay(2);
+
+	/* iommu should be paging enable */
+	iommu->is_paged = mpp_iommu_is_paged(iommu);
+	if (!iommu->is_paged) {
+		mpp_err("iommu enable failed\n");
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+int mpp_iommu_disable(struct mpp_rk_iommu *iommu)
+{
+	int i;
+	u32 dte;
+
+	if (iommu->is_paged) {
+		dte = readl(iommu->bases[0] + RK_MMU_DTE_ADDR);
+		if (!dte)
+			return -EINVAL;
+		udelay(2);
+		/* enable stall */
+		for (i = 0; i < iommu->mmu_num; i++)
+			writel(RK_MMU_CMD_ENABLE_STALL,
+			       iommu->bases[i] + RK_MMU_COMMAND);
+		udelay(2);
+		/* disable paging */
+		for (i = 0; i < iommu->mmu_num; i++)
+			writel(RK_MMU_CMD_DISABLE_PAGING,
+			       iommu->bases[i] + RK_MMU_COMMAND);
+		udelay(2);
+		/* disable stall */
+		for (i = 0; i < iommu->mmu_num; i++)
+			writel(RK_MMU_CMD_DISABLE_STALL,
+			       iommu->bases[i] + RK_MMU_COMMAND);
+		udelay(2);
+	}
 
 	return 0;
 }

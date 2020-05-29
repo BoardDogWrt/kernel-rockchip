@@ -188,6 +188,7 @@ struct vop_plane_state {
 	unsigned long offset;
 	int pdaf_data_type;
 	bool async_commit;
+	struct vop_dump_list *planlist;
 };
 
 struct rockchip_mcu_timing {
@@ -595,6 +596,8 @@ static enum vop_data_format vop_convert_format(uint32_t format)
 	case DRM_FORMAT_NV24:
 	case DRM_FORMAT_NV24_10:
 		return VOP_FMT_YUV444SP;
+	case DRM_FORMAT_YUYV:
+		return VOP_FMT_YUYV;
 	default:
 		DRM_ERROR("unsupported format[%08x]\n", format);
 		return -EINVAL;
@@ -628,6 +631,8 @@ static bool is_yuv_output(uint32_t bus_format)
 	case MEDIA_BUS_FMT_YUV10_1X30:
 	case MEDIA_BUS_FMT_UYYVYY8_0_5X24:
 	case MEDIA_BUS_FMT_UYYVYY10_0_5X30:
+	case MEDIA_BUS_FMT_YUYV8_2X8:
+	case MEDIA_BUS_FMT_YUYV8_1X16:
 		return true;
 	default:
 		return false;
@@ -643,6 +648,17 @@ static bool is_yuv_support(uint32_t format)
 	case DRM_FORMAT_NV16_10:
 	case DRM_FORMAT_NV24:
 	case DRM_FORMAT_NV24_10:
+	case DRM_FORMAT_YUYV:
+		return true;
+	default:
+		return false;
+	}
+}
+
+static bool is_yuyv_format(uint32_t format)
+{
+	switch (format) {
+	case DRM_FORMAT_YUYV:
 		return true;
 	default:
 		return false;
@@ -1644,6 +1660,8 @@ static void vop_plane_atomic_disable(struct drm_plane *plane,
 {
 	struct vop_win *win = to_vop_win(plane);
 	struct vop *vop = to_vop(old_state->crtc);
+	struct vop_plane_state *vop_plane_state =
+					to_vop_plane_state(plane->state);
 
 	if (!old_state->crtc)
 		return;
@@ -1660,6 +1678,9 @@ static void vop_plane_atomic_disable(struct drm_plane *plane,
 	if (VOP_MAJOR(vop->version) == 2 && VOP_MINOR(vop->version) == 5 &&
 	    win->win_id == 2)
 		VOP_WIN_SET(vop, win, yrgb_mst, 0);
+
+	kfree(vop_plane_state->planlist);
+	vop_plane_state->planlist = NULL;
 
 	spin_unlock(&vop->reg_lock);
 }
@@ -1754,6 +1775,7 @@ static void vop_plane_atomic_update(struct drm_plane *plane,
 		VOP_WIN_SET(vop, win, uv_mst, vop_plane_state->uv_mst);
 	}
 	VOP_WIN_SET(vop, win, fmt_10, is_yuv_10bit(fb->format->format));
+	VOP_WIN_SET(vop, win, fmt_yuyv, is_yuyv_format(fb->format->format));
 
 	if (win->phy->scl)
 		scl_vop_cal_scl_fac(vop, win, actual_w, actual_h,
@@ -1825,6 +1847,9 @@ static void vop_plane_atomic_update(struct drm_plane *plane,
 	 */
 	vop->is_iommu_needed = true;
 #if defined(CONFIG_ROCKCHIP_DRM_DEBUG)
+	kfree(vop_plane_state->planlist);
+	vop_plane_state->planlist = NULL;
+
 	planlist = kmalloc(sizeof(*planlist), GFP_KERNEL);
 	if (planlist) {
 		planlist->dump_info.AFBC_flag = AFBC_flag;
@@ -1839,6 +1864,7 @@ static void vop_plane_atomic_update(struct drm_plane *plane,
 		planlist->dump_info.height = actual_h;
 		planlist->dump_info.pixel_format = fb->format->format;
 		list_add_tail(&planlist->entry, &crtc->vop_dump_list_head);
+		vop_plane_state->planlist = planlist;
 	} else {
 		DRM_ERROR("can't alloc a node of planlist %p\n", planlist);
 		return;
@@ -2565,7 +2591,6 @@ static size_t vop_crtc_bandwidth(struct drm_crtc *crtc,
 	}
 	list_for_each_entry_safe(pos, n, &crtc->vop_dump_list_head, entry) {
 		list_del(&pos->entry);
-		kfree(pos);
 	}
 	if (crtc->vop_dump_status == DUMP_KEEP ||
 	    crtc->vop_dump_times > 0) {
@@ -2861,7 +2886,7 @@ static void vop_crtc_atomic_enable(struct drm_crtc *crtc,
 	 */
 	if (vop->lut_active)
 		vop_crtc_load_lut(crtc);
-	dclk_inv = (adjusted_mode->flags & DRM_MODE_FLAG_CLKDIV2) ? 0 : 1;
+	dclk_inv = (adjusted_mode->flags & DRM_MODE_FLAG_PPIXDATA) ? 0 : 1;
 
 	VOP_CTRL_SET(vop, dclk_pol, dclk_inv);
 	val = (adjusted_mode->flags & DRM_MODE_FLAG_NHSYNC) ?
@@ -2885,8 +2910,12 @@ static void vop_crtc_atomic_enable(struct drm_crtc *crtc,
 		VOP_CTRL_SET(vop, lvds_en, 1);
 		VOP_CTRL_SET(vop, lvds_pin_pol, val);
 		VOP_CTRL_SET(vop, lvds_dclk_pol, dclk_inv);
+		VOP_GRF_SET(vop, grf_dclk_inv, dclk_inv);
 
-		VOP_GRF_SET(vop, grf_dclk_inv, !dclk_inv);
+		if (s->bus_format == MEDIA_BUS_FMT_YUYV8_1X16) {
+			VOP_CTRL_SET(vop, bt1120_en, 1);
+			VOP_CTRL_SET(vop, bt1120_yc_swap, 1);
+		}
 		break;
 	case DRM_MODE_CONNECTOR_eDP:
 		VOP_CTRL_SET(vop, edp_en, 1);

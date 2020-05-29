@@ -252,6 +252,8 @@ runtime:
 				     PHY_MODE_USB_DEVICE);
 			phy_set_mode(dwc->usb3_generic_phy,
 				     PHY_MODE_USB_DEVICE);
+			dwc->gadget.ops->udc_set_speed(&dwc->gadget,
+						       dwc->maximum_speed);
 			break;
 		case DWC3_GCTL_PRTCAP_OTG:
 			break;
@@ -262,6 +264,14 @@ runtime:
 disconnect:
 		switch (dwc->current_dr_role) {
 		case DWC3_GCTL_PRTCAP_HOST:
+			/*
+			 * We set device mode to disable otg-vbus supply and
+			 * enable vbus detect for inno USB2PHY.
+			 */
+			phy_set_mode(dwc->usb2_generic_phy,
+				     PHY_MODE_USB_DEVICE);
+			phy_set_mode(dwc->usb3_generic_phy,
+				     PHY_MODE_USB_DEVICE);
 			phy_power_off(dwc->usb3_generic_phy);
 			dwc3_host_exit(dwc);
 			break;
@@ -1612,7 +1622,8 @@ static int dwc3_probe(struct platform_device *pdev)
 		goto err3;
 
 	if (dwc->dr_mode == USB_DR_MODE_OTG &&
-	    of_machine_is_compatible("rockchip,rk3399")) {
+	    of_device_is_compatible(dev->parent->of_node,
+				    "rockchip,rk3399-dwc3")) {
 		pm_runtime_allow(dev);
 		dwc->en_runtime = true;
 	}

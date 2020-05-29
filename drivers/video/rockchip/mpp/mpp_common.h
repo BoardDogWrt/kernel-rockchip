@@ -164,9 +164,7 @@ struct mpp_dev_var {
 };
 
 struct mpp_mem_region {
-	struct list_head srv_lnk;
-	struct list_head reg_lnk;
-	struct list_head session_lnk;
+	struct list_head reg_link;
 	/* address for iommu */
 	dma_addr_t iova;
 	unsigned long len;
@@ -191,17 +189,18 @@ struct mpp_dev {
 	struct mpp_grf_info *grf_info;
 	struct mpp_iommu_info *iommu_info;
 
-	struct rw_semaphore rw_sem;
-
 	atomic_t reset_request;
-	atomic_t total_running;
+	atomic_t task_count;
 	/* task for work queue */
 	struct workqueue_struct *workq;
+	/* current task in running */
+	struct mpp_task *cur_task;
 	/* set session max buffers */
 	u32 session_max_buffers;
 	struct mpp_taskqueue *queue;
 	struct mpp_reset_group *reset_group;
 	/* point to MPP Service */
+	struct platform_device *pdev_srv;
 	struct mpp_service *srv;
 };
 
@@ -214,18 +213,35 @@ struct mpp_session {
 	struct mpp_dev *mpp;
 	struct mpp_dma_session *dma;
 
-	/* session tasks list lock */
-	struct mutex list_lock;
-	struct list_head pending;
+	/* lock for session task register list */
+	struct mutex reg_lock;
+	/* lock for session task pending list */
+	struct mutex pending_lock;
+	/* task pending list in session */
+	struct list_head pending_list;
+	/* lock for session task done list */
+	struct mutex done_lock;
+	/* task done list in session */
+	struct list_head done_list;
 
-	DECLARE_KFIFO_PTR(done_fifo, struct mpp_task *);
-
+	/* event for session wait thread */
 	wait_queue_head_t wait;
 	pid_t pid;
-	atomic_t task_running;
+	atomic_t task_count;
+	atomic_t release_request;
 	/* trans info set by user */
 	int trans_count;
 	u16 trans_table[MPP_MAX_REG_TRANS_NUM];
+};
+
+/* task state in work thread */
+enum mpp_task_state {
+	TASK_STATE_PENDING	= BIT(0),
+	TASK_STATE_RUNNING	= BIT(1),
+	TASK_STATE_START	= BIT(2),
+	TASK_STATE_IRQ		= BIT(3),
+	TASK_STATE_DONE		= BIT(4),
+	TASK_STATE_TIMEOUT	= BIT(5),
 };
 
 /* The context for the a task */
@@ -233,27 +249,47 @@ struct mpp_task {
 	/* context belong to */
 	struct mpp_session *session;
 
-	/* link to session pending */
-	struct list_head session_link;
-	/* link to taskqueue node pending */
+	/* link to pending list in session */
+	struct list_head pending_link;
+	/* link to done list in session */
+	struct list_head done_link;
+	/* link to list in taskqueue */
 	struct list_head queue_link;
 	/* The DMA buffer used in this task */
 	struct list_head mem_region_list;
 
+	/* state in the taskqueue */
+	enum mpp_task_state state;
+	atomic_t abort_request;
+	/* delayed work for hardware timeout */
+	struct delayed_work timeout_work;
+	struct kref ref;
+
 	/* record context running start time */
 	struct timeval start;
+	/* hardware info for current task */
+	struct mpp_hw_info *hw_info;
+	u32 *reg;
 };
 
 struct mpp_taskqueue {
-	/* taskqueue structure global lock */
-	struct mutex lock;
+	/* lock for trigger work */
+	struct mutex work_lock;
 	/* work for taskqueue */
 	struct work_struct work;
 
-	struct list_head pending;
-	atomic_t running;
-	struct mpp_task *cur_task;
+	/* lock for pending list */
+	struct mutex pending_lock;
+	struct list_head pending_list;
+	/* lock for running list */
+	struct mutex running_lock;
+	struct list_head running_list;
+
+	/* point to MPP Service */
 	struct mpp_service *srv;
+	/* lock for mmu list */
+	struct mutex mmu_lock;
+	struct list_head mmu_list;
 };
 
 struct mpp_reset_clk {
@@ -311,6 +347,7 @@ struct mpp_hw_ops {
 			struct mpp_task *mpp_task);
 	int (*reduce_freq)(struct mpp_dev *mpp);
 	int (*reset)(struct mpp_dev *mpp);
+	int (*set_grf)(struct mpp_dev *mpp);
 };
 
 /*
@@ -331,7 +368,7 @@ struct mpp_hw_ops {
 struct mpp_dev_ops {
 	void *(*alloc_task)(struct mpp_session *session,
 			    struct mpp_task_msgs *msgs);
-	int (*prepare)(struct mpp_dev *mpp, struct mpp_task *task);
+	void *(*prepare)(struct mpp_dev *mpp, struct mpp_task *task);
 	int (*run)(struct mpp_dev *mpp, struct mpp_task *task);
 	int (*irq)(struct mpp_dev *mpp);
 	int (*isr)(struct mpp_dev *mpp);
@@ -369,6 +406,10 @@ int mpp_task_finish(struct mpp_session *session,
 		    struct mpp_task *task);
 int mpp_task_finalize(struct mpp_session *session,
 		      struct mpp_task *task);
+int mpp_task_dump_mem_region(struct mpp_dev *mpp,
+			     struct mpp_task *task);
+int mpp_task_dump_reg(struct mpp_dev *mpp,
+		      struct mpp_task *task);
 
 int mpp_dev_probe(struct mpp_dev *mpp,
 		  struct platform_device *pdev);
@@ -383,6 +424,7 @@ mpp_reset_control_get(struct mpp_dev *mpp, const char *name);
 int mpp_safe_reset(struct reset_control *rst);
 int mpp_safe_unreset(struct reset_control *rst);
 
+u32 mpp_get_grf(struct mpp_grf_info *grf_info);
 int mpp_set_grf(struct mpp_grf_info *grf_info);
 
 int mpp_time_record(struct mpp_task *task);
@@ -397,7 +439,8 @@ static inline int mpp_write(struct mpp_dev *mpp, u32 reg, u32 val)
 {
 	int idx = reg / sizeof(u32);
 
-	mpp_debug(DEBUG_SET_REG, "write reg[%3d]: %08x: %08x\n", idx, reg, val);
+	mpp_debug(DEBUG_SET_REG,
+		  "write reg[%03d]: %04x: 0x%08x\n", idx, reg, val);
 	writel(val, mpp->reg_base + reg);
 
 	return 0;
@@ -407,7 +450,8 @@ static inline int mpp_write_relaxed(struct mpp_dev *mpp, u32 reg, u32 val)
 {
 	int idx = reg / sizeof(u32);
 
-	mpp_debug(DEBUG_SET_REG, "write reg[%3d]: %08x: %08x\n", idx, reg, val);
+	mpp_debug(DEBUG_SET_REG,
+		  "write reg[%03d]: %04x: 0x%08x\n", idx, reg, val);
 	writel_relaxed(val, mpp->reg_base + reg);
 
 	return 0;
@@ -419,7 +463,8 @@ static inline u32 mpp_read(struct mpp_dev *mpp, u32 reg)
 	int idx = reg / sizeof(u32);
 
 	val = readl(mpp->reg_base + reg);
-	mpp_debug(DEBUG_GET_REG, "read reg[%3d]: %08x: %08x\n", idx, reg, val);
+	mpp_debug(DEBUG_GET_REG,
+		  "read reg[%03d]: %04x: 0x%08x\n", idx, reg, val);
 
 	return val;
 }
@@ -430,10 +475,15 @@ static inline u32 mpp_read_relaxed(struct mpp_dev *mpp, u32 reg)
 	int idx = reg / sizeof(u32);
 
 	val = readl_relaxed(mpp->reg_base + reg);
-	mpp_debug(DEBUG_GET_REG, "read reg[%3d] %08x: %08x\n", idx, reg, val);
+	mpp_debug(DEBUG_GET_REG,
+		  "read reg[%03d] %04x: 0x%08x\n", idx, reg, val);
 
 	return val;
 }
+
+/* workaround according hardware */
+int px30_workaround_combo_init(struct mpp_dev *mpp);
+int px30_workaround_combo_switch_grf(struct mpp_dev *mpp);
 
 extern const struct file_operations rockchip_mpp_fops;
 

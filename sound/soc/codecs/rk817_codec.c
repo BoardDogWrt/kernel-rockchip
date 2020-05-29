@@ -538,7 +538,7 @@ static int rk817_playback_path_put(struct snd_kcontrol *kcontrol,
 			/* power on dac ibias/l/r */
 			snd_soc_component_write(component, RK817_CODEC_ADAC_CFG1,
 						PWD_DACBIAS_ON | PWD_DACD_ON |
-						PWD_DACL_ON | PWD_DACR_ON);
+						PWD_DACL_DOWN | PWD_DACR_DOWN);
 			/* CLASS D mode */
 			snd_soc_component_write(component,
 						RK817_CODEC_DDAC_MUTE_MIXCTL,
@@ -550,7 +550,7 @@ static int rk817_playback_path_put(struct snd_kcontrol *kcontrol,
 			/* restart CLASS D, OCPP/N */
 			snd_soc_component_write(component,
 						RK817_CODEC_ACLASSD_CFG2,
-						0xc4);
+						0xf7);
 		} else {
 			/* HP_CP_EN , CP 2.3V */
 			snd_soc_component_write(component, RK817_CODEC_AHP_CP,
@@ -623,7 +623,7 @@ static int rk817_playback_path_put(struct snd_kcontrol *kcontrol,
 			/* restart CLASS D, OCPP/N */
 			snd_soc_component_write(component,
 						RK817_CODEC_ACLASSD_CFG2,
-						0xc4);
+						0xf7);
 		}
 
 		snd_soc_component_write(component, RK817_CODEC_DDAC_VOLL,
@@ -1190,8 +1190,8 @@ static void rk817_platform_shutdown(struct platform_device *pdev)
 
 	DBG("%s\n", __func__);
 
-	rk817_codec_power_down(rk817->component, RK817_CODEC_ALL);
-
+	if (rk817 && rk817->component)
+		rk817_codec_power_down(rk817->component, RK817_CODEC_ALL);
 }
 
 static const struct of_device_id rk817_codec_dt_ids[] = {

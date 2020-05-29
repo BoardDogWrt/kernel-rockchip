@@ -8,12 +8,56 @@
 #ifndef _RKCIF_REGS_H
 #define _RKCIF_REGS_H
 
+struct cif_reg {
+	u32 offset;
+};
+
+#define CIF_REG(_offset)		{ .offset = _offset, }
+
+enum cif_reg_index {
+	CIF_REG_DVP_CTRL = 0x0,
+	CIF_REG_DVP_INTEN,
+	CIF_REG_DVP_INTSTAT,
+	CIF_REG_DVP_FOR,
+	CIF_REG_DVP_LINE_NUM_ADDR,
+	CIF_REG_DVP_DMA_IDLE_REQ,
+	CIF_REG_DVP_MULTI_ID,
+	CIF_REG_DVP_FRM0_ADDR_Y,
+	CIF_REG_DVP_FRM0_ADDR_UV,
+	CIF_REG_DVP_FRM1_ADDR_Y,
+	CIF_REG_DVP_FRM1_ADDR_UV,
+	CIF_REG_DVP_VIR_LINE_WIDTH,
+	CIF_REG_DVP_SET_SIZE,
+	CIF_REG_DVP_SCM_ADDR_Y,
+	CIF_REG_DVP_SCM_ADDR_U,
+	CIF_REG_DVP_SCM_ADDR_V,
+	CIF_REG_DVP_WB_UP_FILTER,
+	CIF_REG_DVP_WB_LOW_FILTER,
+	CIF_REG_DVP_WBC_CNT,
+	CIF_REG_DVP_LINE_INT_NUM,
+	CIF_REG_DVP_LINE_CNT,
+	CIF_REG_DVP_CROP,
+	CIF_REG_DVP_SCL_CTRL,
+	CIF_REG_DVP_SCL_DST,
+	CIF_REG_DVP_SCL_FCT,
+	CIF_REG_DVP_SCL_VALID_NUM,
+	CIF_REG_DVP_LINE_LOOP_CTRL,
+	CIF_REG_DVP_PATH_SEL,
+	CIF_REG_DVP_FIFO_ENTRY,
+	CIF_REG_DVP_FRAME_STATUS,
+	CIF_REG_DVP_CUR_DST,
+	CIF_REG_DVP_LAST_LINE,
+	CIF_REG_DVP_LAST_PIX,
+	CIF_REG_INDEX_MAX
+};
+
 /* CIF Reg Offset */
 #define CIF_CTRL			0x00
 #define CIF_INTEN			0x04
 #define CIF_INTSTAT			0x08
 #define CIF_FOR				0x0c
 #define CIF_LINE_NUM_ADDR		0x10
+#define CIF_DMA_IDLE_REQ		0x10
 #define CIF_FRM0_ADDR_Y			0x14
 #define CIF_FRM0_ADDR_UV		0x18
 #define CIF_FRM1_ADDR_Y			0x1c
@@ -21,21 +65,30 @@
 #define CIF_VIR_LINE_WIDTH		0x24
 #define CIF_SET_SIZE			0x28
 #define CIF_SCM_ADDR_Y			0x2c
+#define CIF_LINE_INT_NUM		0x2c
 #define CIF_SCM_ADDR_U			0x30
+#define CIF_LINE_CNT			0x30
 #define CIF_SCM_ADDR_V			0x34
 #define CIF_WB_UP_FILTER		0x38
 #define CIF_WB_LOW_FILTER		0x3c
 #define CIF_WBC_CNT			0x40
 #define CIF_CROP			0x44
 #define CIF_SCL_CTRL			0x48
+#define CIF_PATH_SEL			0x48
 #define CIF_SCL_DST			0x4c
 #define CIF_SCL_FCT			0x50
 #define CIF_SCL_VALID_NUM		0x54
+#define CIF_FIFO_ENTRY			0x54
 #define CIF_LINE_LOOP_CTR		0x58
 #define CIF_FRAME_STATUS		0x60
 #define CIF_CUR_DST			0x64
 #define CIF_LAST_LINE			0x68
 #define CIF_LAST_PIX			0x6c
+#define CIF_FETCH_Y_LAST_LINE(val)	((val) & 0x1fff)
+/* Check if swap y and c in bt1120 mode */
+#define CIF_FETCH_IS_Y_FIRST(val)	((val) & 0xf)
+#define CIF_RAW_STORED_BIT_WIDTH	(16U)
+#define CIF_YUV_STORED_BIT_WIDTH	(8U)
 
 /* RK1808 CIF CSI Registers Offset */
 #define CIF_CSI_ID0_CTRL0		0x80
@@ -117,7 +170,11 @@
 
 /* FRAME STATUS */
 #define FRAME_STAT_CLS			0x00
-#define FRM0_STAT_CLS			0x20	/* write 0 to clear frame 0 */
+/* write 0 to clear frame 0 */
+#define FRM0_STAT_CLS			0xfffffffe
+#define FRAME_NUM_SHIFT			(16U)
+#define FRAME_NUM_MASK			(0xffff << FRAME_NUM_SHIFT)
+#define CIF_GET_FRAME_ID(val)		(((val) & FRAME_NUM_MASK) >> FRAME_NUM_SHIFT)
 
 /* CIF FORMAT */
 #define VSY_HIGH_ACTIVE			(0x01 << 0)
@@ -144,6 +201,9 @@
 #define RAW_DATA_WIDTH_8		(0x00 << 11)
 #define RAW_DATA_WIDTH_10		(0x01 << 11)
 #define RAW_DATA_WIDTH_12		(0x02 << 11)
+#define MIPI_MODE_32BITS_BYPASS		(0x00 << 13)
+#define MIPI_MODE_RGB			(0x01 << 13)
+#define MIPI_MODE_YUV			(0x02 << 13)
 #define YUV_OUTPUT_422			(0x00 << 16)
 #define YUV_OUTPUT_420			(0x01 << 16)
 #define OUTPUT_420_ORDER_EVEN		(0x00 << 17)
@@ -192,7 +252,6 @@
 #define CSI_ENABLE_CROP			(0x1 << 5)
 
 /* CIF_CSI_INTEN */
-#define CSI_FRAME0_START_INTEN(id)	(0x1 << ((id) * 2))
 #define CSI_FRAME1_START_INTEN(id)	(0x1 << ((id) * 2 + 1))
 #define CSI_FRAME0_END_INTEN(id)	(0x1 << ((id) * 2 + 8))
 #define CSI_FRAME1_END_INTEN(id)	(0x1 << ((id) * 2 + 9))
@@ -204,6 +263,14 @@
 #define CSI_ALL_FRAME_START_INTEN	(0xff << 0)
 #define CSI_ALL_FRAME_END_INTEN		(0xff << 8)
 #define CSI_ALL_ERROR_INTEN		(0x1f << 16)
+
+#define CSI_START_INTEN(id)		(0x3 << ((id) * 2))
+#define CSI_DMA_END_INTEN(id)		(0x3 << ((id) * 2 + 8))
+#define CSI_LINE_INTEN(id)		(0x1 << ((id) + 21))
+
+#define CSI_START_INTSTAT(id)		(0x3 << ((id) * 2))
+#define CSI_DMA_END_INTSTAT(id)		(0x3 << ((id) * 2 + 8))
+#define CSI_LINE_INTSTAT(id)		(0x1 << ((id) + 21))
 
 /* CIF_CSI_INTSTAT */
 #define CSI_FRAME0_START_ID0		(0x1 << 0)
@@ -228,6 +295,14 @@
 #define CSI_BANDWIDTH_LACK		(0x1 << 19)
 #define CSI_RX_FIFO_OVERFLOW		(0x1 << 20)
 
+#define CSI_FRAME_END_ID0	(CSI_FRAME0_END_ID0 |\
+				 CSI_FRAME1_END_ID0)
+#define CSI_FRAME_END_ID1	(CSI_FRAME0_END_ID1 |\
+				 CSI_FRAME1_END_ID1)
+#define CSI_FRAME_END_ID2	(CSI_FRAME0_END_ID2 |\
+				 CSI_FRAME1_END_ID2)
+#define CSI_FRAME_END_ID3	(CSI_FRAME0_END_ID3 |\
+				 CSI_FRAME1_END_ID3)
 #define CSI_FIFO_OVERFLOW	(CSI_DMA_Y_FIFO_OVERFLOW |	\
 				 CSI_DMA_UV_FIFO_OVERFLOW |	\
 				 CSI_CONFIG_FIFO_OVERFLOW |	\
@@ -249,5 +324,10 @@
 #define SW_DATATYPE_FE(x)	((x) << 14)
 #define SW_DATATYPE_LS(x)	((x) << 20)
 #define SW_DATATYPE_LE(x)	((x) << 26)
+
+#define SW_FRM_END_ID0(x)	(((x) & CSI_FRAME_END_ID0) >> 8)
+#define SW_FRM_END_ID1(x)	(((x) & CSI_FRAME_END_ID1) >> 10)
+#define SW_FRM_END_ID2(x)	(((x) & CSI_FRAME_END_ID2) >> 12)
+#define SW_FRM_END_ID3(x)	(((x) & CSI_FRAME_END_ID3) >> 14)
 
 #endif

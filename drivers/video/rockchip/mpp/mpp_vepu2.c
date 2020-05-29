@@ -77,7 +77,6 @@
 
 struct vepu_task {
 	struct mpp_task mpp_task;
-	struct mpp_hw_info *hw_info;
 	unsigned long aclk_freq;
 	u32 reg[VEPU2_REG_NUM];
 
@@ -103,7 +102,6 @@ struct vepu_dev {
 
 	struct reset_control *rst_a;
 	struct reset_control *rst_h;
-	struct vepu_task *current_task;
 };
 
 static struct mpp_hw_info vepu_v2_hw_info = {
@@ -170,6 +168,7 @@ static int vepu_extract_task_msg(struct vepu_task *task,
 	int ret;
 	struct mpp_request *req;
 	struct reg_offset_info *off_inf = &task->off_inf;
+	struct mpp_hw_info *hw_info = task->mpp_task.hw_info;
 
 	for (i = 0; i < msgs->req_cnt; i++) {
 		u32 off_s, off_e;
@@ -180,8 +179,8 @@ static int vepu_extract_task_msg(struct vepu_task *task,
 
 		switch (req->cmd) {
 		case MPP_CMD_SET_REG_WRITE: {
-			off_s = task->hw_info->reg_start * sizeof(u32);
-			off_e = task->hw_info->reg_end * sizeof(u32);
+			off_s = hw_info->reg_start * sizeof(u32);
+			off_e = hw_info->reg_end * sizeof(u32);
 			ret = mpp_check_req(req, 0, sizeof(task->reg),
 					    off_s, off_e);
 			if (ret)
@@ -195,8 +194,8 @@ static int vepu_extract_task_msg(struct vepu_task *task,
 			       req, sizeof(*req));
 		} break;
 		case MPP_CMD_SET_REG_READ: {
-			off_s = task->hw_info->reg_start * sizeof(u32);
-			off_e = task->hw_info->reg_end * sizeof(u32);
+			off_s = hw_info->reg_start * sizeof(u32);
+			off_e = hw_info->reg_end * sizeof(u32);
 			ret = mpp_check_req(req, 0, sizeof(task->reg),
 					    off_s, off_e);
 			if (ret)
@@ -233,6 +232,7 @@ static void *vepu_alloc_task(struct mpp_session *session,
 			     struct mpp_task_msgs *msgs)
 {
 	int ret;
+	struct mpp_task *mpp_task = NULL;
 	struct vepu_task *task = NULL;
 	struct mpp_dev *mpp = session->mpp;
 
@@ -242,8 +242,10 @@ static void *vepu_alloc_task(struct mpp_session *session,
 	if (!task)
 		return NULL;
 
-	mpp_task_init(session, &task->mpp_task);
-	task->hw_info = mpp->var->hw_info;
+	mpp_task = &task->mpp_task;
+	mpp_task_init(session, mpp_task);
+	mpp_task->hw_info = mpp->var->hw_info;
+	mpp_task->reg = task->reg;
 	/* extract reqs for current task */
 	ret = vepu_extract_task_msg(task, msgs);
 	if (ret)
@@ -257,18 +259,14 @@ static void *vepu_alloc_task(struct mpp_session *session,
 
 	mpp_debug_leave();
 
-	return &task->mpp_task;
+	return mpp_task;
 
 fail:
-	mpp_task_finalize(session, &task->mpp_task);
+	mpp_task_dump_mem_region(mpp, mpp_task);
+	mpp_task_dump_reg(mpp, mpp_task);
+	mpp_task_finalize(session, mpp_task);
 	kfree(task);
 	return NULL;
-}
-
-static int vepu_prepare(struct mpp_dev *mpp,
-			struct mpp_task *task)
-{
-	return -EINVAL;
 }
 
 static int vepu_run(struct mpp_dev *mpp,
@@ -276,20 +274,14 @@ static int vepu_run(struct mpp_dev *mpp,
 {
 	u32 i;
 	u32 reg_en;
-	struct vepu_task *task = NULL;
-	struct vepu_dev *enc = NULL;
+	struct vepu_task *task = to_vepu_task(mpp_task);
 
 	mpp_debug_enter();
 
-	task = to_vepu_task(mpp_task);
-	enc = to_vepu_dev(mpp);
-
-	/* FIXME: spin lock here */
-	enc->current_task = task;
 	/* clear cache */
 	mpp_write_relaxed(mpp, VEPU2_REG_CLR_CACHE_BASE, 1);
 
-	reg_en = task->hw_info->reg_en;
+	reg_en = mpp_task->hw_info->reg_en;
 	/* First, flush correct encoder format */
 	mpp_write_relaxed(mpp, VEPU2_REG_ENC_EN,
 			  task->reg[reg_en] & VEPU2_FORMAT_MASK);
@@ -302,7 +294,7 @@ static int vepu_run(struct mpp_dev *mpp,
 		mpp_write_req(mpp, task->reg, s, e, reg_en);
 	}
 	/* init current task */
-	enc->current_task = task;
+	mpp->cur_task = mpp_task;
 	/* Last, flush the registers */
 	wmb();
 	mpp_write(mpp, VEPU2_REG_ENC_EN,
@@ -328,19 +320,16 @@ static int vepu_isr(struct mpp_dev *mpp)
 {
 	u32 err_mask;
 	struct vepu_task *task = NULL;
-	struct mpp_task *mpp_task = NULL;
-	struct vepu_dev *enc = to_vepu_dev(mpp);
+	struct mpp_task *mpp_task = mpp->cur_task;
 
 	/* FIXME use a spin lock here */
-	task = enc->current_task;
-	if (!task) {
-		dev_err(enc->mpp.dev, "no current task\n");
+	if (!mpp_task) {
+		dev_err(mpp->dev, "no current task\n");
 		return IRQ_HANDLED;
 	}
-
-	mpp_task = &task->mpp_task;
 	mpp_time_diff(mpp_task);
-	enc->current_task = NULL;
+	mpp->cur_task = NULL;
+	task = to_vepu_task(mpp_task);
 	task->irq_status = mpp->irq_status;
 	mpp_debug(DEBUG_IRQ_STATUS, "irq_status: %08x\n",
 		  task->irq_status);
@@ -483,6 +472,12 @@ static int vepu_init(struct mpp_dev *mpp)
 	return 0;
 }
 
+static int vepu_px30_init(struct mpp_dev *mpp)
+{
+	vepu_init(mpp);
+	return px30_workaround_combo_init(mpp);
+}
+
 static int vepu_power_on(struct mpp_dev *mpp)
 {
 	struct vepu_dev *enc = to_vepu_dev(mpp);
@@ -571,9 +566,19 @@ static struct mpp_hw_ops vepu_v2_hw_ops = {
 	.reset = vepu_reset,
 };
 
+static struct mpp_hw_ops vepu_px30_hw_ops = {
+	.init = vepu_px30_init,
+	.power_on = vepu_power_on,
+	.power_off = vepu_power_off,
+	.get_freq = vepu_get_freq,
+	.set_freq = vepu_set_freq,
+	.reduce_freq = vepu_reduce_freq,
+	.reset = vepu_reset,
+	.set_grf = px30_workaround_combo_switch_grf,
+};
+
 static struct mpp_dev_ops vepu_v2_dev_ops = {
 	.alloc_task = vepu_alloc_task,
-	.prepare = vepu_prepare,
 	.run = vepu_run,
 	.irq = vepu_irq,
 	.isr = vepu_isr,
@@ -590,10 +595,22 @@ static const struct mpp_dev_var vepu_v2_data = {
 	.dev_ops = &vepu_v2_dev_ops,
 };
 
+static const struct mpp_dev_var vepu_px30_data = {
+	.device_type = MPP_DEVICE_VEPU2,
+	.hw_info = &vepu_v2_hw_info,
+	.trans_info = trans_rk_vepu2,
+	.hw_ops = &vepu_px30_hw_ops,
+	.dev_ops = &vepu_v2_dev_ops,
+};
+
 static const struct of_device_id mpp_vepu2_dt_match[] = {
 	{
 		.compatible = "rockchip,vpu-encoder-v2",
 		.data = &vepu_v2_data,
+	},
+	{
+		.compatible = "rockchip,vpu-encoder-px30",
+		.data = &vepu_px30_data,
 	},
 	{},
 };
@@ -667,7 +684,7 @@ static void vepu_shutdown(struct platform_device *pdev)
 
 	atomic_inc(&mpp->srv->shutdown_request);
 	ret = readx_poll_timeout(atomic_read,
-				 &mpp->total_running,
+				 &mpp->task_count,
 				 val, val == 0, 20000, 200000);
 	if (ret == -ETIMEDOUT)
 		dev_err(dev, "wait total running time out\n");

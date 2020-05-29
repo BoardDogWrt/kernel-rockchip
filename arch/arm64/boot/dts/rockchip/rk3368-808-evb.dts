@@ -11,25 +11,6 @@
 	compatible = "rockchip,rk3368-808-evb", "rockchip,rk3368";
 };
 
-&firmware_android {
-	compatible = "android,firmware";
-	boot_devices = "ff0f0000.dwmmc,ff400000.nandc";
-	vbmeta {
-		compatible = "android,vbmeta";
-		parts = "vbmeta,dtbo";
-	};
-	fstab {
-		compatible = "android,fstab";
-		vendor {
-			compatible = "android,vendor";
-			dev = "/dev/block/by-name/vendor";
-			type = "ext4";
-			mnt_flags = "ro,barrier=1,inode_readahead_blks=8";
-			fsmgr_flags = "wait,avb";
-		};
-	};
-};
-
 &chosen {
 	bootargs = "earlycon=uart8250,mmio32,0xff690000 swiotlb=1 console=ttyFIQ0 androidboot.baseband=N/A androidboot.veritymode=enforcing androidboot.hardware=rk30board androidboot.console=ttyFIQ0 androidboot.selinux=permissive init=/init kpti=0";
 };
@@ -45,6 +26,11 @@
 &cif_clkout {
 	/* cif_clkout */
 	rockchip,pins = <1 11 RK_FUNC_1 &pcfg_pull_none_4ma>;
+};
+
+&dmc {
+	vop-dclk-mode = <1>;
+	status = "okay";
 };
 
 &isp_dvp_d2d9 {
@@ -179,5 +165,25 @@
 			remote-endpoint = <&dphy_rx_out>;
 		};
 
+	};
+};
+
+/*
+ * In sleep mode, should be close vcca_33 and vcc_lan,
+ * but due to small defects in hardware settings and
+ * the system sleeps and wakes up, 4g module can not disconnect the network,
+ * so system sleep mode cannot be turned off vcca_33 and vcc_lan.
+ * This configuration will result in increased power consumption,
+ * please configure according to the actual needs of the project.
+ */
+&vcca_33 {
+	regulator-state-mem {
+		regulator-on-in-suspend;
+	};
+};
+
+&vcc_lan {
+	regulator-state-mem {
+		regulator-on-in-suspend;
 	};
 };
