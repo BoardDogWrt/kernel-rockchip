@@ -124,7 +124,6 @@
 		rockchip,pwm_voltage = <900000>;
 	};
 
-
 	dp_sound: dp-sound {
 		status = "okay";
 		compatible = "rockchip,cdndp-sound";
