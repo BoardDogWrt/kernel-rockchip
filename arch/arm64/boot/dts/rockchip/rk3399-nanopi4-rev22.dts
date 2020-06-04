@@ -88,7 +88,7 @@
 	/delete-property/ extcon;
 };
 
-&usbdrd3_0 {
+&usbdrd_dwc3_0 {
 	/delete-property/ extcon;
 	extcon = <&u2phy0>;
 };
