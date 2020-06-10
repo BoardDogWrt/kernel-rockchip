@@ -28,7 +28,6 @@
 		compatible = "rockchip,rockchip-rt5651-sound";
 		rockchip,cpu = <&i2s1>;
 		rockchip,codec = <&rt5651 &rt5651>;
-		rockchip,hp-det-gpio = <&gpio4 28 GPIO_ACTIVE_HIGH>;
 		pinctrl-names = "default";
 		pinctrl-0 = <&hp_det>;
 		status = "okay";
