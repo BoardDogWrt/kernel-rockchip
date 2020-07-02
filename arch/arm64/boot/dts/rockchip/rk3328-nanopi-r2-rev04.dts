@@ -37,6 +37,15 @@
 	model = "NanoPi NEO3 Black";
 };
 
+&dmc_opp_table {
+	opp-1056000000 {
+		opp-hz = /bits/ 64 <1056000000>;
+		opp-microvolt = <1200000>;
+		opp-microvolt-L0 = <1200000>;
+		opp-microvolt-L1 = <1175000>;
+	};
+};
+
 &emmc {
 	status = "disabled";
 };
