@@ -34,6 +34,12 @@ config ROCKCHIP_GRF
 	  In a lot of cases there also need to be default settings initialized
 	  to make some of them conform to expectations of the kernel.
 
+config ROCKCHIP_HW_DECOMPRESS
+	bool "Rockchip HardWare Decompress Support"
+	help
+	  This driver support Decompress IP built-in Rockchip SoC, support
+	  LZ4, GZIP, ZLIB.
+
 config ROCKCHIP_IPA
 	bool "Rockchip IPA support"
 	depends on THERMAL && OF
@@ -72,6 +78,12 @@ config ROCKCHIP_PVTM
 	  the chip performance variance caused by chip process, voltage and
 	  temperature.
 
+config ROCKCHIP_RAMDISK
+	bool "Rockchip RAM disk support"
+	help
+	  Saying Y here will allow you to use reserved RAM memory as a block
+	  device.
+
 config ROCKCHIP_SUSPEND_MODE
 	bool "Rockchip suspend mode config"
 	depends on ROCKCHIP_SIP
@@ -83,6 +95,13 @@ config ROCKCHIP_SYSTEM_MONITOR
 	default y
 	help
 	  Say y here to enable rockchip system monitor support.
+
+config ROCKCHIP_MTD_VENDOR_STORAGE
+	bool "Rockchip mtd vendor storage support"
+	depends on MTD
+	default y
+	help
+	  Say y here to enable rockchip mtd vendor storage support.
 
 config ROCKCHIP_VENDOR_STORAGE_UPDATE_LOADER
 	bool "Rockchip vendor storage update loader support"
@@ -96,4 +115,17 @@ config ROCKCHIP_DEBUG
 	default y
 	help
 	  Print dbgpcsr for every cpu when panic.
+
+config ROCKCHIP_THUNDER_BOOT
+	bool "Rockchip Thunder Boot support"
+	help
+	  Say y here to enable Rockchip thunder boot support.
+	  This option make the kernel boot faster.
+
+config ROCKCHIP_THUNDER_BOOT_MMC
+	bool "Rockchip Thunder Boot from MMC"
+	depends on ROCKCHIP_THUNDER_BOOT
+	help
+	  Say y if boot from MMC.
+
 endif

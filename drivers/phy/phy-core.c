@@ -392,21 +392,6 @@ int phy_reset(struct phy *phy)
 }
 EXPORT_SYMBOL_GPL(phy_reset);
 
-int phy_cp_test(struct phy *phy)
-{
-	int ret;
-
-	if (!phy || !phy->ops->cp_test)
-		return 0;
-
-	mutex_lock(&phy->mutex);
-	ret = phy->ops->cp_test(phy);
-	mutex_unlock(&phy->mutex);
-
-	return ret;
-}
-EXPORT_SYMBOL_GPL(phy_cp_test);
-
 int phy_calibrate(struct phy *phy)
 {
 	int ret;
@@ -1063,7 +1048,11 @@ static int __init phy_core_init(void)
 
 	return 0;
 }
+#ifdef CONFIG_ROCKCHIP_THUNDER_BOOT
+subsys_initcall(phy_core_init);
+#else
 module_init(phy_core_init);
+#endif
 
 static void __exit phy_core_exit(void)
 {

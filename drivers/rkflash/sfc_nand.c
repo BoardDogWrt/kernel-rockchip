@@ -121,16 +121,17 @@ static int sfc_nand_rw_preset(void)
 {
 	int ret;
 	struct rk_sfc_op op;
-	u8 status = 0xFF;
 
 	op.sfcmd.d32 = 0;
-	op.sfcmd.b.cmd = 0;
-	op.sfcmd.b.rw = SFC_WRITE;
+	op.sfcmd.b.cmd = 0xff;
+	op.sfcmd.b.cs = 2;
 
 	op.sfctrl.d32 = 0;
 	op.sfctrl.b.datalines = 2;
+	op.sfctrl.b.cmdlines = 2;
+	op.sfctrl.b.addrlines = 2;
 
-	ret = sfc_request(&op, 0, &status, 1);
+	ret = sfc_request(&op, 0, NULL, 0);
 	return ret;
 }
 
@@ -460,7 +461,7 @@ u32 sfc_nand_erase_block(u8 cs, u32 addr)
 	return ret;
 }
 
-static u32 sfc_nand_prog_page_raw(u8 cs, u32 addr, u32 *p_page_buf)
+u32 sfc_nand_prog_page_raw(u8 cs, u32 addr, u32 *p_page_buf)
 {
 	int ret;
 	u32 plane;
@@ -522,7 +523,7 @@ u32 sfc_nand_prog_page(u8 cs, u32 addr, u32 *p_data, u32 *p_spare)
 	return ret;
 }
 
-static u32 sfc_nand_read_page_raw(u8 cs, u32 addr, u32 *p_page_buf)
+u32 sfc_nand_read_page_raw(u8 cs, u32 addr, u32 *p_page_buf)
 {
 	int ret;
 	u32 plane;
@@ -562,7 +563,7 @@ static u32 sfc_nand_read_page_raw(u8 cs, u32 addr, u32 *p_page_buf)
 	rkflash_print_dio("%s %x %x\n", __func__, addr, p_page_buf[0]);
 
 	if (ret != SFC_OK)
-		return SFC_NAND_ECC_ERROR;
+		return SFC_NAND_HW_ERROR;
 
 	return ecc_result;
 }
@@ -582,6 +583,9 @@ u32 sfc_nand_read_page(u8 cs, u32 addr, u32 *p_data, u32 *p_spare)
 		p_spare[2] = gp_page_buf[(data_size + meta->off2) / 4];
 		p_spare[3] = gp_page_buf[(data_size + meta->off3) / 4];
 	}
+
+	if (ret == SFC_NAND_HW_ERROR)
+		ret = SFC_NAND_ECC_ERROR;
 
 	if (ret != SFC_NAND_ECC_OK) {
 		rkflash_print_error("%s[0x%x], ret=0x%x\n", __func__, addr, ret);

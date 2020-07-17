@@ -1,36 +1,5 @@
-/*
- * Rockchip isp1 driver
- *
- * Copyright (C) 2017 Rockchip Electronics Co., Ltd.
- *
- * This software is available to you under a choice of one of two
- * licenses.  You may choose to be licensed under the terms of the GNU
- * General Public License (GPL) Version 2, available from the file
- * COPYING in the main directory of this source tree, or the
- * OpenIB.org BSD license below:
- *
- *     Redistribution and use in source and binary forms, with or
- *     without modification, are permitted provided that the following
- *     conditions are met:
- *
- *      - Redistributions of source code must retain the above
- *        copyright notice, this list of conditions and the following
- *        disclaimer.
- *
- *      - Redistributions in binary form must reproduce the above
- *        copyright notice, this list of conditions and the following
- *        disclaimer in the documentation and/or other materials
- *        provided with the distribution.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
- * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
- * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
- * NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS
- * BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
- * ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
- * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- * SOFTWARE.
- */
+/* SPDX-License-Identifier: GPL-2.0 */
+/* Copyright (c) 2019 Fuzhou Rockchip Electronics Co., Ltd. */
 
 #ifndef _RKISP_ISP_STATS_H
 #define _RKISP_ISP_STATS_H
@@ -40,6 +9,7 @@
 #include <linux/kfifo.h>
 #include "common.h"
 
+#define RKISP_STATS_DDR_BUF_NUM		1
 #define RKISP_READOUT_WORK_SIZE	\
 	(8 * sizeof(struct rkisp_isp_readout_work))
 
@@ -53,28 +23,17 @@ enum rkisp_isp_readout_cmd {
 struct rkisp_isp_readout_work {
 	unsigned int frame_id;
 	unsigned int isp_ris;
+	unsigned int isp3a_ris;
 	enum rkisp_isp_readout_cmd readout;
 	unsigned long long timestamp;
 };
 
-struct rkisp_stats_ops {
-	void (*get_awb_meas)(struct rkisp_isp_stats_vdev *stats_vdev,
-			     struct rkisp1_stat_buffer *pbuf);
-	void (*get_aec_meas)(struct rkisp_isp_stats_vdev *stats_vdev,
-			     struct rkisp1_stat_buffer *pbuf);
-	void (*get_afc_meas)(struct rkisp_isp_stats_vdev *stats_vdev,
-			     struct rkisp1_stat_buffer *pbuf);
-	void (*get_hst_meas)(struct rkisp_isp_stats_vdev *stats_vdev,
-			     struct rkisp1_stat_buffer *pbuf);
-	void (*get_bls_meas)(struct rkisp_isp_stats_vdev *stats_vdev,
-			     struct rkisp1_stat_buffer *pbuf);
-	void (*get_emb_data)(struct rkisp_isp_stats_vdev *stats_vdev,
-			     struct rkisp1_stat_buffer *pbuf);
-};
-
-struct rkisp_stats_config {
-	const int ae_mean_max;
-	const int hist_bin_n_max;
+struct rkisp_isp_stats_ops {
+	void (*isr_hdl)(struct rkisp_isp_stats_vdev *stats_vdev,
+			u32 isp_mis, u32 isp3a_ris);
+	void (*send_meas)(struct rkisp_isp_stats_vdev *stats_vdev,
+			  struct rkisp_isp_readout_work *meas_work);
+	void (*rdbk_enable)(struct rkisp_isp_stats_vdev *stats_vdev, bool en);
 };
 
 /*
@@ -97,11 +56,26 @@ struct rkisp_isp_stats_vdev {
 	struct kfifo rd_kfifo;
 	struct tasklet_struct rd_tasklet;
 
-	struct rkisp_stats_ops *ops;
-	struct rkisp_stats_config *config;
+	struct rkisp_isp_stats_ops *ops;
+	void *priv_ops;
+	void *priv_cfg;
+
+	struct rkisp_dummy_buffer stats_buf[RKISP_STATS_DDR_BUF_NUM];
+	u32 rd_buf_idx;
+	u32 wr_buf_idx;
+	bool rd_stats_from_ddr;
+
+	bool rdbk_mode;
+	u32 isp_rdbk;
+	u32 isp3a_rdbk;
 };
 
-int rkisp_stats_isr(struct rkisp_isp_stats_vdev *stats_vdev, u32 isp_ris);
+void rkisp_stats_rdbk_enable(struct rkisp_isp_stats_vdev *stats_vdev, bool en);
+
+void rkisp_stats_first_ddr_config(struct rkisp_isp_stats_vdev *stats_vdev);
+
+void rkisp_stats_isr(struct rkisp_isp_stats_vdev *stats_vdev,
+		     u32 isp_ris, u32 isp3a_ris);
 
 int rkisp_register_stats_vdev(struct rkisp_isp_stats_vdev *stats_vdev,
 			       struct v4l2_device *v4l2_dev,

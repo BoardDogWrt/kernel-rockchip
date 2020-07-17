@@ -5,6 +5,13 @@ video_rkisp-objs += rkisp.o \
 			dev.o \
 			regs.o \
 			isp_stats.o \
+			isp_stats_v1x.o \
+			isp_stats_v2x.o \
 			isp_params.o \
+			isp_params_v1x.o \
+			isp_params_v2x.o \
 			capture.o \
-			dmarx.o
+			dmarx.o \
+			csi.o \
+			bridge.o \
+			isp_mipi_luma.o

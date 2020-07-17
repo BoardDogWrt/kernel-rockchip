@@ -29,6 +29,24 @@
 #define RKMODULE_LSC_CFG	\
 	_IOW('V', BASE_VIDIOC_PRIVATE + 3, struct rkmodule_lsc_cfg)
 
+#define RKMODULE_GET_HDR_CFG	\
+	_IOR('V', BASE_VIDIOC_PRIVATE + 4, struct rkmodule_hdr_cfg)
+
+#define RKMODULE_SET_HDR_CFG	\
+	_IOW('V', BASE_VIDIOC_PRIVATE + 5, struct rkmodule_hdr_cfg)
+
+#define RKMODULE_SET_CONVERSION_GAIN	\
+	_IOW('V', BASE_VIDIOC_PRIVATE + 6, __u32)
+
+#define RKMODULE_GET_LVDS_CFG	\
+	_IOR('V', BASE_VIDIOC_PRIVATE + 7, struct rkmodule_lvds_cfg)
+
+#define RKMODULE_SET_DPCC_CFG	\
+	_IOW('V', BASE_VIDIOC_PRIVATE + 8, struct rkmodule_dpcc_cfg)
+
+#define RKMODULE_GET_NR_SWITCH_THRESHOLD	\
+	_IOR('V', BASE_VIDIOC_PRIVATE + 9, struct rkmodule_nr_switch_threshold)
+
 /**
  * struct rkmodule_base_inf - module base information
  *
@@ -141,6 +159,118 @@ struct rkmodule_af_cfg {
  */
 struct rkmodule_lsc_cfg {
 	__u32 enable;
+} __attribute__ ((packed));
+
+/**
+ * NO_HDR: linear mode
+ * HDR_X2: hdr two frame or line mode
+ * HDR_X3: hdr three or line mode
+ */
+enum rkmodule_hdr_mode {
+	NO_HDR = 0,
+	HDR_X2 = 5,
+	HDR_X3 = 6,
+};
+
+/**
+ * HDR_NORMAL_VC: hdr frame with diff virtual channels
+ * HDR_LINE_CNT: hdr frame with line counter
+ * HDR_ID_CODE: hdr frame with identification code
+ */
+enum hdr_esp_mode {
+	HDR_NORMAL_VC = 0,
+	HDR_LINE_CNT,
+	HDR_ID_CODE,
+};
+
+/**
+ * lcnt: line counter
+ *     padnum: the pixels of padding row
+ *     padpix: the payload of padding
+ * idcd: identification code
+ *     efpix: identification code of Effective line
+ *     obpix: identification code of OB line
+ */
+struct rkmodule_hdr_esp {
+	enum hdr_esp_mode mode;
+	union {
+		struct {
+			__u32 padnum;
+			__u32 padpix;
+		} lcnt;
+		struct {
+			__u32 efpix;
+			__u32 obpix;
+		} idcd;
+	} val;
+};
+
+struct rkmodule_hdr_cfg {
+	__u32 hdr_mode;
+	struct rkmodule_hdr_esp esp;
+} __attribute__ ((packed));
+
+/* sensor lvds sync code
+ * sav: start of active video codes
+ * eav: end of active video codes
+ */
+struct rkmodule_sync_code {
+	u16 sav;
+	u16 eav;
+};
+
+/* sensor lvds difference sync code mode
+ * LS_FIRST: valid line ls-le or sav-eav
+ *	   invalid line fs-fe or sav-eav
+ * FS_FIRST: valid line fs-le
+ *	   invalid line ls-fe
+ * ls: line start
+ * le: line end
+ * fs: frame start
+ * fe: frame end
+ */
+enum rkmodule_lvds_mode {
+	LS_FIRST = 0,
+	FS_FIRST = BIT(1),
+};
+
+/* struct rkmodule_lvds_cfg
+ * act: valid line sync code
+ * blk: invalid line sync code
+ */
+struct rkmodule_lvds_cfg {
+	enum rkmodule_lvds_mode mode;
+	struct rkmodule_sync_code act;
+	struct rkmodule_sync_code blk;
+} __attribute__ ((packed));
+
+/**
+ * struct rkmodule_dpcc_cfg
+ * enable: 0 -> disable dpcc, 1 -> enable multiple,
+ *         2 -> enable single, 3 -> enable all;
+ * cur_single_dpcc: the strength of single dpcc;
+ * cur_multiple_dpcc: the strength of multiple dpcc;
+ * total_dpcc: the max strength;
+ */
+struct rkmodule_dpcc_cfg {
+	__u32 enable;
+	__u32 cur_single_dpcc;
+	__u32 cur_multiple_dpcc;
+	__u32 total_dpcc;
+} __attribute__ ((packed));
+
+/**
+ * nr switch by gain
+ * direct: 0 -> up_thres LSNR to HSNR, 1 -> up_thres HSNR to LSNR
+ * up_thres: threshold of nr change from low gain to high gain
+ * down_thres: threshold of nr change from high gain to low gain;
+ * div_coeff: Coefficients converted from float to int
+ */
+struct rkmodule_nr_switch_threshold {
+	__u32 direct;
+	__u32 up_thres;
+	__u32 down_thres;
+	__u32 div_coeff;
 } __attribute__ ((packed));
 
 #endif /* _UAPI_RKMODULE_CAMERA_H */

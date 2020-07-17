@@ -89,8 +89,8 @@
 			SYS_STATUS_VIDEO_4K_10B	528000
 			SYS_STATUS_PERFORMANCE	528000
 			SYS_STATUS_BOOST	396000
-			SYS_STATUS_DUALVIEW	396000
-			SYS_STATUS_ISP		396000
+			SYS_STATUS_DUALVIEW	528000
+			SYS_STATUS_ISP		528000
 		>;
 		auto-min-freq = <396000>;
 		auto-freq-en = <0>;
@@ -257,6 +257,38 @@
 	reg = <0x0 0xff600000 0x0 0x4000>;
 };
 
+&dsi0 {
+	panel@0 {
+		reg = <0>;
+
+		ports {
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			port@0 {
+				reg = <0>;
+
+				panel_in_dsi: endpoint {
+					remote-endpoint = <&dsi_out_panel>;
+				};
+			};
+		};
+	};
+
+	ports {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		port@1 {
+			reg = <1>;
+
+			dsi_out_panel: endpoint {
+				remote-endpoint = <&panel_in_dsi>;
+			};
+		};
+	};
+};
+
 &efuse {
 	compatible = "rockchip,rk3288-secure-efuse";
 };
@@ -297,6 +329,8 @@
 	compatible = "rockchip,rga2";
 	clocks = <&cru ACLK_RGA>, <&cru HCLK_RGA>, <&cru SCLK_RGA>;
 	clock-names = "aclk_rga", "hclk_rga", "clk_rga";
+	assigned-clocks = <&cru ACLK_RGA>, <&cru SCLK_RGA>;
+	assigned-clock-rates = <300000000>, <300000000>;
 	dma-coherent;
 	status = "okay";
 };

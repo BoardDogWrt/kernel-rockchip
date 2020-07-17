@@ -674,6 +674,9 @@ extern const struct clk_ops clk_multiplier_ops;
  * @mux_hw:	handle between composite and hardware-specific mux clock
  * @rate_hw:	handle between composite and hardware-specific rate clock
  * @gate_hw:	handle between composite and hardware-specific gate clock
+ * @brother_hw: a member of clk_composite who has the common parent clocks
+ *              with another clk_composite, and it's also a handle between
+ *              common and hardware-specific interfaces
  * @mux_ops:	clock ops for mux
  * @rate_ops:	clock ops for rate
  * @gate_ops:	clock ops for gate
@@ -685,6 +688,7 @@ struct clk_composite {
 	struct clk_hw	*mux_hw;
 	struct clk_hw	*rate_hw;
 	struct clk_hw	*gate_hw;
+	struct clk_hw	*brother_hw;
 
 	const struct clk_ops	*mux_ops;
 	const struct clk_ops	*rate_ops;
@@ -789,9 +793,6 @@ unsigned int __clk_get_enable_count(struct clk *clk);
 unsigned long clk_hw_get_rate(const struct clk_hw *hw);
 unsigned long __clk_get_flags(struct clk *clk);
 unsigned long clk_hw_get_flags(const struct clk_hw *hw);
-#define clk_hw_can_set_rate_parent(hw) \
-	(clk_hw_get_flags((hw)) & CLK_SET_RATE_PARENT)
-
 bool clk_hw_is_prepared(const struct clk_hw *hw);
 bool clk_hw_rate_is_protected(const struct clk_hw *hw);
 bool clk_hw_is_enabled(const struct clk_hw *hw);

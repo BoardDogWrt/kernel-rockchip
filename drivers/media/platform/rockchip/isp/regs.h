@@ -35,6 +35,7 @@
 #ifndef _RKISP_REGS_H
 #define _RKISP_REGS_H
 #include "dev.h"
+#include "regs_v2x.h"
 
 #define CIF_ISP_PACK_4BYTE(a, b, c, d)	\
 	(((a) & 0xFF) << 0 | ((b) & 0xFF) << 8 | \
@@ -150,8 +151,8 @@
 #define CIF_MI_SP_Y_FULL_YUV2RGB		BIT(8)
 #define CIF_MI_SP_CBCR_FULL_YUV2RGB		BIT(9)
 #define CIF_MI_SP_422NONCOSITEED		BIT(10)
-#define CIF_MI_MP_PINGPONG_ENABEL		BIT(11)
-#define CIF_MI_SP_PINGPONG_ENABEL		BIT(12)
+#define CIF_MI_MP_PINGPONG_ENABLE		BIT(11)
+#define CIF_MI_SP_PINGPONG_ENABLE		BIT(12)
 #define CIF_MI_MP_AUTOUPDATE_ENABLE		BIT(13)
 #define CIF_MI_SP_AUTOUPDATE_ENABLE		BIT(14)
 #define CIF_MI_LAST_PIXEL_SIG_ENABLE		BIT(15)
@@ -218,7 +219,13 @@
 #define CIF_RSZ_SCALER_FACTOR			BIT(16)
 
 /* MI_IMSC - MI_MIS - MI_RIS - MI_ICR - MI_ISR */
-#define CIF_MI_FRAME(stream)			BIT((stream)->id)
+#define CIF_MI_FRAME(stream) ({ \
+	typeof(stream) __stream = (stream); \
+	!__stream->config ? 0 : \
+	__stream->config->frame_end_id; \
+})
+#define CIF_MI_MP_FRAME				BIT(0)
+#define CIF_MI_SP_FRAME				BIT(1)
 #define CIF_MI_MBLK_LINE			BIT(2)
 #define CIF_MI_FILL_MP_Y			BIT(3)
 #define CIF_MI_WRAP_MP_Y			BIT(4)
@@ -510,6 +517,8 @@
 #define CIF_ISP_AWB_YMAX_READ(x)		(((x) >> 2) & 1)
 #define CIF_ISP_AWB_MODE_RGB_EN			((1 << 31) | (0x2 << 0))
 #define CIF_ISP_AWB_MODE_YCBCR_EN		((0 << 31) | (0x2 << 0))
+#define CIF_ISP_AWB_MODE_RGB			BIT(31)
+#define CIF_ISP_AWB_ENABLE			(0x2 << 0)
 #define CIF_ISP_AWB_MODE_MASK_NONE		0xFFFFFFFC
 #define CIF_ISP_AWB_MODE_READ(x)		((x) & 3)
 #define CIF_ISP_AWB_SET_FRAMES_V12(x)		(((x) & 0x07) << 28)
@@ -1627,6 +1636,20 @@ bool mp_is_frame_end_int_masked(void __iomem *base);
 bool sp_is_frame_end_int_masked(void __iomem *base);
 bool mp_is_stream_stopped(void __iomem *base);
 bool sp_is_stream_stopped(void __iomem *base);
+
+static inline void isp_set_bits(void __iomem *addr, u32 bit_mask, u32 val)
+{
+	u32 tmp = readl(addr) & ~bit_mask;
+
+	writel(tmp | val, addr);
+}
+
+static inline void isp_clear_bits(void __iomem *addr, u32 bit_mask)
+{
+	u32 val = readl(addr);
+
+	writel(val & ~bit_mask, addr);
+}
 
 static inline void mi_set_y_size(struct rkisp_stream *stream, int val)
 {

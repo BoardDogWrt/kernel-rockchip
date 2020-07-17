@@ -80,6 +80,8 @@ enum rkcif_chip_id {
 	CHIP_RK3128_CIF,
 	CHIP_RK3288_CIF,
 	CHIP_RK3328_CIF,
+	CHIP_RK3368_CIF,
+	CHIP_RV1126_CIF,
 };
 
 enum host_type_t {
@@ -313,6 +315,10 @@ struct rkcif_device {
 
 void rkcif_write_register(struct rkcif_device *dev,
 			  enum cif_reg_index index, u32 val);
+void rkcif_write_register_or(struct rkcif_device *dev,
+			     enum cif_reg_index index, u32 val);
+void rkcif_write_register_and(struct rkcif_device *dev,
+			      enum cif_reg_index index, u32 val);
 unsigned int rkcif_read_register(struct rkcif_device *dev,
 				 enum cif_reg_index index);
 void rkcif_unregister_stream_vdevs(struct rkcif_device *dev,

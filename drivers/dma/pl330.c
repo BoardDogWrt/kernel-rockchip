@@ -35,7 +35,18 @@
 #define PL330_MAX_PERI		32
 #define PL330_MAX_BURST         16
 
-#define PL330_QUIRK_BROKEN_NO_FLUSHP BIT(0)
+#define PL330_QUIRK_BROKEN_NO_FLUSHP	BIT(0)
+#define PL330_QUIRK_PERIPH_BURST	BIT(1)
+
+#ifdef CONFIG_CPU_RV1126
+#undef writel
+#define writel(v, c)			\
+	do {				\
+		readl_relaxed(c);	\
+		__iowmb();		\
+		writel_relaxed(v, c);	\
+	} while (0)
+#endif
 
 enum pl330_cachectrl {
 	CCTRL0,		/* Noncacheable and nonbufferable */
@@ -505,6 +516,10 @@ static struct pl330_of_quirks {
 	{
 		.quirk = "arm,pl330-broken-no-flushp",
 		.id = PL330_QUIRK_BROKEN_NO_FLUSHP,
+	},
+	{
+		.quirk = "arm,pl330-periph-burst",
+		.id = PL330_QUIRK_PERIPH_BURST,
 	}
 };
 
@@ -881,6 +896,12 @@ static inline void _execute_DBGINSN(struct pl330_thread *thrd,
 	void __iomem *regs = thrd->dmac->base;
 	u32 val;
 
+	/* If timed out due to halted state-machine */
+	if (_until_dmac_idle(thrd)) {
+		dev_err(thrd->dmac->ddma.dev, "DMAC halted!\n");
+		return;
+	}
+
 	val = (insn[0] << 16) | (insn[1] << 24);
 	if (!as_manager) {
 		val |= (1 << 0);
@@ -890,12 +911,6 @@ static inline void _execute_DBGINSN(struct pl330_thread *thrd,
 
 	val = le32_to_cpu(*((__le32 *)&insn[2]));
 	writel(val, regs + DBGINST1);
-
-	/* If timed out due to halted state-machine */
-	if (_until_dmac_idle(thrd)) {
-		dev_err(thrd->dmac->ddma.dev, "DMAC halted!\n");
-		return;
-	}
 
 	/* Get going */
 	writel(0, regs + DBGCMD);
@@ -1179,9 +1194,6 @@ static inline int _ldst_peripheral(struct pl330_dmac *pl330,
 {
 	int off = 0;
 
-	if (pl330->quirks & PL330_QUIRK_BROKEN_NO_FLUSHP)
-		cond = BURST;
-
 	/*
 	 * do FLUSHP at beginning to clear any stale dma requests before the
 	 * first WFP.
@@ -1205,6 +1217,9 @@ static int _bursts(struct pl330_dmac *pl330, unsigned dry_run, u8 buf[],
 	int off = 0;
 	enum pl330_cond cond = BRST_LEN(pxs->ccr) > 1 ? BURST : SINGLE;
 
+	if (pl330->quirks & PL330_QUIRK_PERIPH_BURST)
+		cond = BURST;
+
 	switch (pxs->desc->rqtype) {
 	case DMA_MEM_TO_DEV:
 		/* fall through */
@@ -1227,8 +1242,9 @@ static int _bursts(struct pl330_dmac *pl330, unsigned dry_run, u8 buf[],
 }
 
 /*
- * transfer dregs with single transfers to peripheral, or a reduced size burst
- * for mem-to-mem.
+ * only the unaligned bursts transfers have the dregs.
+ * transfer dregs with a reduced size burst to peripheral,
+ * or a reduced size burst for mem-to-mem.
  */
 static int _dregs(struct pl330_dmac *pl330, unsigned int dry_run, u8 buf[],
 		const struct _xfer_spec *pxs, int transfer_length)
@@ -1243,8 +1259,23 @@ static int _dregs(struct pl330_dmac *pl330, unsigned int dry_run, u8 buf[],
 	case DMA_MEM_TO_DEV:
 		/* fall through */
 	case DMA_DEV_TO_MEM:
-		off += _ldst_peripheral(pl330, dry_run, &buf[off], pxs,
-			transfer_length, SINGLE);
+		/*
+		 * dregs_len = (total bytes - BURST_TO_BYTE(bursts, ccr)) /
+		 *             BRST_SIZE(ccr)
+		 * the dregs len must be smaller than burst len,
+		 * so, for higher efficiency, we can modify CCR
+		 * to use a reduced size burst len for the dregs.
+		 */
+		dregs_ccr = pxs->ccr;
+		dregs_ccr &= ~((0xf << CC_SRCBRSTLEN_SHFT) |
+			(0xf << CC_DSTBRSTLEN_SHFT));
+		dregs_ccr |= (((transfer_length - 1) & 0xf) <<
+			CC_SRCBRSTLEN_SHFT);
+		dregs_ccr |= (((transfer_length - 1) & 0xf) <<
+			CC_DSTBRSTLEN_SHFT);
+		off += _emit_MOV(dry_run, &buf[off], CCR, dregs_ccr);
+		off += _ldst_peripheral(pl330, dry_run, &buf[off], pxs, 1,
+					BURST);
 		break;
 
 	case DMA_MEM_TO_MEM:
@@ -1393,14 +1424,7 @@ static int _period(struct pl330_dmac *pl330, unsigned int dry_run, u8 buf[],
 	num_dregs = BYTE_MOD_BURST_LEN(x->bytes, pxs->ccr);
 
 	if (num_dregs) {
-		off += _emit_LP(dry_run, &buf[off], 1, num_dregs);
-		ljmp1 = off;
-		off += _dregs(pl330, dry_run, &buf[off], pxs, 1);
-		lpend.cond = ALWAYS;
-		lpend.forever = false;
-		lpend.loop = 1;
-		lpend.bjump = off - ljmp1;
-		off += _emit_LPEND(dry_run, &buf[off], &lpend);
+		off += _dregs(pl330, dry_run, &buf[off], pxs, num_dregs);
 		off += _emit_MOV(dry_run, &buf[off], CCR, pxs->ccr);
 	}
 
@@ -2347,9 +2371,7 @@ static bool pl330_prep_slave_fifo(struct dma_pl330_chan *pch,
 
 static int fixup_burst_len(int max_burst_len, int quirks)
 {
-	if (quirks & PL330_QUIRK_BROKEN_NO_FLUSHP)
-		return 1;
-	else if (max_burst_len > PL330_MAX_BURST)
+	if (max_burst_len > PL330_MAX_BURST)
 		return PL330_MAX_BURST;
 	else if (max_burst_len < 1)
 		return 1;
@@ -3141,8 +3163,7 @@ pl330_probe(struct amba_device *adev, const struct amba_id *id)
 	pd->dst_addr_widths = PL330_DMA_BUSWIDTHS;
 	pd->directions = BIT(DMA_DEV_TO_MEM) | BIT(DMA_MEM_TO_DEV);
 	pd->residue_granularity = DMA_RESIDUE_GRANULARITY_BURST;
-	pd->max_burst = ((pl330->quirks & PL330_QUIRK_BROKEN_NO_FLUSHP) ?
-			 1 : PL330_MAX_BURST);
+	pd->max_burst = PL330_MAX_BURST;
 
 	ret = dma_async_device_register(pd);
 	if (ret) {

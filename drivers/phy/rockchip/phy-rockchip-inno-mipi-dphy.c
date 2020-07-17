@@ -672,7 +672,7 @@ static int inno_mipi_dphy_pll_register(struct inno_mipi_dphy *inno)
 	struct device_node *np = dev->of_node;
 	struct clk *clk;
 	const char *parent_name;
-	struct clk_init_data init;
+	struct clk_init_data init = {};
 	int ret;
 
 	parent_name = __clk_get_name(inno->ref_clk);
@@ -817,6 +817,7 @@ static int inno_mipi_dphy_remove(struct platform_device *pdev)
 
 static const struct of_device_id inno_mipi_dphy_of_match[] = {
 	{ .compatible = "rockchip,rk1808-mipi-dphy", },
+	{ .compatible = "rockchip,rv1126-mipi-dphy", },
 	{}
 };
 MODULE_DEVICE_TABLE(of, inno_mipi_dphy_of_match);
@@ -830,7 +831,21 @@ static struct platform_driver inno_mipi_dphy_driver = {
 	.remove = inno_mipi_dphy_remove,
 };
 
+#ifdef CONFIG_ROCKCHIP_THUNDER_BOOT
+static int __init inno_mipi_dphy_driver_init(void)
+{
+	return platform_driver_register(&inno_mipi_dphy_driver);
+}
+fs_initcall(inno_mipi_dphy_driver_init);
+
+static void __exit inno_mipi_dphy_driver_exit(void)
+{
+	platform_driver_unregister(&inno_mipi_dphy_driver);
+}
+module_exit(inno_mipi_dphy_driver_exit);
+#else
 module_platform_driver(inno_mipi_dphy_driver);
+#endif
 
 MODULE_AUTHOR("Wyon Bi <bivvy.bi@rock-chips.com>");
 MODULE_DESCRIPTION("Innosilicon MIPI D-PHY Driver");

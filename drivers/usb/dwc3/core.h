@@ -37,7 +37,7 @@
 #define DWC3_EP0_SETUP_SIZE	512
 #define DWC3_ENDPOINTS_NUM	32
 #define DWC3_XHCI_RESOURCES_NUM	2
-#define DWC3_ISOC_MAX_RETRIES	5
+#define DWC3_ISOC_MAX_RETRIES	50
 
 #define DWC3_SCRATCHBUF_SIZE	4096	/* each buffer is assumed to be 4KiB */
 #define DWC3_EVENT_BUFFERS_SIZE	4096
@@ -1031,6 +1031,8 @@ struct dwc3_scratchpad_array {
  * @xhci_trb_ent_quirk: set if need to enable the Evaluate Next TRB(ENT)
 			flag in the TRB data structure to force xHC to
 			pre-fetch the next TRB of a TD.
+ * @xhci_warm_reset_on_suspend_quirk: set if need to do a warm port reset
+ *			for xHC USB3 port upon suspend.
  * @dis_u3_autosuspend_quirk: set if the we want to disable usb3 autosuspend
  * @tx_de_emphasis_quirk: set if we enable Tx de-emphasis quirk
  * @tx_de_emphasis: Tx de-emphasis value
@@ -1227,6 +1229,7 @@ struct dwc3 {
 	unsigned		dis_tx_ipgap_linecheck_quirk:1;
 	unsigned		xhci_slow_suspend_quirk:1;
 	unsigned		xhci_trb_ent_quirk:1;
+	unsigned		xhci_warm_reset_on_suspend_quirk:1;
 	unsigned		dis_u3_autosuspend_quirk:1;
 
 	unsigned		tx_de_emphasis_quirk:1;

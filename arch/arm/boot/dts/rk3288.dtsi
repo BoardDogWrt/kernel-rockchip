@@ -9,6 +9,7 @@
 #include <dt-bindings/thermal/thermal.h>
 #include <dt-bindings/soc/rockchip,boot-mode.h>
 #include <dt-bindings/suspend/rockchip-rk3288.h>
+#include <dt-bindings/display/drm_mipi_dsi.h>
 
 / {
 	#address-cells = <2>;
@@ -240,7 +241,7 @@
 				     <GIC_SPI 3 IRQ_TYPE_LEVEL_HIGH>;
 			#dma-cells = <1>;
 			arm,pl330-broken-no-flushp;
-			peripherals-req-type-burst;
+			arm,pl330-periph-burst;
 			clocks = <&cru ACLK_DMAC2>;
 			clock-names = "apb_pclk";
 		};
@@ -252,7 +253,7 @@
 				     <GIC_SPI 1 IRQ_TYPE_LEVEL_HIGH>;
 			#dma-cells = <1>;
 			arm,pl330-broken-no-flushp;
-			peripherals-req-type-burst;
+			arm,pl330-periph-burst;
 			clocks = <&cru ACLK_DMAC1>;
 			clock-names = "apb_pclk";
 			status = "disabled";
@@ -265,7 +266,7 @@
 				     <GIC_SPI 1 IRQ_TYPE_LEVEL_HIGH>;
 			#dma-cells = <1>;
 			arm,pl330-broken-no-flushp;
-			peripherals-req-type-burst;
+			arm,pl330-periph-burst;
 			clocks = <&cru ACLK_DMAC1>;
 			clock-names = "apb_pclk";
 		};
@@ -1184,6 +1185,21 @@
 		status = "disabled";
 	};
 
+	spdif_2ch: sound@ff880000 {
+		compatible = "rockchip,rk3288-spdif", "rockchip,rk3066-spdif";
+		reg = <0x0 0xff880000 0x0 0x10000>;
+		#sound-dai-cells = <0>;
+		clock-names = "hclk", "mclk";
+		clocks = <&cru HCLK_SPDIF>, <&cru SCLK_SPDIF>;
+		dmas = <&dmac_bus_s 2>;
+		dma-names = "tx";
+		interrupts = <GIC_SPI 54 IRQ_TYPE_LEVEL_HIGH>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&spdif_tx>;
+		rockchip,grf = <&grf>;
+		status = "disabled";
+	};
+
 	i2s: i2s@ff890000 {
 		compatible = "rockchip,rk3288-i2s", "rockchip,rk3066-i2s";
 		reg = <0x0 0xff890000 0x0 0x10000>;
@@ -1687,6 +1703,8 @@
 		interrupt-names = "irq_dec";
 		clocks = <&cru ACLK_VCODEC>, <&cru HCLK_VCODEC>;
 		clock-names = "aclk_vcodec", "hclk_vcodec";
+		rockchip,normal-rates = <300000000>, <0>;
+		rockchip,advanced-rates = <600000000>, <0>;
 		resets = <&cru SRST_VCODEC_AXI>, <&cru SRST_VCODEC_AHB>;
 		reset-names = "shared_video_a", "shared_video_h";
 		assigned-clocks = <&cru ACLK_VCODEC>;
@@ -1720,6 +1738,10 @@
 			 <&cru SCLK_HEVC_CABAC>;
 		clock-names = "aclk_vcodec", "hclk_vcodec", "clk_core",
 			      "clk_cabac";
+		rockchip,normal-rates = <300000000>, <0>, <200000000>,
+				<200000000>;
+		rockchip,advanced-rates = <500000000>, <0>, <400000000>,
+				<400000000>;
 		resets =  <&cru SRST_HEVC>;
 		reset-names = "video_core";
 
@@ -1789,7 +1811,7 @@
 		nvmem-cells = <&performance>, <&performance_w>;
 		nvmem-cell-names = "performance", "performance-w";
 		rockchip,bin-scaling-sel = <
-			0               59
+			0               55
 			1               59
 			2               61
 			3               61

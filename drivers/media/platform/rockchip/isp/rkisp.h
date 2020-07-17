@@ -94,7 +94,7 @@ enum rkisp_isp_pad {
  * struct rkisp_isp_subdev - ISP sub-device
  *
  * See Cropping regions of ISP in rkisp.c for details
- * @in_frm: input size, don't have to be equal to sensor size
+ * @in_frm: input size, equal to sensor size
  * @in_fmt: intput format
  * @in_crop: crop for sink pad
  * @out_fmt: output format
@@ -134,13 +134,25 @@ void rkisp_mipi_isr(unsigned int mipi_mis, struct rkisp_device *dev);
 void rkisp_mipi_v13_isr(unsigned int err1, unsigned int err2,
 			       unsigned int err3, struct rkisp_device *dev);
 
-void rkisp_isp_isr(unsigned int isp_mis, struct rkisp_device *dev);
+void rkisp_mipi_v20_isr(unsigned int phy, unsigned int packet,
+			 unsigned int overflow, unsigned int state,
+			 struct rkisp_device *dev);
+
+void rkisp_isp_isr(unsigned int isp_mis, unsigned int isp3a_mis,
+		   struct rkisp_device *dev);
 
 irqreturn_t rkisp_vs_isr_handler(int irq, void *ctx);
+
+int rkisp_align_sensor_resolution(struct rkisp_device *dev,
+				  struct v4l2_rect *crop, bool user);
+
+struct media_pad *rkisp_media_entity_remote_pad(struct media_pad *pad);
 
 int rkisp_update_sensor_info(struct rkisp_device *dev);
 
 u32 rkisp_mbus_pixelcode_to_v4l2(u32 pixelcode);
+
+void rkisp_isp_queue_event_sof(struct rkisp_isp_subdev *isp);
 
 static inline
 struct ispsd_out_fmt *rkisp_get_ispsd_out_fmt(struct rkisp_isp_subdev *isp_sdev)

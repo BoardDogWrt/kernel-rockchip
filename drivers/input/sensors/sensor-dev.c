@@ -501,7 +501,7 @@ static int sensor_reset_rate(struct i2c_client *client, int rate)
 			sensor->stop_work = 1;
 			cancel_delayed_work_sync(&sensor->delaywork);
 		}
-		result = sensor->ops->active(client, SENSOR_OFF, rate);
+		sensor->ops->active(client, SENSOR_OFF, rate);
 		result = sensor->ops->active(client, SENSOR_ON, rate);
 		if (!sensor->pdata->irq_enable) {
 			sensor->stop_work = 0;
@@ -881,7 +881,6 @@ error:
 static int compass_dev_open(struct inode *inode, struct file *file)
 {
 	struct sensor_private_data *sensor = g_sensor[SENSOR_TYPE_COMPASS];
-	int result = 0;
 	int flag = 0;
 
 	flag = atomic_read(&sensor->flags.open_flag);
@@ -890,13 +889,12 @@ static int compass_dev_open(struct inode *inode, struct file *file)
 		wake_up(&sensor->flags.open_wq);
 	}
 
-	return result;
+	return 0;
 }
 
 static int compass_dev_release(struct inode *inode, struct file *file)
 {
 	struct sensor_private_data *sensor = g_sensor[SENSOR_TYPE_COMPASS];
-	int result = 0;
 	int flag = 0;
 
 	flag = atomic_read(&sensor->flags.open_flag);
@@ -905,7 +903,7 @@ static int compass_dev_release(struct inode *inode, struct file *file)
 		wake_up(&sensor->flags.open_wq);
 	}
 
-	return result;
+	return 0;
 }
 
 #ifdef CONFIG_COMPAT
@@ -1597,10 +1595,9 @@ int sensor_unregister_slave(int type, struct i2c_client *client,
 	return result;
 }
 
-int sensor_probe(struct i2c_client *client, const struct i2c_device_id *devid)
+static int sensor_probe(struct i2c_client *client, const struct i2c_device_id *devid)
 {
-	struct sensor_private_data *sensor =
-	    (struct sensor_private_data *) i2c_get_clientdata(client);
+	struct sensor_private_data *sensor;
 	struct sensor_platform_data *pdata;
 	struct device_node *np = client->dev.of_node;
 	enum of_gpio_flags rst_flags, pwr_flags;
@@ -1853,7 +1850,7 @@ int sensor_probe(struct i2c_client *client, const struct i2c_device_id *devid)
 		input_set_abs_params(sensor->input_dev, ABS_Y, sensor->ops->range[0], sensor->ops->range[1], 0, 0);
 		/* z-axis acceleration */
 		input_set_abs_params(sensor->input_dev, ABS_Z, sensor->ops->range[0], sensor->ops->range[1], 0, 0);
-
+		break;
 	case SENSOR_TYPE_ACCEL:
 		sensor->input_dev->name = "gsensor";
 		set_bit(EV_ABS, sensor->input_dev->evbit);
@@ -2017,6 +2014,8 @@ static const struct i2c_device_id sensor_id[] = {
 	{"gs_mxc6655xa", ACCEL_ID_MXC6655XA},
 	{"gs_dmard10", ACCEL_ID_DMARD10},
 	{"gs_lsm303d", ACCEL_ID_LSM303D},
+	{"gs_sc7660", ACCEL_ID_SC7660},
+	{"gs_sc7a20", ACCEL_ID_SC7A20},
 	{"gs_sc7a30",ACCEL_ID_SC7A30},
 	{"gs_mc3230", ACCEL_ID_MC3230},
 	{"mpu6880_acc", ACCEL_ID_MPU6880},
@@ -2024,6 +2023,7 @@ static const struct i2c_device_id sensor_id[] = {
 	{"lsm330_acc", ACCEL_ID_LSM330},
 	{"bma2xx_acc", ACCEL_ID_BMA2XX},
 	{"gs_stk8baxx", ACCEL_ID_STK8BAXX},
+	{"gs_da223", ACCEL_ID_MIR3DA},
 	/*compass*/
 	{"compass", COMPASS_ID_ALL},
 	{"ak8975", COMPASS_ID_AK8975},

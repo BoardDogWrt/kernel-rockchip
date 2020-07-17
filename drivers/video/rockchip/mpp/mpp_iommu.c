@@ -428,12 +428,6 @@ err_put_pdev:
 
 int mpp_iommu_remove(struct mpp_iommu_info *info)
 {
-#ifdef CONFIG_ARM_DMA_USE_IOMMU
-	struct dma_iommu_mapping *mapping;
-
-	mapping = to_dma_iommu_mapping(info->dev);
-	arm_iommu_release_mapping(mapping);
-#endif
 	iommu_group_put(info->group);
 	platform_device_put(info->pdev);
 
@@ -483,11 +477,10 @@ int mpp_iommu_enable(struct mpp_rk_iommu *iommu)
 {
 	int i;
 
-	/* iommu should be paging disable */
-	if (mpp_iommu_is_paged(iommu)) {
-		mpp_err("iommu disable failed\n");
-		return -ENOMEM;
-	}
+	/* check iommu whether is paged */
+	iommu->is_paged = mpp_iommu_is_paged(iommu);
+	if (iommu->is_paged)
+		return 0;
 
 	/* enable stall */
 	for (i = 0; i < iommu->mmu_num; i++)
@@ -526,7 +519,8 @@ int mpp_iommu_enable(struct mpp_rk_iommu *iommu)
 	/* iommu should be paging enable */
 	iommu->is_paged = mpp_iommu_is_paged(iommu);
 	if (!iommu->is_paged) {
-		mpp_err("iommu enable failed\n");
+		mpp_err("iommu->base_addr=%08x enable failed\n",
+			iommu->base_addr[0]);
 		return -EINVAL;
 	}
 

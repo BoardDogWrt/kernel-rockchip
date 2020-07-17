@@ -1,0 +1,113 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/*
+ * Copyright (c) 2020 Fuzhou Rockchip Electronics Co., Ltd.
+ */
+
+#include "rv1126-evb-ddr3-v10.dts"
+
+/ {
+	model = "Rockchip RV1126 EVB DDR3 Board (Thunder Boot)";
+	compatible = "rockchip,rv1126-evb-ddr3-v10-tb", "rockchip,rv1126";
+
+	chosen {
+		bootargs = "loglevel=0 initcall_nr_threads=-1 initcall_debug=0 printk.devkmsg=on root=/dev/rd0 rk.root2nd=/dev/mmcblk0p7 console=ttyFIQ0 snd_aloop.index=7 driver_async_probe=dwmmc_rockchip";
+	};
+
+	memory {
+		device_type = "memory";
+		reg = <0x00000000 0x20000000>;
+	};
+
+	ramdisk {
+		compatible = "rockchip,ramdisk";
+		memory-region = <&ramdisk_r>;
+	};
+
+	reserved-memory {
+		trust@0 {
+			reg = <0x00000000 0x00200000>;
+			no-map;
+		};
+
+		trust@200000 {
+			reg = <0x00200000 0x00008000>;
+		};
+
+		mmc_ecsd: mmc@20f000 {
+			reg = <0x0020f000 0x00001000>;
+		};
+
+		ramoops@210000 {
+			compatible = "ramoops";
+			reg = <0x00210000 0x000f0000>;
+			record-size = <0x20000>;
+			console-size = <0x20000>;
+			ftrace-size = <0x00000>;
+			pmsg-size = <0x50000>;
+		};
+
+		rtos@300000 {
+			reg = <0x00300000 0x00100000>;
+			no-map;
+		};
+
+		idma_descriptor: mmc_idma@500000 {
+			reg = <0x00500000 0x00100000>;
+		};
+
+		ramdisk_r: ramdisk@2800000 {
+			reg = <0x02800000 (40 * 0x00100000)>;
+		};
+
+		ramdisk_c: ramdisk@5800000 {
+			reg = <0x05800000 (20 * 0x00100000)>;
+		};
+	};
+
+	rockchip_tb {
+		compatible = "rockchip,thunder-boot-mmc";
+		reg = <0xffc50000 0x4000>;
+		memory-region-src = <&ramdisk_c>;
+		memory-region-dst = <&ramdisk_r>;
+		memory-region-idmac = <&idma_descriptor>;
+	};
+};
+
+&cpu0_opp_table {
+	rockchip,reboot-freq = <1200000>;
+	/delete-node/ opp-1296000000;
+	/delete-node/ opp-1416000000;
+	/delete-node/ opp-1512000000;
+};
+
+&cru {
+	/delete-property/ assigned-clocks;
+	/delete-property/ assigned-clock-rates;
+	/delete-property/ assigned-clock-parents;
+};
+
+&ddr_timing {
+	status = "disabled";
+};
+
+&emmc {
+	memory-region-ecsd = <&mmc_ecsd>;
+	post-power-on-delay-ms = <0>;
+};
+
+&hw_decompress {
+	status = "okay";
+	memory-region = <&ramdisk_c>;
+};
+
+&i2c0 {
+	clock-frequency = <1000000>;
+};
+
+&isp_reserved {
+	inactive;
+};
+
+&ramoops {
+	status = "disabled";
+};

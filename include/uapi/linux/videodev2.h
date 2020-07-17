@@ -690,6 +690,8 @@ struct v4l2_pix_format {
 #define V4L2_PIX_FMT_Z16      v4l2_fourcc('Z', '1', '6', ' ') /* Depth data 16-bit */
 #define V4L2_PIX_FMT_MT21C    v4l2_fourcc('M', 'T', '2', '1') /* Mediatek compressed block mode  */
 #define V4L2_PIX_FMT_INZI     v4l2_fourcc('I', 'N', 'Z', 'I') /* Intel Planar Greyscale 10-bit and Depth 16-bit */
+#define V4L2_PIX_FMT_FBC2     v4l2_fourcc('F', 'B', 'C', '2') /* Rockchip yuv422sp frame buffer compression encoder */
+#define V4L2_PIX_FMT_FBC0     v4l2_fourcc('F', 'B', 'C', '0') /* Rockchip yuv420sp frame buffer compression encoder */
 
 /* 10bit raw bayer packed, 32 bytes for every 25 pixels, last LSB 6 bits unused */
 #define V4L2_PIX_FMT_IPU3_SBGGR10	v4l2_fourcc('i', 'p', '3', 'b') /* IPU3 packed 10-bit BGGR bayer */
@@ -721,6 +723,10 @@ struct v4l2_pix_format {
 /* Vendor specific - used for Rockchip ISP1 camera sub-system */
 #define V4L2_META_FMT_RK_ISP1_PARAMS	v4l2_fourcc('R', 'K', '1', 'P') /* Rockchip ISP1 params */
 #define V4L2_META_FMT_RK_ISP1_STAT_3A	v4l2_fourcc('R', 'K', '1', 'S') /* Rockchip ISP1 3A statistics */
+#define V4L2_META_FMT_RK_ISP1_STAT_LUMA	v4l2_fourcc('R', 'K', '1', 'L') /* Rockchip ISP1 luma statistics */
+
+#define V4L2_META_FMT_RK_ISPP_PARAMS	v4l2_fourcc('R', 'K', 'P', 'P') /* Rockchip ISPP params */
+#define V4L2_META_FMT_RK_ISPP_STAT	v4l2_fourcc('R', 'K', 'P', 'S') /* Rockchip ISPP statistics */
 
 /* priv field value to indicates that subsequent fields are valid. */
 #define V4L2_PIX_FMT_PRIV_MAGIC		0xfeedcafe

@@ -179,7 +179,6 @@ struct drm_connector *find_connector_by_bridge(struct drm_device *drm_dev,
 	drm_connector_list_iter_begin(drm_dev, &conn_iter);
 	drm_for_each_connector_iter(connector, &conn_iter) {
 		if (connector->port == np_connector) {
-			drm_connector_list_iter_end(&conn_iter);
 			found_connector = true;
 			break;
 		}
@@ -208,22 +207,15 @@ void rockchip_free_loader_memory(struct drm_device *drm)
 		return;
 
 	logo = private->logo;
-	start = phys_to_virt(logo->start);
-	end = phys_to_virt(logo->start + logo->size);
+	start = phys_to_virt(logo->dma_addr);
+	end = phys_to_virt(logo->dma_addr + logo->size);
 
 	if (private->domain) {
-		iommu_unmap(private->domain, logo->dma_addr,
-			    logo->iommu_map_size);
-		mutex_lock(&private->mm_lock);
-		drm_mm_remove_node(&logo->mm);
-		mutex_unlock(&private->mm_lock);
-	} else {
-		dma_unmap_sg(drm->dev, logo->sgt->sgl,
-			     logo->sgt->nents, DMA_TO_DEVICE);
+		u32 pg_size = 1UL << __ffs(private->domain->pgsize_bitmap);
+
+		iommu_unmap(private->domain, logo->dma_addr, ALIGN(logo->size, pg_size));
 	}
-	kfree(logo->pages);
-	sg_free_table(logo->sgt);
-	kfree(logo->sgt);
+
 	memblock_free(logo->start, logo->size);
 	free_reserved_area(start, end, -1, "drm_logo");
 	kfree(logo);
@@ -237,12 +229,10 @@ static int init_loader_memory(struct drm_device *drm_dev)
 	struct rockchip_logo *logo;
 	struct device_node *np = drm_dev->dev->of_node;
 	struct device_node *node;
-	unsigned long nr_pages;
-	struct page **pages;
-	struct sg_table *sgt;
 	phys_addr_t start, size;
+	u32 pg_size = PAGE_SIZE;
 	struct resource res;
-	int i, ret;
+	int ret;
 
 	node = of_parse_phandle(np, "logo-memory-region", 0);
 	if (!node)
@@ -251,7 +241,9 @@ static int init_loader_memory(struct drm_device *drm_dev)
 	ret = of_address_to_resource(node, 0, &res);
 	if (ret)
 		return ret;
-	start = res.start;
+	if (private->domain)
+		pg_size = 1UL << __ffs(private->domain->pgsize_bitmap);
+	start = ALIGN_DOWN(res.start, pg_size);
 	size = resource_size(&res);
 	if (!size)
 		return -ENOMEM;
@@ -261,62 +253,23 @@ static int init_loader_memory(struct drm_device *drm_dev)
 		return -ENOMEM;
 
 	logo->kvaddr = phys_to_virt(start);
-	nr_pages = PAGE_ALIGN(size) >> PAGE_SHIFT;
-	pages = kmalloc_array(nr_pages, sizeof(*pages),	GFP_KERNEL);
-	if (!pages)
-		goto err_free_logo;
-	i = 0;
-	while (i < nr_pages) {
-		pages[i] = phys_to_page(start);
-		start += PAGE_SIZE;
-		i++;
-	}
-	sgt = drm_prime_pages_to_sg(pages, nr_pages);
-	if (IS_ERR(sgt)) {
-		ret = PTR_ERR(sgt);
-		goto err_free_pages;
-	}
 
 	if (private->domain) {
-		memset(&logo->mm, 0, sizeof(logo->mm));
-		mutex_lock(&private->mm_lock);
-		ret = drm_mm_insert_node_generic(&private->mm, &logo->mm,
-						 size, PAGE_SIZE,
-						 0, 0);
-		mutex_unlock(&private->mm_lock);
-		if (ret < 0) {
-			DRM_ERROR("out of I/O virtual memory: %d\n", ret);
-			goto err_free_pages;
+		ret = iommu_map(private->domain, start, start, ALIGN(size, pg_size),
+				IOMMU_WRITE | IOMMU_READ);
+		if (ret) {
+			dev_err(drm_dev->dev, "failed to create 1v1 mapping\n");
+			goto err_free_logo;
 		}
-
-		logo->dma_addr = logo->mm.start;
-
-		logo->iommu_map_size = iommu_map_sg(private->domain,
-						    logo->dma_addr, sgt->sgl,
-						    sgt->nents, IOMMU_READ);
-		if (logo->iommu_map_size < size) {
-			DRM_ERROR("failed to map buffer");
-			ret = -ENOMEM;
-			goto err_remove_node;
-		}
-	} else {
-		dma_map_sg(drm_dev->dev, sgt->sgl, sgt->nents, DMA_TO_DEVICE);
-		logo->dma_addr = sg_dma_address(sgt->sgl);
 	}
 
-	logo->sgt = sgt;
-	logo->start = res.start;
+	logo->dma_addr = start;
 	logo->size = size;
 	logo->count = 1;
 	private->logo = logo;
-	logo->pages = pages;
 
 	return 0;
 
-err_remove_node:
-	drm_mm_remove_node(&logo->mm);
-err_free_pages:
-	kfree(pages);
 err_free_logo:
 	kfree(logo);
 
@@ -362,10 +315,10 @@ get_framebuffer_by_node(struct drm_device *drm_dev, struct device_node *node)
 
 	switch (bpp) {
 	case 16:
-		mode_cmd.pixel_format = DRM_FORMAT_BGR565;
+		mode_cmd.pixel_format = DRM_FORMAT_RGB565;
 		break;
 	case 24:
-		mode_cmd.pixel_format = DRM_FORMAT_BGR888;
+		mode_cmd.pixel_format = DRM_FORMAT_RGB888;
 		break;
 	case 32:
 		mode_cmd.pixel_format = DRM_FORMAT_XRGB8888;
@@ -1008,16 +961,20 @@ err_unlock:
 
 static const char *const loader_protect_clocks[] __initconst = {
 	"hclk_vio",
+	"hclk_vop",
 	"hclk_vopb",
 	"hclk_vopl",
 	"aclk_vio",
 	"aclk_vio0",
 	"aclk_vio1",
+	"aclk_vop",
 	"aclk_vopb",
 	"aclk_vopl",
 	"aclk_vo_pre",
 	"aclk_vio_pre",
 	"dclk_vop",
+	"dclk_vop0",
+	"dclk_vop1",
 	"dclk_vopb",
 	"dclk_vopl",
 };
@@ -1594,7 +1551,6 @@ err_fbdev_fini:
 err_kms_helper_poll_fini:
 	rockchip_gem_pool_destroy(drm_dev);
 	drm_kms_helper_poll_fini(drm_dev);
-	drm_vblank_cleanup(drm_dev);
 err_unbind_all:
 	component_unbind_all(dev, drm_dev);
 err_mode_config_cleanup:
@@ -1617,7 +1573,6 @@ static void rockchip_drm_unbind(struct device *dev)
 	rockchip_gem_pool_destroy(drm_dev);
 	drm_kms_helper_poll_fini(drm_dev);
 
-	drm_vblank_cleanup(drm_dev);
 	drm_atomic_helper_shutdown(drm_dev);
 	component_unbind_all(dev, drm_dev);
 	drm_mode_config_cleanup(drm_dev);

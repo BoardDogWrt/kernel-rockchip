@@ -100,6 +100,26 @@ struct clk;
 #define RV1108_SDIO_CON1		0x1e4
 #define RV1108_EMMC_CON0		0x1e8
 #define RV1108_EMMC_CON1		0x1ec
+
+#define RV1126_PMU_MODE			0x0
+#define RV1126_PMU_PLL_CON(x)		((x) * 0x4 + 0x10)
+#define RV1126_PMU_CLKSEL_CON(x)	((x) * 0x4 + 0x100)
+#define RV1126_PMU_CLKGATE_CON(x)	((x) * 0x4 + 0x180)
+#define RV1126_PMU_SOFTRST_CON(x)	((x) * 0x4 + 0x200)
+#define RV1126_PLL_CON(x)		((x) * 0x4)
+#define RV1126_MODE_CON			0x90
+#define RV1126_CLKSEL_CON(x)		((x) * 0x4 + 0x100)
+#define RV1126_CLKGATE_CON(x)		((x) * 0x4 + 0x280)
+#define RV1126_SOFTRST_CON(x)		((x) * 0x4 + 0x300)
+#define RV1126_GLB_SRST_FST		0x408
+#define RV1126_GLB_SRST_SND		0x40c
+#define RV1126_SDMMC_CON0		0x440
+#define RV1126_SDMMC_CON1		0x444
+#define RV1126_SDIO_CON0		0x448
+#define RV1126_SDIO_CON1		0x44c
+#define RV1126_EMMC_CON0		0x450
+#define RV1126_EMMC_CON1		0x454
+
 /*
  * register positions shared by RK1808 RK2928, RK3036,
  * RK3066, RK3188 and RK3228
@@ -447,6 +467,7 @@ struct clk *rockchip_clk_register_muxgrf(const char *name,
 
 enum rockchip_clk_branch_type {
 	branch_composite,
+	branch_composite_brother,
 	branch_mux,
 	branch_muxgrf,
 	branch_muxpmugrf,
@@ -504,6 +525,28 @@ struct rockchip_clk_branch {
 		.gate_offset	= go,				\
 		.gate_shift	= gs,				\
 		.gate_flags	= gf,				\
+	}
+
+#define COMPOSITE_BROTHER(_id, cname, pnames, f, mo, ms, mw, mf,\
+			  ds, dw, df, go, gs, gf, bro)		\
+	{							\
+		.id		= _id,				\
+		.branch_type	= branch_composite_brother,	\
+		.name		= cname,			\
+		.parent_names	= pnames,			\
+		.num_parents	= ARRAY_SIZE(pnames),		\
+		.flags		= f,				\
+		.muxdiv_offset	= mo,				\
+		.mux_shift	= ms,				\
+		.mux_width	= mw,				\
+		.mux_flags	= mf,				\
+		.div_shift	= ds,				\
+		.div_width	= dw,				\
+		.div_flags	= df,				\
+		.gate_offset	= go,				\
+		.gate_shift	= gs,				\
+		.gate_flags	= gf,				\
+		.child		= bro,				\
 	}
 
 #define COMPOSITE_MUXTBL(_id, cname, pnames, f, mo, ms, mw, mf,	\
@@ -622,6 +665,26 @@ struct rockchip_clk_branch {
 		.div_width	= dw,				\
 		.div_flags	= df,				\
 		.gate_offset	= -1,				\
+	}
+
+#define COMPOSITE_BROTHER_NOGATE(_id, cname, pnames, f, mo, ms, \
+				 mw, mf, ds, dw, df, bro)	\
+	{							\
+		.id		= _id,				\
+		.branch_type	= branch_composite_brother,	\
+		.name		= cname,			\
+		.parent_names	= pnames,			\
+		.num_parents	= ARRAY_SIZE(pnames),		\
+		.flags		= f,				\
+		.muxdiv_offset	= mo,				\
+		.mux_shift	= ms,				\
+		.mux_width	= mw,				\
+		.mux_flags	= mf,				\
+		.div_shift	= ds,				\
+		.div_width	= dw,				\
+		.div_flags	= df,				\
+		.gate_offset	= -1,				\
+		.child		= bro,				\
 	}
 
 #define COMPOSITE_NOGATE_DIVTBL(_id, cname, pnames, f, mo, ms,	\

@@ -43,6 +43,10 @@
 #define PX30_IO_VSEL_VCCIO6_SRC		BIT(0)
 #define PX30_IO_VSEL_VCCIO6_SUPPLY_NUM	1
 
+#define RV1126_PMUGRF_IO_VSEL			0x140
+#define RV1126_PMUGRF_IO_VSEL_VCCIO1_SRC	BIT(0)
+#define RV1126_PMUGRF_IO_VSEL_VCCIO1_SUPPLY_NUM	1
+
 #define RK3288_SOC_CON2			0x24c
 #define RK3288_SOC_CON2_FLASH0		BIT(7)
 #define RK3288_SOC_FLASH_SUPPLY_NUM	2
@@ -176,6 +180,26 @@ static void px30_iodomain_init(struct rockchip_iodomain *iod)
 	ret = regmap_write(iod->grf, PX30_IO_VSEL, val);
 	if (ret < 0)
 		dev_warn(iod->dev, "couldn't update vccio0 ctrl\n");
+}
+
+static void rv1126_pmu_iodomain_init(struct rockchip_iodomain *iod)
+{
+	int ret;
+	u32 val;
+
+	/* if no pmu io supply we should leave things alone */
+	if (!iod->supplies[RV1126_PMUGRF_IO_VSEL_VCCIO1_SUPPLY_NUM].reg)
+		return;
+
+	/*
+	 * set pmu io iodomain to also use this framework
+	 * instead of a special gpio.
+	 */
+	val = RV1126_PMUGRF_IO_VSEL_VCCIO1_SRC |
+	      (RV1126_PMUGRF_IO_VSEL_VCCIO1_SRC << 16);
+	ret = regmap_write(iod->grf, RV1126_PMUGRF_IO_VSEL, val);
+	if (ret < 0)
+		dev_warn(iod->dev, "couldn't update pmu io iodomain ctrl\n");
 }
 
 static void rk3288_iodomain_init(struct rockchip_iodomain *iod)
@@ -475,6 +499,23 @@ static const struct rockchip_iodomain_soc_data soc_data_rv1108_pmu = {
 	},
 };
 
+static const struct rockchip_iodomain_soc_data soc_data_rv1126_pmu = {
+	.grf_offset = 0x140,
+	.supply_names = {
+		NULL,
+		"vccio1",
+		"vccio2",
+		"vccio3",
+		"vccio4",
+		"vccio5",
+		"vccio6",
+		"vccio7",
+		"pmuio0",
+		"pmuio1",
+	},
+	.init = rv1126_pmu_iodomain_init,
+};
+
 static const struct of_device_id rockchip_iodomain_match[] = {
 	{
 		.compatible = "rockchip,px30-io-voltage-domain",
@@ -527,6 +568,10 @@ static const struct of_device_id rockchip_iodomain_match[] = {
 	{
 		.compatible = "rockchip,rv1108-pmu-io-voltage-domain",
 		.data = &soc_data_rv1108_pmu
+	},
+	{
+		.compatible = "rockchip,rv1126-pmu-io-voltage-domain",
+		.data = &soc_data_rv1126_pmu
 	},
 	{ /* sentinel */ },
 };
@@ -670,7 +715,21 @@ static struct platform_driver rockchip_iodomain_driver = {
 	},
 };
 
+#ifdef CONFIG_ROCKCHIP_THUNDER_BOOT
+static int __init rockchip_iodomain_driver_init(void)
+{
+	return platform_driver_register(&rockchip_iodomain_driver);
+}
+fs_initcall(rockchip_iodomain_driver_init);
+
+static void __exit rockchip_iodomain_driver_exit(void)
+{
+	platform_driver_unregister(&rockchip_iodomain_driver);
+}
+module_exit(rockchip_iodomain_driver_exit);
+#else
 module_platform_driver(rockchip_iodomain_driver);
+#endif
 
 MODULE_DESCRIPTION("Rockchip IO-domain driver");
 MODULE_AUTHOR("Heiko Stuebner <heiko@sntech.de>");

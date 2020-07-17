@@ -57,7 +57,6 @@ struct mpp_msg_v1 {
 };
 
 static void mpp_free_task(struct kref *ref);
-static int mpp_dev_reset(struct mpp_dev *mpp);
 
 /* task queue schedule */
 static int
@@ -181,21 +180,21 @@ mpp_taskqueue_trigger_work(struct mpp_taskqueue *queue,
 	return 0;
 }
 
-static int mpp_power_on(struct mpp_dev *mpp)
+int mpp_power_on(struct mpp_dev *mpp)
 {
 	pm_runtime_get_sync(mpp->dev);
 	pm_stay_awake(mpp->dev);
 
-	if (mpp->hw_ops->power_on)
-		mpp->hw_ops->power_on(mpp);
+	if (mpp->hw_ops->clk_on)
+		mpp->hw_ops->clk_on(mpp);
 
 	return 0;
 }
 
-static int mpp_power_off(struct mpp_dev *mpp)
+int mpp_power_off(struct mpp_dev *mpp)
 {
-	if (mpp->hw_ops->power_off)
-		mpp->hw_ops->power_off(mpp);
+	if (mpp->hw_ops->clk_off)
+		mpp->hw_ops->clk_off(mpp);
 
 	pm_runtime_mark_last_busy(mpp->dev);
 	pm_runtime_put_autosuspend(mpp->dev);
@@ -261,6 +260,7 @@ static int mpp_session_pop_done(struct mpp_session *session,
 	mutex_lock(&session->done_lock);
 	list_del_init(&task->done_link);
 	mutex_unlock(&session->done_lock);
+	set_bit(TASK_STATE_DONE, &task->state);
 	kref_put(&task->ref, mpp_free_task);
 
 	return 0;
@@ -279,10 +279,9 @@ static void mpp_free_task(struct kref *ref)
 	session = task->session;
 
 	mpp_debug_func(DEBUG_TASK_INFO,
-		       "session=%p, task=%p, state=%08x, abort_request=%d\n",
+		       "session=%p, task=%p, state=0x%lx, abort_request=%d\n",
 		       session, task, task->state,
 		       atomic_read(&task->abort_request));
-
 	if (!session->mpp) {
 		mpp_err("session %p, session->mpp is null.\n", session);
 		return;
@@ -301,8 +300,10 @@ static void mpp_task_timeout_work(struct work_struct *work_s)
 					     struct mpp_task,
 					     timeout_work);
 
-	mpp_err("task %p processing timed out!\n", task);
+	if (test_and_set_bit(TASK_STATE_HANDLE, &task->state))
+		return;
 
+	mpp_err("task %p processing timed out!\n", task);
 	if (!task->session) {
 		mpp_err("task %p, task->session is null.\n", task);
 		return;
@@ -316,12 +317,12 @@ static void mpp_task_timeout_work(struct work_struct *work_s)
 	mpp = session->mpp;
 
 	/* hardware maybe dead, reset it */
-	up_read(&mpp->reset_group->rw_sem);
+	mpp_reset_up_read(mpp->reset_group);
 	mpp_dev_reset(mpp);
 	mpp_power_off(mpp);
 
 	/* remove task from taskqueue running list */
-	task->state = TASK_STATE_TIMEOUT;
+	set_bit(TASK_STATE_TIMEOUT, &task->state);
 	mpp_taskqueue_pop_running(mpp->queue, task);
 }
 
@@ -359,7 +360,7 @@ static int mpp_process_task(struct mpp_session *session,
 	mpp_session_push_pending(session, task);
 	/* push current task to queue */
 	mpp_taskqueue_push_pending(mpp->queue, task);
-	task->state = TASK_STATE_PENDING;
+	set_bit(TASK_STATE_PENDING, &task->state);
 	/* trigger current queue to run task */
 	mpp_taskqueue_trigger_work(mpp->queue, mpp->workq);
 	kref_put(&task->ref, mpp_free_task);
@@ -367,17 +368,26 @@ static int mpp_process_task(struct mpp_session *session,
 	return 0;
 }
 
-static int mpp_refresh_pm_runtime(struct device *dev)
+static int mpp_refresh_pm_runtime(struct mpp_iommu_info *info,
+				  struct device *dev)
 {
+	int i;
+	int usage_count;
 	struct device_link *link;
+	struct device *iommu_dev = &info->pdev->dev;
 
 	rcu_read_lock();
 
-	list_for_each_entry_rcu(link, &dev->links.suppliers, c_node)
-		pm_runtime_put_sync(link->supplier);
+	usage_count = atomic_read(&iommu_dev->power.usage_count);
+	list_for_each_entry_rcu(link, &dev->links.suppliers, c_node) {
+		for (i = 0; i < usage_count; i++)
+			pm_runtime_put_sync(link->supplier);
+	}
 
-	list_for_each_entry_rcu(link, &dev->links.suppliers, c_node)
-		pm_runtime_get_sync(link->supplier);
+	list_for_each_entry_rcu(link, &dev->links.suppliers, c_node) {
+		for (i = 0; i < usage_count; i++)
+			pm_runtime_get_sync(link->supplier);
+	}
 
 	rcu_read_unlock();
 
@@ -385,86 +395,57 @@ static int mpp_refresh_pm_runtime(struct device *dev)
 }
 
 struct reset_control *
-mpp_reset_control_get(struct mpp_dev *mpp, const char *name)
+mpp_reset_control_get(struct mpp_dev *mpp, enum MPP_RESET_TYPE type, const char *name)
 {
-	struct mpp_reset_clk *rst_clk = NULL, *n;
-	struct reset_control *clk = NULL;
-	struct device *dev = mpp->dev;
-	char shared_name[30] = "shared_";
-	int index = 0;
-	int clk_cnt = 0, i = 0;
-	static const char * const clk_list[] = {
-		"video_a", "video_h",
-		"niu_a", "niu_h",
-		"video_cabac", "video_core",
-		"video_hevc_cabac",
-	};
+	int index;
+	struct reset_control *rst = NULL;
+	char shared_name[32] = "shared_";
+	struct mpp_reset_group *group;
 
-	if (!name) {
-		mpp_err("error: reset clk name is null\n");
-		return NULL;
-	}
-
-	clk_cnt = ARRAY_SIZE(clk_list);
-	for (i = 0; i < clk_cnt; i++) {
-		if (!strcmp(clk_list[i], name))
-			break;
-	}
-	if (i == clk_cnt) {
-		mpp_err("error: reset clk name is error\n");
-		return NULL;
-	}
-
-	if (!dev) {
-		mpp_err("error: dev is null\n");
-		return NULL;
-	}
-
-	/* not shared reset clk */
-	index = of_property_match_string(dev->of_node, "reset-names", name);
+	/* check reset whether belone to device alone */
+	index = of_property_match_string(mpp->dev->of_node, "reset-names", name);
 	if (index >= 0) {
-		clk = devm_reset_control_get(dev, name);
-		return clk;
+		rst = devm_reset_control_get(mpp->dev, name);
+		mpp_safe_unreset(rst);
+
+		return rst;
 	}
 
-	/* shared reset clk */
+	/* check reset whether is shared */
 	strncat(shared_name, name,
 		sizeof(shared_name) - strlen(shared_name) - 1);
-	index = of_property_match_string(dev->of_node, "reset-names",
-					 shared_name);
-	if (index >= 0) {
-		down_write(&mpp->reset_group->rw_sem);
-		list_for_each_entry_safe(rst_clk, n,
-					 &mpp->reset_group->clk, link) {
-			if (!strcmp(rst_clk->name, name)) {
-				clk = rst_clk->clk;
-				break;
-			}
-		}
-		if (!clk) {
-			rst_clk = devm_kzalloc(dev, sizeof(*rst_clk),
-					       GFP_KERNEL);
-			strncpy(rst_clk->name, name, sizeof(rst_clk->name));
-			rst_clk->clk = devm_reset_control_get(dev,
-							      shared_name);
-			if (IS_ERR_OR_NULL(rst_clk->clk))
-				goto fail;
-
-			INIT_LIST_HEAD(&rst_clk->link);
-			list_add_tail(&rst_clk->link, &mpp->reset_group->clk);
-			clk = rst_clk->clk;
-		}
-		up_write(&mpp->reset_group->rw_sem);
+	index = of_property_match_string(mpp->dev->of_node,
+					 "reset-names", shared_name);
+	if (index < 0) {
+		dev_err(mpp->dev, "%s is not found!\n", shared_name);
+		return NULL;
 	}
 
-	return clk;
-fail:
-	devm_kfree(dev, rst_clk);
-	up_write(&mpp->reset_group->rw_sem);
-	return NULL;
+	if (!mpp->reset_group) {
+		dev_err(mpp->dev, "reset group is empty!\n");
+		return NULL;
+	}
+	group = mpp->reset_group;
+
+	down_write(&group->rw_sem);
+	rst = group->resets[type];
+	if (!rst) {
+		rst = devm_reset_control_get(mpp->dev, shared_name);
+		mpp_safe_unreset(rst);
+		group->resets[type] = rst;
+		group->queue = mpp->queue;
+	}
+	/* if reset not in the same queue, it means different device
+	 * may reset in the same time, then rw_sem_on should set true.
+	 */
+	group->rw_sem_on |= (group->queue != mpp->queue) ? true : false;
+	dev_info(mpp->dev, "reset_group->rw_sem_on=%d\n", group->rw_sem_on);
+	up_write(&group->rw_sem);
+
+	return rst;
 }
 
-static int mpp_dev_reset(struct mpp_dev *mpp)
+int mpp_dev_reset(struct mpp_dev *mpp)
 {
 	dev_info(mpp->dev, "resetting...\n");
 
@@ -481,7 +462,7 @@ static int mpp_dev_reset(struct mpp_dev *mpp)
 		mpp->hw_ops->reduce_freq(mpp);
 	/* FIXME lock resource lock of the other devices in combo */
 	down_write(&mpp->iommu_info->rw_sem);
-	down_write(&mpp->reset_group->rw_sem);
+	mpp_reset_down_write(mpp->reset_group);
 	atomic_set(&mpp->reset_request, 0);
 	mpp_iommu_detach(mpp->iommu_info);
 
@@ -494,10 +475,10 @@ static int mpp_dev_reset(struct mpp_dev *mpp)
 	 * as an empty operation. Therefore, force to close and then open,
 	 * will be update the domain. In this way, domain can really attach.
 	 */
-	mpp_refresh_pm_runtime(mpp->dev);
+	mpp_refresh_pm_runtime(mpp->iommu_info, mpp->dev);
 
 	mpp_iommu_attach(mpp->iommu_info);
-	up_write(&mpp->reset_group->rw_sem);
+	mpp_reset_up_write(mpp->reset_group);
 	up_write(&mpp->iommu_info->rw_sem);
 
 	dev_info(mpp->dev, "reset done\n");
@@ -546,9 +527,9 @@ static int mpp_task_run(struct mpp_dev *mpp,
 	 * TODO: Lock the reader locker of the device resource lock here,
 	 * release at the finish operation
 	 */
-	down_read(&mpp->reset_group->rw_sem);
+	mpp_reset_down_read(mpp->reset_group);
 
-	task->state = TASK_STATE_START;
+	set_bit(TASK_STATE_START, &task->state);
 	schedule_delayed_work(&task->timeout_work,
 			      msecs_to_jiffies(MPP_WORK_TIMEOUT_DELAY));
 	if (mpp->dev_ops->run)
@@ -602,7 +583,7 @@ static void mpp_task_try_run(struct work_struct *work_s)
 	/* Push a pending task to running queue */
 	if (task) {
 		mpp_taskqueue_pending_to_run(queue, task);
-		task->state = TASK_STATE_RUNNING;
+		set_bit(TASK_STATE_RUNNING, &task->state);
 		if (mpp_task_run(mpp, task))
 			mpp_taskqueue_pop_running(mpp->queue, task);
 	}
@@ -740,33 +721,48 @@ static int mpp_attach_service(struct mpp_dev *mpp, struct device *dev)
 		goto err_put_pdev;
 	}
 
-	of_property_read_u32(dev->of_node,
-			     "rockchip,taskqueue-node", &taskqueue_node);
-	if (taskqueue_node >= mpp->srv->taskqueue_cnt) {
-		dev_err(dev, "rockchip,taskqueue-node %d must less than %d\n",
-			taskqueue_node, mpp->srv->taskqueue_cnt);
-		ret = -ENODEV;
-		goto err_put_pdev;
+	ret = of_property_read_u32(dev->of_node,
+				   "rockchip,taskqueue-node", &taskqueue_node);
+	if (ret) {
+		/* if device not set, then alloc one */
+		struct mpp_taskqueue *queue;
+
+		queue = devm_kzalloc(dev, sizeof(*queue), GFP_KERNEL);
+		if (!queue) {
+			ret = -ENOMEM;
+			goto err_put_pdev;
+		}
+		mpp_taskqueue_init(queue, mpp->srv);
+		mpp->queue = queue;
+	} else {
+		/* set taskqueue according dtsi */
+		if (taskqueue_node >= mpp->srv->taskqueue_cnt) {
+			dev_err(dev, "taskqueue-node %d must less than %d\n",
+				taskqueue_node, mpp->srv->taskqueue_cnt);
+			ret = -ENODEV;
+			goto err_put_pdev;
+		} else {
+			mpp->queue = mpp->srv->task_queues[taskqueue_node];
+		}
 	}
 
-	of_property_read_u32(dev->of_node,
-			     "rockchip,resetgroup-node", &reset_group_node);
-	if (reset_group_node >= mpp->srv->reset_group_cnt) {
-		dev_err(dev, "rockchip,resetgroup-node %d must less than %d\n",
-			reset_group_node, mpp->srv->reset_group_cnt);
-		ret = -ENODEV;
-		goto err_put_pdev;
+	ret = of_property_read_u32(dev->of_node,
+				   "rockchip,resetgroup-node", &reset_group_node);
+	if (!ret) {
+		/* set resetgroup according dtsi */
+		if (reset_group_node >= mpp->srv->reset_group_cnt) {
+			dev_err(dev, "resetgroup-node %d must less than %d\n",
+				reset_group_node, mpp->srv->reset_group_cnt);
+			ret = -ENODEV;
+			goto err_put_pdev;
+		} else {
+			mpp->reset_group = mpp->srv->reset_groups[reset_group_node];
+		}
 	}
 
-	device_lock(&pdev->dev);
 	/* register current device to mpp service */
 	mpp->srv->sub_devices[mpp->var->device_type] = mpp;
-	/* set taskqueue which set in dtsi */
-	mpp->queue = mpp->srv->task_queues[taskqueue_node];
-	/* set resetgroup which set in dtsi */
-	mpp->reset_group = mpp->srv->reset_groups[reset_group_node];
-	mpp->srv->hw_support |= BIT(mpp->var->device_type);
-	device_unlock(&pdev->dev);
+	set_bit(mpp->var->device_type, &mpp->srv->hw_support);
 
 	return 0;
 
@@ -789,15 +785,6 @@ int mpp_taskqueue_init(struct mpp_taskqueue *queue,
 	INIT_WORK(&queue->work, mpp_task_try_run);
 
 	queue->srv = srv;
-
-	return 0;
-}
-
-int mpp_reset_group_init(struct mpp_reset_group *group,
-			 struct mpp_service *srv)
-{
-	init_rwsem(&group->rw_sem);
-	INIT_LIST_HEAD(&group->clk);
 
 	return 0;
 }
@@ -1415,7 +1402,7 @@ int mpp_task_finish(struct mpp_session *session,
 	if (mpp->dev_ops->finish)
 		mpp->dev_ops->finish(mpp, task);
 
-	up_read(&mpp->reset_group->rw_sem);
+	mpp_reset_up_read(mpp->reset_group);
 	if (atomic_read(&mpp->reset_request) > 0)
 		mpp_dev_reset(mpp);
 	mpp_power_off(mpp);
@@ -1425,7 +1412,7 @@ int mpp_task_finish(struct mpp_session *session,
 		/* Wake up the GET thread */
 		wake_up(&session->wait);
 	}
-	task->state = TASK_STATE_DONE;
+	set_bit(TASK_STATE_FINISH, &task->state);
 	mpp_taskqueue_pop_running(mpp->queue, task);
 
 	return 0;
@@ -1616,12 +1603,12 @@ int mpp_dev_probe(struct mpp_dev *mpp,
 
 	/* read hardware id */
 	if (hw_info->reg_id >= 0) {
-		if (mpp->hw_ops->power_on)
-			mpp->hw_ops->power_on(mpp);
+		if (mpp->hw_ops->clk_on)
+			mpp->hw_ops->clk_on(mpp);
 
 		hw_info->hw_id = mpp_read(mpp, hw_info->reg_id);
-		if (mpp->hw_ops->power_off)
-			mpp->hw_ops->power_off(mpp);
+		if (mpp->hw_ops->clk_off)
+			mpp->hw_ops->clk_off(mpp);
 	}
 
 	pm_runtime_put_sync(dev);
@@ -1660,9 +1647,20 @@ irqreturn_t mpp_dev_irq(int irq, void *param)
 {
 	irqreturn_t ret = IRQ_NONE;
 	struct mpp_dev *mpp = param;
+	struct mpp_task *task = mpp->cur_task;
 
-	if (mpp->dev_ops->irq)
-		ret = mpp->dev_ops->irq(mpp);
+	if (task) {
+		/* if wait or delayed work timeout, abort request will turn on,
+		 * isr should not to response, and handle it in delayed work
+		 */
+		if (test_and_set_bit(TASK_STATE_HANDLE, &task->state))
+			return IRQ_HANDLED;
+		cancel_delayed_work(&task->timeout_work);
+
+		set_bit(TASK_STATE_IRQ, &task->state);
+		if (mpp->dev_ops->irq)
+			ret = mpp->dev_ops->irq(mpp);
+	}
 
 	return ret;
 }
@@ -1676,10 +1674,6 @@ irqreturn_t mpp_dev_isr_sched(int irq, void *param)
 	    list_empty(&mpp->queue->pending_list))
 		mpp->hw_ops->reduce_freq(mpp);
 
-	if (mpp->cur_task) {
-		mpp->cur_task->state = TASK_STATE_IRQ;
-		cancel_delayed_work(&mpp->cur_task->timeout_work);
-	}
 	if (mpp->dev_ops->isr)
 		ret = mpp->dev_ops->isr(mpp);
 
@@ -1689,40 +1683,22 @@ irqreturn_t mpp_dev_isr_sched(int irq, void *param)
 	return ret;
 }
 
-int mpp_safe_reset(struct reset_control *rst)
-{
-	if (rst)
-		reset_control_assert(rst);
-	return 0;
-}
-
-int mpp_safe_unreset(struct reset_control *rst)
-{
-	if (rst)
-		reset_control_deassert(rst);
-	return 0;
-}
-
 #define MPP_GRF_VAL_MASK	0xFFFF
 
 u32 mpp_get_grf(struct mpp_grf_info *grf_info)
 {
 	u32 val = 0;
 
-	if (grf_info->grf && grf_info->val)
-		regmap_read(grf_info->grf,
-			    grf_info->offset,
-			    &val);
+	if (grf_info && grf_info->grf && grf_info->val)
+		regmap_read(grf_info->grf, grf_info->offset, &val);
 
 	return (val & MPP_GRF_VAL_MASK);
 }
 
 int mpp_set_grf(struct mpp_grf_info *grf_info)
 {
-	if (grf_info->grf && grf_info->val)
-		regmap_write(grf_info->grf,
-			     grf_info->offset,
-			     grf_info->val);
+	if (grf_info && grf_info->grf && grf_info->val)
+		regmap_write(grf_info->grf, grf_info->offset, grf_info->val);
 
 	return 0;
 }
@@ -1770,6 +1746,118 @@ int mpp_read_req(struct mpp_dev *mpp, u32 *regs,
 
 	for (i = start_idx; i < end_idx; i++)
 		regs[i] = mpp_read_relaxed(mpp, i * sizeof(u32));
+
+	return 0;
+}
+
+int mpp_get_clk_info(struct mpp_dev *mpp,
+		     struct mpp_clk_info *clk_info,
+		     const char *name)
+{
+	int index = of_property_match_string(mpp->dev->of_node,
+					     "clock-names", name);
+
+	if (index < 0)
+		return -EINVAL;
+
+	clk_info->clk = devm_clk_get(mpp->dev, name);
+	of_property_read_u32_index(mpp->dev->of_node,
+				   "rockchip,normal-rates",
+				   index,
+				   &clk_info->normal_rate_hz);
+	of_property_read_u32_index(mpp->dev->of_node,
+				   "rockchip,advanced-rates",
+				   index,
+				   &clk_info->advanced_rate_hz);
+
+	return 0;
+}
+
+int mpp_set_clk_info_rate_hz(struct mpp_clk_info *clk_info,
+			     enum MPP_CLOCK_MODE mode,
+			     unsigned long val)
+{
+	if (!clk_info->clk || !val)
+		return 0;
+
+	switch (mode) {
+	case CLK_MODE_DEBUG:
+		clk_info->debug_rate_hz = val;
+	break;
+	case CLK_MODE_REDUCE:
+		clk_info->reduce_rate_hz = val;
+	break;
+	case CLK_MODE_NORMAL:
+		clk_info->normal_rate_hz = val;
+	break;
+	case CLK_MODE_ADVANCED:
+		clk_info->advanced_rate_hz = val;
+	break;
+	case CLK_MODE_DEFAULT:
+		clk_info->default_rate_hz = val;
+	break;
+	default:
+		mpp_err("error mode %d\n", mode);
+	break;
+	}
+
+	return 0;
+}
+
+#define MPP_REDUCE_RATE_HZ (50 * MHZ)
+
+unsigned long mpp_get_clk_info_rate_hz(struct mpp_clk_info *clk_info,
+				       enum MPP_CLOCK_MODE mode)
+{
+	unsigned long clk_rate_hz = 0;
+
+	if (!clk_info->clk)
+		return 0;
+
+	if (clk_info->debug_rate_hz)
+		return clk_info->debug_rate_hz;
+
+	switch (mode) {
+	case CLK_MODE_REDUCE: {
+		if (clk_info->reduce_rate_hz)
+			clk_rate_hz = clk_info->reduce_rate_hz;
+		else
+			clk_rate_hz = MPP_REDUCE_RATE_HZ;
+	} break;
+	case CLK_MODE_NORMAL: {
+		if (clk_info->normal_rate_hz)
+			clk_rate_hz = clk_info->normal_rate_hz;
+		else
+			clk_rate_hz = clk_info->default_rate_hz;
+	} break;
+	case CLK_MODE_ADVANCED: {
+		if (clk_info->advanced_rate_hz)
+			clk_rate_hz = clk_info->advanced_rate_hz;
+		else
+			clk_rate_hz = clk_info->default_rate_hz;
+	} break;
+	case CLK_MODE_DEFAULT:
+	default: {
+		clk_rate_hz = clk_info->default_rate_hz;
+	} break;
+	}
+
+	return clk_rate_hz;
+}
+
+int mpp_clk_set_rate(struct mpp_clk_info *clk_info,
+		     enum MPP_CLOCK_MODE mode)
+{
+	unsigned long clk_rate_hz;
+
+	if (!clk_info->clk)
+		return -EINVAL;
+
+	clk_rate_hz = mpp_get_clk_info_rate_hz(clk_info, mode);
+	if (clk_rate_hz) {
+		clk_info->used_rate_hz = clk_rate_hz;
+		clk_set_rate(clk_info->clk, clk_rate_hz);
+	}
 
 	return 0;
 }
@@ -1836,7 +1924,7 @@ int px30_workaround_combo_switch_grf(struct mpp_dev *mpp)
 	pd_is_on = rockchip_pmu_pd_is_on(mpp->dev);
 	if (!pd_is_on)
 		rockchip_pmu_pd_on(mpp->dev);
-	mpp->hw_ops->power_on(mpp);
+	mpp->hw_ops->clk_on(mpp);
 
 	list_for_each_entry_safe(loop, n, &mpp->queue->mmu_list, link) {
 		/* update iommu parameters */
@@ -1849,7 +1937,7 @@ int px30_workaround_combo_switch_grf(struct mpp_dev *mpp)
 	/* enable current iommu */
 	ret = mpp_iommu_enable(mpp->iommu_info->iommu);
 
-	mpp->hw_ops->power_off(mpp);
+	mpp->hw_ops->clk_off(mpp);
 	if (!pd_is_on)
 		rockchip_pmu_pd_off(mpp->dev);
 
