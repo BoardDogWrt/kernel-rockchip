@@ -3,8 +3,8 @@ menuconfig WL_ROCKCHIP
 	tristate "Rockchip Wireless LAN support"
 	select WIRELESS_EXT
 	select WEXT_PRIV
-	select CFG80211
-	select MAC80211
+	select CFG80211 if WL_ROCKCHIP=y
+	select MAC80211 if WL_ROCKCHIP=y
 	---help---
 	  Enable compatible Wifi drivers for Rockchip platform.
 
