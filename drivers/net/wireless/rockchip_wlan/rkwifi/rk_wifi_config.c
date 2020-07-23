@@ -16,14 +16,11 @@
 /* 
  * Set Firmware Path
  */
- 
-#define VENDOR_ETC_FIRMWARE "/vendor/etc/firmware/"
 
 int rkwifi_set_firmware(char *fw, char *nvram)
 {
-
-	sprintf(fw, "%s%s", VENDOR_ETC_FIRMWARE, "fw_bcmdhd.bin");
-	sprintf(nvram, "%s%s", VENDOR_ETC_FIRMWARE, "nvram.txt");
+	sprintf(fw, "%s%s", CONFIG_VENDOR_FW_PATH, "fw_bcmdhd.bin");
+	sprintf(nvram, "%s%s", CONFIG_VENDOR_FW_PATH, "nvram.txt");
 	return 0;
 }
 EXPORT_SYMBOL(rkwifi_set_firmware);

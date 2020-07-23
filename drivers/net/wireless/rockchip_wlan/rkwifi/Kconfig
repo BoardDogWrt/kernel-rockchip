@@ -30,3 +30,8 @@ source "drivers/net/wireless/rockchip_wlan/rkwifi/bcmdhd_wifi6/Kconfig"
 endif
 
 endchoice
+
+config VENDOR_FW_PATH
+	string "Firmware path"
+	default "/vendor/etc/firmware/"
+
