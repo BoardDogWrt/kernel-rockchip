@@ -1566,15 +1566,6 @@ static int vop_plane_atomic_check(struct drm_plane *plane,
 	if (WARN_ON(!crtc_state))
 		return -EINVAL;
 
-	src->x1 = state->src_x;
-	src->y1 = state->src_y;
-	src->x2 = state->src_x + state->src_w;
-	src->y2 = state->src_y + state->src_h;
-	dest->x1 = state->crtc_x;
-	dest->y1 = state->crtc_y;
-	dest->x2 = state->crtc_x + state->crtc_w;
-	dest->y2 = state->crtc_y + state->crtc_h;
-
 	ret = drm_atomic_helper_check_plane_state(state, crtc_state,
 						  min_scale, max_scale,
 						  true, true);
@@ -1590,6 +1581,9 @@ static int vop_plane_atomic_check(struct drm_plane *plane,
 
 	vop = to_vop(crtc);
 	vop_data = vop->data;
+
+	*src = state->src;
+	*dest = state->dst;
 
 	if (drm_rect_width(src) >> 16 > vop_data->max_input.width ||
 	    drm_rect_height(src) >> 16 > vop_data->max_input.height) {
