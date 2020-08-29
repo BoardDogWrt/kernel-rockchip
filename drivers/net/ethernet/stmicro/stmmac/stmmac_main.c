@@ -4306,6 +4306,8 @@ int stmmac_dvr_probe(struct device *device,
 	struct net_device *ndev = NULL;
 	struct stmmac_priv *priv;
 	u32 queue, maxq;
+	u32 cpu_id;
+	struct cpumask cpumask;
 	int ret = 0;
 
 	ndev = alloc_etherdev_mqs(sizeof(struct stmmac_priv),
@@ -4325,6 +4327,13 @@ int stmmac_dvr_probe(struct device *device,
 	priv->plat = plat_dat;
 	priv->ioaddr = res->addr;
 	priv->dev->base_addr = (unsigned long)res->addr;
+
+	if (!of_property_read_u32(device->of_node, "handle_cpu_id", &cpu_id)) {
+		cpumask_clear(&cpumask);
+		cpumask_set_cpu(cpu_id, &cpumask);
+		irq_set_affinity(res->irq, &cpumask);
+		dev_dbg(device, "setup irq on cpu%d\n", cpu_id);
+	}
 
 	priv->dev->irq = res->irq;
 	priv->wol_irq = res->wol_irq;
