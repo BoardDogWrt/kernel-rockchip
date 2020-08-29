@@ -262,6 +262,7 @@
 	snps,txpbl = <0x4>;
 	tx_delay = <0x24>;
 	rx_delay = <0x18>;
+	handle_cpu_id = <1>;
 	status = "okay";
 
 	mdio {
@@ -613,6 +614,7 @@
 
 &usbdrd_dwc3 {
 	status = "okay";
+	handle_cpu_id = <2>;
 	#address-cells = <1>;
 	#size-cells = <0>;
 
