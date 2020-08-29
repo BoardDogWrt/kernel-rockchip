@@ -48,6 +48,8 @@ int dwc3_host_init(struct dwc3 *dwc)
 	int			ret, irq;
 	struct resource		*res;
 	struct platform_device	*dwc3_pdev = to_platform_device(dwc->dev);
+	struct cpumask		cpumask;
+	u32			cpu_id;
 	int			prop_idx = 0;
 
 	irq = dwc3_host_get_irq(dwc);
@@ -62,6 +64,13 @@ int dwc3_host_init(struct dwc3 *dwc)
 		res = platform_get_resource(dwc3_pdev, IORESOURCE_IRQ, 0);
 	if (!res)
 		return -ENOMEM;
+
+	if (!of_property_read_u32(dwc->dev->of_node, "handle_cpu_id", &cpu_id)) {
+		cpumask_clear(&cpumask);
+		cpumask_set_cpu(cpu_id, &cpumask);
+		irq_set_affinity(irq, &cpumask);
+		dev_dbg(dwc->dev, "setup irq on cpu%d\n", cpu_id);
+	}
 
 	dwc->xhci_resources[1].start = irq;
 	dwc->xhci_resources[1].end = irq;
