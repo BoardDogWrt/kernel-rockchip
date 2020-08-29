@@ -402,6 +402,10 @@
 	pmuio-supply = <&vcc_io>;
 };
 
+&rng {
+	status = "okay";
+};
+
 &pinctrl {
 	pmic {
 		pmic_int_l: pmic-int-l {
