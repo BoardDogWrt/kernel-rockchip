@@ -622,6 +622,10 @@
 	#address-cells = <1>;
 	#size-cells = <0>;
 
+	snps,dis-tx-ipgap-linecheck-quirk;
+	snps,xhci-slow-suspend-quirk;
+	snps,xhci-trb-ent-quirk;
+
 	r8153: device@2 {
 		compatible = "usbbda:8153";
 		reg = <2>;
