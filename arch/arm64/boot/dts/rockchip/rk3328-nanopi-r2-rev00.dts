@@ -114,6 +114,11 @@
 	status = "disabled";
 };
 
+&uart1 {
+	status = "okay";
+	pinctrl-0 = <&uart1_xfer>;
+};
+
 &pinctrl {
 	pmic {
 		pmic_int_l: pmic-int-l {
