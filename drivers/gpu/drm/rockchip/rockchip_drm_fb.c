@@ -226,7 +226,7 @@ static void rockchip_drm_output_poll_changed(struct drm_device *dev)
 	struct rockchip_drm_private *private = dev->dev_private;
 	struct drm_fb_helper *fb_helper = private->fbdev_helper;
 
-	if (fb_helper)
+	if (fb_helper && !private->loader_protect)
 		drm_fb_helper_hotplug_event(fb_helper);
 }
 
@@ -411,6 +411,8 @@ rockchip_atomic_commit_complete(struct rockchip_atomic_commit *commit)
 	 */
 	drm_atomic_helper_wait_for_dependencies(state);
 
+	rockchip_drm_psr_inhibit_get_state(state);
+
 	drm_atomic_helper_commit_modeset_disables(dev, state);
 
 	drm_atomic_helper_commit_modeset_enables(dev, state);
@@ -425,6 +427,8 @@ rockchip_atomic_commit_complete(struct rockchip_atomic_commit *commit)
 						      plane_num);
 
 	drm_atomic_helper_commit_planes(dev, state, true);
+
+	rockchip_drm_psr_inhibit_put_state(state);
 
 	drm_atomic_helper_commit_hw_done(state);
 

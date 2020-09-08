@@ -699,7 +699,7 @@ struct drm_get_cap {
 /*
  * DRM_CLIENT_CAP_SHARE_PLANES
  *
- * If set to 1, the DRM core will expose share planes to userspace.
+ * this is only used to compatibility with old hwc code.
  */
 #define DRM_CLIENT_CAP_SHARE_PLANES	6
 

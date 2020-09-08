@@ -364,11 +364,44 @@ enum cif_reg_index {
 #define CSI_WRDDR_TYPE_RAW12		(0x2 << 1)
 #define CSI_WRDDR_TYPE_RGB888		(0x3 << 1)
 #define CSI_WRDDR_TYPE_YUV422		(0x4 << 1)
+#define CSI_WRDDR_TYPE_YUV420SP		(0x5 << 1)
+#define CSI_WRDDR_TYPE_YUV400		(0x6 << 1)
 #define CSI_DISABLE_COMMAND_MODE	(0x0 << 4)
 #define CSI_ENABLE_COMMAND_MODE		(0x1 << 4)
 #define CSI_DISABLE_CROP		(0x0 << 5)
 #define CSI_ENABLE_CROP			(0x1 << 5)
 #define CSI_ENABLE_MIPI_COMPACT		(0x1 << 6)
+
+#define LVDS_ENABLE_CAPTURE		(0x1 << 16)
+#define LVDS_MODE(mode)			(((mode) & 0x7) << 17)
+#define LVDS_LANES_ENABLED(lanes)	\
+	({ \
+		unsigned int mask; \
+		switch (lanes) { \
+		case 1: \
+			mask = 0x1 << 20; \
+			break; \
+		case 2: \
+			mask = 0x3 << 20; \
+			break; \
+		case 3: \
+			mask = 0x7 << 20; \
+			break; \
+		case 4: \
+			mask = 0xf << 20; \
+			break; \
+		default: \
+			mask = 0x1 << 20; \
+			break; \
+		} \
+		mask; \
+	})
+
+#define LVDS_MAIN_LANE(index)		(((index) & 0x3) << 24)
+#define LVDS_FID(id)			(((id) & 0x3) << 26)
+#define LVDS_HDR_FRAME_X2		(0x0 << 28)
+#define LVDS_HDR_FRAME_X3		(0x1 << 28)
+#define LVDS_COMPACT			(0x1 << 29)
 
 /* CIF_CSI_INTEN */
 #define CSI_FRAME1_START_INTEN(id)	(0x1 << ((id) * 2 + 1))
@@ -413,6 +446,12 @@ enum cif_reg_index {
 #define CSI_CONFIG_FIFO_OVERFLOW	(0x1 << 18)
 #define CSI_BANDWIDTH_LACK		(0x1 << 19)
 #define CSI_RX_FIFO_OVERFLOW		(0x1 << 20)
+#define CSI_LINE_ID0_INTST		(0x1 << 21)
+#define CSI_LINE_ID1_INTST		(0x1 << 22)
+#define CSI_LINE_ID2_INTST		(0x1 << 23)
+#define CSI_LINE_ID3_INTST		(0x1 << 24)
+#define CSI_DMA_LVDS_ID2_FIFO_OVERFLOW	(0x1 << 25)
+#define CSI_DMA_LVDS_ID3_FIFO_OVERFLOW	(0x1 << 26)
 
 #define CSI_FRAME_END_ID0	(CSI_FRAME0_END_ID0 |\
 				 CSI_FRAME1_END_ID0)
@@ -426,6 +465,21 @@ enum cif_reg_index {
 				 CSI_DMA_UV_FIFO_OVERFLOW |	\
 				 CSI_CONFIG_FIFO_OVERFLOW |	\
 				 CSI_RX_FIFO_OVERFLOW)
+/* CIF_MIPI_LVDS_CTRL */
+#define CIF_MIPI_LVDS_SW_DMA_IDLE		(0x1 << 16)
+#define CIF_MIPI_LVDS_SW_PRESS_VALUE(val)	(((val) & 0x3) << 13)
+#define CIF_MIPI_LVDS_SW_PRESS_ENABLE		(0x1 << 12)
+#define CIF_MIPI_LVDS_SW_LVDS_WIDTH_8BITS	(0x0 << 9)
+#define CIF_MIPI_LVDS_SW_LVDS_WIDTH_10BITS	(0x1 << 9)
+#define CIF_MIPI_LVDS_SW_LVDS_WIDTH_12BITS	(0x2 << 9)
+#define CIF_MIPI_LVDS_SW_SEL_LVDS		(0x1 << 8)
+#define CIF_MIPI_LVDS_SW_HURRY_VALUE(val)	(((val) & 0x3) << 5)
+#define CIF_MIPI_LVDS_SW_HURRY_ENABLE		(0x1 << 4)
+#define CIF_MIPI_LVDS_SW_WATER_LINE_75		(0x0 << 1)
+#define CIF_MIPI_LVDS_SW_WATER_LINE_50		(0x1 << 1)
+#define CIF_MIPI_LVDS_SW_WATER_LINE_25		(0x2 << 1)
+#define CIF_MIPI_LVDS_SW_WATER_LINE_00		(0x3 << 1)
+#define CIF_MIPI_LVDS_SW_WATER_LINE_ENABLE	(0x1 << 0)
 
 /* CSI Host Registers Define */
 #define CSIHOST_N_LANES		0x04
@@ -448,5 +502,11 @@ enum cif_reg_index {
 #define SW_FRM_END_ID1(x)	(((x) & CSI_FRAME_END_ID1) >> 10)
 #define SW_FRM_END_ID2(x)	(((x) & CSI_FRAME_END_ID2) >> 12)
 #define SW_FRM_END_ID3(x)	(((x) & CSI_FRAME_END_ID3) >> 14)
+
+/* CIF LVDS SAV EAV Define */
+#define SW_LVDS_EAV_ACT(code)	(((code) & 0xfff) << 16)
+#define SW_LVDS_SAV_ACT(code)	(((code) & 0xfff) << 0)
+#define SW_LVDS_EAV_BLK(code)	(((code) & 0xfff) << 16)
+#define SW_LVDS_SAV_BLK(code)	(((code) & 0xfff) << 0)
 
 #endif

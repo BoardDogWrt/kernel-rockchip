@@ -50,6 +50,10 @@
 	cpu-supply = <&vdd_arm>;
 };
 
+&cpu_tsadc {
+	status = "okay";
+};
+
 &display_subsystem {
 	status = "okay";
 };
@@ -81,8 +85,16 @@
 	status = "okay";
 };
 
+&npu_tsadc {
+	status = "okay";
+};
+
 &optee {
 	status = "disabled";
+};
+
+&otp {
+	status = "okay";
 };
 
 &pinctrl {
@@ -137,11 +149,19 @@
 	status = "okay";
 };
 
+&rkisp_vir0 {
+	status = "okay";
+};
+
 &rkisp_mmu {
 	status = "disabled";
 };
 
 &rkispp {
+	status = "okay";
+};
+
+&rkispp_vir0 {
 	status = "okay";
 };
 

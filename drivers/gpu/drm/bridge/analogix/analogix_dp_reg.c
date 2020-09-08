@@ -288,10 +288,12 @@ void analogix_dp_set_analog_power_down(struct analogix_dp_device *dp,
 			mask = AUX_PD;
 
 		reg = analogix_dp_read(dp, phy_pd_addr);
-		if (enable)
+		if (enable) {
+			reg &= ~(DP_INC_BG | DP_EXP_BG);
 			reg |= mask;
-		else
+		} else {
 			reg &= ~mask;
+		}
 		analogix_dp_write(dp, phy_pd_addr, reg);
 		break;
 	case CH0_BLOCK:
@@ -516,6 +518,7 @@ void analogix_dp_init_aux(struct analogix_dp_device *dp)
 	analogix_dp_write(dp, ANALOGIX_DP_AUX_CH_DEFER_CTL, reg);
 
 	/* Enable AUX channel module */
+	analogix_dp_enable_sw_function(dp);
 	reg = analogix_dp_read(dp, ANALOGIX_DP_FUNC_EN_2);
 	reg &= ~AUX_FUNC_EN_N;
 	analogix_dp_write(dp, ANALOGIX_DP_FUNC_EN_2, reg);
@@ -1134,6 +1137,10 @@ ssize_t analogix_dp_transfer(struct analogix_dp_device *dp,
 	if (WARN_ON(msg->size > 16))
 		return -E2BIG;
 
+	reg = analogix_dp_read(dp, ANALOGIX_DP_FUNC_EN_2);
+	if (reg & AUX_FUNC_EN_N)
+		analogix_dp_init_aux(dp);
+
 	/* Clear AUX CH data buffer */
 	reg = BUF_CLR;
 	analogix_dp_write(dp, ANALOGIX_DP_BUFFER_DATA_CTL, reg);
@@ -1244,7 +1251,7 @@ ssize_t analogix_dp_transfer(struct analogix_dp_device *dp,
 		 (msg->request & ~DP_AUX_I2C_MOT) == DP_AUX_NATIVE_READ)
 		msg->reply = DP_AUX_NATIVE_REPLY_ACK;
 
-	return num_transferred > 0 ? num_transferred : -EBUSY;
+	return (num_transferred == msg->size) ? num_transferred : -EBUSY;
 
 aux_error:
 	/* if aux err happen, reset aux */

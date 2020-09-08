@@ -32,6 +32,16 @@ static int rockchip_cpuinfo_probe(struct platform_device *pdev)
 	size_t len;
 	int i;
 
+	cell = nvmem_cell_get(dev, "cpu-code");
+	if (!IS_ERR(cell)) {
+		efuse_buf = nvmem_cell_read(cell, &len);
+		nvmem_cell_put(cell);
+
+		if (len == 2)
+			rockchip_set_cpu((efuse_buf[0] << 8 | efuse_buf[1]));
+		kfree(efuse_buf);
+	}
+
 	cell = nvmem_cell_get(dev, "cpu-version");
 	if (!IS_ERR(cell)) {
 		efuse_buf = nvmem_cell_read(cell, &len);
@@ -68,6 +78,7 @@ static int rockchip_cpuinfo_probe(struct platform_device *pdev)
 	system_serial_low = crc32(0, buf, 8);
 	system_serial_high = crc32(system_serial_low, buf + 8, 8);
 
+	dev_info(dev, "SoC\t\t: %lx\n", rockchip_soc_id);
 	dev_info(dev, "Serial\t\t: %08x%08x\n",
 		 system_serial_high, system_serial_low);
 
@@ -87,6 +98,16 @@ static struct platform_driver rockchip_cpuinfo_driver = {
 		.of_match_table = rockchip_cpuinfo_of_match,
 	},
 };
+
+static void rv1109_init(void)
+{
+	rockchip_soc_id = ROCKCHIP_SOC_RV1109;
+}
+
+static void rv1126_init(void)
+{
+	rockchip_soc_id = ROCKCHIP_SOC_RV1126;
+}
 
 static void rk3288_init(void)
 {
@@ -149,14 +170,31 @@ static int __init rockchip_soc_id_init(void)
 			rk3126_init();
 	} else if (cpu_is_rk3308()) {
 		rk3308_init();
+	} else if (cpu_is_rv1109()) {
+		rv1109_init();
+	} else if (cpu_is_rv1126()) {
+		rv1126_init();
 	}
 
 	return 0;
 }
+#ifndef MODULE
 pure_initcall(rockchip_soc_id_init);
+#endif
 
 static int __init rockchip_cpuinfo_init(void)
 {
+#ifdef MODULE
+	rockchip_soc_id_init();
+#endif
 	return platform_driver_register(&rockchip_cpuinfo_driver);
 }
 subsys_initcall_sync(rockchip_cpuinfo_init);
+
+static void __exit rockchip_cpuinfo_exit(void)
+{
+	platform_driver_unregister(&rockchip_cpuinfo_driver);
+}
+module_exit(rockchip_cpuinfo_exit);
+
+MODULE_LICENSE("GPL");

@@ -494,6 +494,9 @@ static int fan53555_voltages_setup_tcs(struct fan53555_device_info *di)
 	di->vsel_step = 6250;
 	di->n_voltages = FAN53555_NVOLTAGES_127;
 
+	di->en_reg = di->vol_reg;
+	di->sleep_en_reg = di->sleep_reg;
+
 	return 0;
 }
 
@@ -608,6 +611,7 @@ static struct fan53555_platform_data *fan53555_parse_dt(struct device *dev,
 	if (IS_ERR(pdata->vsel_gpio)) {
 		ret = PTR_ERR(pdata->vsel_gpio);
 		dev_err(dev, "failed to get vesl gpio (%d)\n", ret);
+		pdata->vsel_gpio = NULL;
 	}
 
 	return pdata;

@@ -97,6 +97,7 @@ struct rockchip_lvds {
 	struct drm_connector connector;
 	struct drm_encoder encoder;
 	struct drm_display_mode mode;
+	struct rockchip_drm_sub_dev sub_dev;
 };
 
 static inline struct rockchip_lvds *connector_to_lvds(struct drm_connector *c)
@@ -189,6 +190,7 @@ rockchip_lvds_encoder_atomic_check(struct drm_encoder *encoder,
 		s->output_mode = ROCKCHIP_OUT_MODE_AAAA;
 
 	s->output_type = DRM_MODE_CONNECTOR_LVDS;
+	s->bus_flags = info->bus_flags;
 	s->tv_state = &conn_state->tv;
 	s->eotf = TRADITIONAL_GAMMA_SDR;
 	s->color_space = V4L2_COLORSPACE_DEFAULT;
@@ -273,7 +275,6 @@ static int rockchip_lvds_bind(struct device *dev, struct device *master,
 	if (ret)
 		return ret;
 
-	encoder->port = dev->of_node;
 	encoder->possible_crtcs = drm_of_find_possible_crtcs(drm_dev,
 							     dev->of_node);
 
@@ -288,8 +289,6 @@ static int rockchip_lvds_bind(struct device *dev, struct device *master,
 	drm_encoder_helper_add(encoder, &rockchip_lvds_encoder_helper_funcs);
 
 	if (lvds->panel) {
-		connector->port = dev->of_node;
-
 		ret = drm_connector_init(drm_dev, connector,
 					 &rockchip_lvds_connector_funcs,
 					 DRM_MODE_CONNECTOR_LVDS);
@@ -315,6 +314,9 @@ static int rockchip_lvds_bind(struct device *dev, struct device *master,
 				      "failed to attach panel: %d\n", ret);
 			goto err_free_connector;
 		}
+		lvds->sub_dev.connector = &lvds->connector;
+		lvds->sub_dev.of_node = lvds->dev->of_node;
+		rockchip_drm_register_sub_dev(&lvds->sub_dev);
 	} else {
 		ret = drm_bridge_attach(encoder, lvds->bridge, NULL);
 		if (ret) {
@@ -338,6 +340,8 @@ static void rockchip_lvds_unbind(struct device *dev, struct device *master,
 {
 	struct rockchip_lvds *lvds = dev_get_drvdata(dev);
 
+	if (lvds->sub_dev.connector)
+		rockchip_drm_unregister_sub_dev(&lvds->sub_dev);
 	if (lvds->panel) {
 		drm_panel_detach(lvds->panel);
 		drm_connector_cleanup(&lvds->connector);

@@ -208,20 +208,56 @@ static int rkcif_pipeline_close(struct rkcif_pipeline *p)
  */
 static int rkcif_pipeline_set_stream(struct rkcif_pipeline *p, bool on)
 {
+	struct rkcif_device *cif_dev = container_of(p, struct rkcif_device, pipe);
+	bool can_be_set = false;
 	int i, ret;
 
-	if ((on && atomic_inc_return(&p->stream_cnt) > 1) ||
-	    (!on && atomic_dec_return(&p->stream_cnt) > 0))
-		return 0;
+	if (cif_dev->hdr.mode == NO_HDR) {
+		if ((on && atomic_inc_return(&p->stream_cnt) > 1) ||
+		    (!on && atomic_dec_return(&p->stream_cnt) > 0))
+			return 0;
 
-	if (on)
-		rockchip_set_system_status(SYS_STATUS_CIF0);
+		if (on)
+			rockchip_set_system_status(SYS_STATUS_CIF0);
 
-	/* phy -> sensor */
-	for (i = 0; i < p->num_subdevs; i++) {
-		ret = v4l2_subdev_call(p->subdevs[i], video, s_stream, on);
-		if (on && ret < 0 && ret != -ENOIOCTLCMD && ret != -ENODEV)
-			goto err_stream_off;
+		/* phy -> sensor */
+		for (i = 0; i < p->num_subdevs; i++) {
+			ret = v4l2_subdev_call(p->subdevs[i], video, s_stream, on);
+			if (on && ret < 0 && ret != -ENOIOCTLCMD && ret != -ENODEV)
+				goto err_stream_off;
+		}
+	} else {
+		if (!on && atomic_dec_return(&p->stream_cnt) > 0)
+			return 0;
+
+		if (on) {
+			atomic_inc(&p->stream_cnt);
+			if (cif_dev->hdr.mode == HDR_X2) {
+				if (atomic_read(&p->stream_cnt) == 1) {
+					rockchip_set_system_status(SYS_STATUS_CIF0);
+					can_be_set = false;
+				} else if (atomic_read(&p->stream_cnt) == 2) {
+					can_be_set = true;
+				}
+			} else if (cif_dev->hdr.mode == HDR_X3) {
+				if (atomic_read(&p->stream_cnt) == 1) {
+					rockchip_set_system_status(SYS_STATUS_CIF0);
+					can_be_set = false;
+				} else if (atomic_read(&p->stream_cnt) == 3) {
+					can_be_set = true;
+				}
+			}
+		}
+
+		if ((on && can_be_set) || !on) {
+			/* phy -> sensor */
+			for (i = 0; i < p->num_subdevs; i++) {
+				ret = v4l2_subdev_call(p->subdevs[i], video, s_stream, on);
+
+				if (on && ret < 0 && ret != -ENOIOCTLCMD && ret != -ENODEV)
+					goto err_stream_off;
+			}
+		}
 	}
 
 	if (!on)
@@ -244,32 +280,53 @@ static int rkcif_create_links(struct rkcif_device *dev)
 	unsigned int s, pad, id, stream_num = 0;
 
 	if (dev->chip_id == CHIP_RK1808_CIF ||
-	    dev->chip_id == CHIP_RV1126_CIF)
-		stream_num = RKCIF_MULTI_STREAMS_NUM;
-	else
+	    dev->chip_id == CHIP_RV1126_CIF ||
+	    dev->chip_id == CHIP_RV1126_CIF_LITE) {
+		if (dev->chip_id == CHIP_RV1126_CIF_LITE)
+			stream_num = RKCIF_MAX_STREAM_LVDS;
+		else
+			stream_num = RKCIF_MULTI_STREAMS_NUM;
+	} else {
 		stream_num = RKCIF_SINGLE_STREAM;
+	}
 
 	/* sensor links(or mipi-phy) */
 	for (s = 0; s < dev->num_sensors; ++s) {
 		struct rkcif_sensor_info *sensor = &dev->sensors[s];
+		struct rkcif_sensor_info linked_sensor;
 		struct media_entity *source_entity, *sink_entity;
 
-		for (pad = 0; pad < sensor->sd->entity.num_pads; pad++) {
-			if (sensor->sd->entity.pads[pad].flags &
+		linked_sensor.lanes = sensor->lanes;
+
+		if (sensor->mbus.type == V4L2_MBUS_CCP2) {
+			linked_sensor.sd = &dev->lvds_subdev.sd;
+			dev->lvds_subdev.sensor_self.sd = &dev->lvds_subdev.sd;
+			dev->lvds_subdev.sensor_self.lanes = sensor->lanes;
+			memcpy(&dev->lvds_subdev.sensor_self.mbus, &sensor->mbus,
+			       sizeof(struct v4l2_mbus_config));
+		} else {
+			linked_sensor.sd = sensor->sd;
+		}
+
+		memcpy(&linked_sensor.mbus, &sensor->mbus,
+		       sizeof(struct v4l2_mbus_config));
+
+		for (pad = 0; pad < linked_sensor.sd->entity.num_pads; pad++) {
+			if (linked_sensor.sd->entity.pads[pad].flags &
 				MEDIA_PAD_FL_SOURCE) {
-				if (pad == sensor->sd->entity.num_pads) {
+				if (pad == linked_sensor.sd->entity.num_pads) {
 					dev_err(dev->dev,
 						"failed to find src pad for %s\n",
-						sensor->sd->name);
+						linked_sensor.sd->name);
 
 					break;
 				}
 
-				if ((sensor->mbus.type == V4L2_MBUS_BT656 ||
-				     sensor->mbus.type == V4L2_MBUS_PARALLEL) &&
+				if ((linked_sensor.mbus.type == V4L2_MBUS_BT656 ||
+				     linked_sensor.mbus.type == V4L2_MBUS_PARALLEL) &&
 				    (dev->chip_id == CHIP_RK1808_CIF ||
 				     dev->chip_id == CHIP_RV1126_CIF)) {
-					source_entity = &sensor->sd->entity;
+					source_entity = &linked_sensor.sd->entity;
 					sink_entity = &dev->stream[RKCIF_STREAM_DVP].vnode.vdev.entity;
 
 					ret = media_create_pad_link(source_entity,
@@ -279,16 +336,17 @@ static int rkcif_create_links(struct rkcif_device *dev)
 								    MEDIA_LNK_FL_ENABLED);
 					if (ret)
 						dev_err(dev->dev, "failed to create link for %s\n",
-							sensor->sd->name);
+							linked_sensor.sd->name);
 					break;
 				}
 
 				for (id = 0; id < stream_num; id++) {
-					source_entity = &sensor->sd->entity;
+					source_entity = &linked_sensor.sd->entity;
 					sink_entity = &dev->stream[id].vnode.vdev.entity;
 
 					if ((dev->chip_id != CHIP_RK1808_CIF &&
-					     dev->chip_id != CHIP_RV1126_CIF) |
+					     dev->chip_id != CHIP_RV1126_CIF &&
+					     dev->chip_id != CHIP_RV1126_CIF_LITE) |
 					    (id == pad - 1))
 						flags = MEDIA_LNK_FL_ENABLED;
 					else
@@ -302,11 +360,25 @@ static int rkcif_create_links(struct rkcif_device *dev)
 					if (ret) {
 						dev_err(dev->dev,
 							"failed to create link for %s\n",
-							sensor->sd->name);
+							linked_sensor.sd->name);
 						break;
 					}
 				}
 			}
+		}
+
+		if (sensor->mbus.type == V4L2_MBUS_CCP2) {
+			source_entity = &sensor->sd->entity;
+			sink_entity = &linked_sensor.sd->entity;
+			ret = media_create_pad_link(source_entity,
+						    1,
+						    sink_entity,
+						    0,
+						    MEDIA_LNK_FL_ENABLED);
+			if (ret)
+				dev_err(dev->dev, "failed to create link between %s and %s\n",
+					linked_sensor.sd->name,
+					sensor->sd->name);
 		}
 	}
 
@@ -321,27 +393,41 @@ static int _set_pipeline_default_fmt(struct rkcif_device *dev)
 static int subdev_notifier_complete(struct v4l2_async_notifier *notifier)
 {
 	struct rkcif_device *dev;
-	int ret;
+	struct rkcif_sensor_info *sensor;
+	int ret, index;
 
 	dev = container_of(notifier, struct rkcif_device, notifier);
 
-	/* mutex_lock(&dev->media_dev.graph_mutex); */
+	for (index = 0; index < dev->num_sensors; index++) {
+		sensor = &dev->sensors[index];
+		if (sensor->mbus.type == V4L2_MBUS_CCP2) {
+			ret = rkcif_register_lvds_subdev(dev);
+			if (ret < 0) {
+				v4l2_err(&dev->v4l2_dev,
+					 "Err: register lvds subdev failed!!!\n");
+				goto notifier_end;
+			}
+			break;
+		}
+	}
 
 	ret = rkcif_create_links(dev);
 	if (ret < 0)
-		goto unlock;
+		goto unregister_lvds;
 
 	ret = v4l2_device_register_subdev_nodes(&dev->v4l2_dev);
 	if (ret < 0)
-		goto unlock;
+		goto unregister_lvds;
 
 	ret = _set_pipeline_default_fmt(dev);
 	if (ret < 0)
-		goto unlock;
+		goto unregister_lvds;
 	v4l2_info(&dev->v4l2_dev, "Async subdev notifier completed\n");
+	return ret;
 
-unlock:
-	/* mutex_unlock(&dev->media_dev.graph_mutex); */
+unregister_lvds:
+	rkcif_unregister_lvds_subdev(dev);
+notifier_end:
 	return ret;
 }
 
@@ -383,7 +469,8 @@ static int rkcif_fwnode_parse(struct device *dev,
 
 	if (vep->bus_type != V4L2_MBUS_BT656 &&
 	    vep->bus_type != V4L2_MBUS_PARALLEL &&
-	    vep->bus_type != V4L2_MBUS_CSI2)
+	    vep->bus_type != V4L2_MBUS_CSI2 &&
+	    vep->bus_type != V4L2_MBUS_CCP2)
 		return 0;
 
 	rk_asd->mbus.type = vep->bus_type;
@@ -391,6 +478,8 @@ static int rkcif_fwnode_parse(struct device *dev,
 	if (vep->bus_type == V4L2_MBUS_CSI2) {
 		rk_asd->mbus.flags = vep->bus.mipi_csi2.flags;
 		rk_asd->lanes = vep->bus.mipi_csi2.num_data_lanes;
+	} else if (vep->bus_type == V4L2_MBUS_CCP2) {
+		rk_asd->lanes = vep->bus.mipi_csi1.data_lane;
 	} else {
 		rk_asd->mbus.flags = bus->flags;
 	}
@@ -430,8 +519,13 @@ static int rkcif_register_platform_subdevs(struct rkcif_device *cif_dev)
 	int stream_num = 0, ret;
 
 	if (cif_dev->chip_id == CHIP_RK1808_CIF ||
-	    cif_dev->chip_id == CHIP_RV1126_CIF) {
-		stream_num = RKCIF_MULTI_STREAMS_NUM;
+	    cif_dev->chip_id == CHIP_RV1126_CIF ||
+	    cif_dev->chip_id == CHIP_RV1126_CIF_LITE) {
+		if (cif_dev->chip_id == CHIP_RV1126_CIF_LITE)
+			stream_num = RKCIF_MAX_STREAM_LVDS;
+		else
+			stream_num = RKCIF_MULTI_STREAMS_NUM;
+
 		ret = rkcif_register_stream_vdevs(cif_dev, stream_num,
 						  true);
 	} else {
@@ -667,10 +761,7 @@ static const struct cif_reg rk3368_cif_regs[] = {
 static const char * const rv1126_cif_clks[] = {
 	"aclk_cif",
 	"hclk_cif",
-	"aclk_cif_lite",
-	"hclk_cif_lite",
 	"dclk_cif",
-	"dclk_cif_lite",
 };
 
 static const char * const rv1126_cif_rsts[] = {
@@ -680,10 +771,6 @@ static const char * const rv1126_cif_rsts[] = {
 	"rst_cif_p",
 	"rst_cif_i",
 	"rst_cif_rx_p",
-	"rst_cif_lite_a",
-	"rst_cif_lite_h",
-	"rst_cif_lite_d",
-	"rst_cif_lite_rx_p",
 };
 
 static const struct cif_reg rv1126_cif_regs[] = {
@@ -748,11 +835,103 @@ static const struct cif_reg rv1126_cif_regs[] = {
 	[CIF_REG_MIPI_LVDS_FRAME1_VLW_UV_ID3] = CIF_REG(CIF_CSI_FRM1_VLW_UV_ID3),
 	[CIF_REG_MIPI_LVDS_INTEN] = CIF_REG(CIF_CSI_INTEN),
 	[CIF_REG_MIPI_LVDS_INTSTAT] = CIF_REG(CIF_CSI_INTSTAT),
+	[CIF_REG_MIPI_LVDS_LINE_INT_NUM_ID0_1] = CIF_REG(CIF_CSI_LINE_INT_NUM_ID0_1),
+	[CIF_REG_MIPI_LVDS_LINE_INT_NUM_ID2_3] = CIF_REG(CIF_CSI_LINE_INT_NUM_ID2_3),
+	[CIF_REG_MIPI_LVDS_LINE_LINE_CNT_ID0_1] = CIF_REG(CIF_CSI_LINE_CNT_ID0_1),
+	[CIF_REG_MIPI_LVDS_LINE_LINE_CNT_ID2_3] = CIF_REG(CIF_CSI_LINE_CNT_ID2_3),
 	[CIF_REG_MIPI_LVDS_ID0_CROP_START] = CIF_REG(CIF_CSI_ID0_CROP_START),
 	[CIF_REG_MIPI_LVDS_ID1_CROP_START] = CIF_REG(CIF_CSI_ID1_CROP_START),
 	[CIF_REG_MIPI_LVDS_ID2_CROP_START] = CIF_REG(CIF_CSI_ID2_CROP_START),
 	[CIF_REG_MIPI_LVDS_ID3_CROP_START] = CIF_REG(CIF_CSI_ID3_CROP_START),
+	[CIF_REG_LVDS_SAV_EAV_ACT0_ID0] = CIF_REG(CIF_LVDS_SAV_EAV_ACT0_ID0),
+	[CIF_REG_LVDS_SAV_EAV_BLK0_ID0] = CIF_REG(CIF_LVDS_SAV_EAV_BLK0_ID0),
+	[CIF_REG_LVDS_SAV_EAV_ACT1_ID0] = CIF_REG(CIF_LVDS_SAV_EAV_ACT1_ID0),
+	[CIF_REG_LVDS_SAV_EAV_BLK1_ID0] = CIF_REG(CIF_LVDS_SAV_EAV_BLK1_ID0),
+	[CIF_REG_LVDS_SAV_EAV_ACT0_ID1] = CIF_REG(CIF_LVDS_SAV_EAV_ACT0_ID1),
+	[CIF_REG_LVDS_SAV_EAV_BLK0_ID1] = CIF_REG(CIF_LVDS_SAV_EAV_BLK0_ID1),
+	[CIF_REG_LVDS_SAV_EAV_ACT1_ID1] = CIF_REG(CIF_LVDS_SAV_EAV_ACT1_ID1),
+	[CIF_REG_LVDS_SAV_EAV_BLK1_ID1] = CIF_REG(CIF_LVDS_SAV_EAV_BLK1_ID1),
+	[CIF_REG_LVDS_SAV_EAV_ACT0_ID2] = CIF_REG(CIF_LVDS_SAV_EAV_ACT0_ID2),
+	[CIF_REG_LVDS_SAV_EAV_BLK0_ID2] = CIF_REG(CIF_LVDS_SAV_EAV_BLK0_ID2),
+	[CIF_REG_LVDS_SAV_EAV_ACT1_ID2] = CIF_REG(CIF_LVDS_SAV_EAV_ACT1_ID2),
+	[CIF_REG_LVDS_SAV_EAV_BLK1_ID2] = CIF_REG(CIF_LVDS_SAV_EAV_BLK1_ID2),
+	[CIF_REG_LVDS_SAV_EAV_ACT0_ID3] = CIF_REG(CIF_LVDS_SAV_EAV_ACT0_ID3),
+	[CIF_REG_LVDS_SAV_EAV_BLK0_ID3] = CIF_REG(CIF_LVDS_SAV_EAV_BLK0_ID3),
+	[CIF_REG_LVDS_SAV_EAV_ACT1_ID3] = CIF_REG(CIF_LVDS_SAV_EAV_ACT1_ID3),
+	[CIF_REG_LVDS_SAV_EAV_BLK1_ID3] = CIF_REG(CIF_LVDS_SAV_EAV_BLK1_ID3),
+	[CIF_REG_Y_STAT_CONTROL] = CIF_REG(CIF_Y_STAT_CONTROL),
+	[CIF_REG_Y_STAT_VALUE] = CIF_REG(CIF_Y_STAT_VALUE),
 };
+
+static const char * const rv1126_cif_lite_clks[] = {
+	"aclk_cif_lite",
+	"hclk_cif_lite",
+	"dclk_cif_lite",
+};
+
+static const char * const rv1126_cif_lite_rsts[] = {
+	"rst_cif_lite_a",
+	"rst_cif_lite_h",
+	"rst_cif_lite_d",
+	"rst_cif_lite_rx_p",
+};
+
+static const struct cif_reg rv1126_cif_lite_regs[] = {
+	[CIF_REG_MIPI_LVDS_ID0_CTRL0] = CIF_REG(CIF_CSI_ID0_CTRL0),
+	[CIF_REG_MIPI_LVDS_ID0_CTRL1] = CIF_REG(CIF_CSI_ID0_CTRL1),
+	[CIF_REG_MIPI_LVDS_ID1_CTRL0] = CIF_REG(CIF_CSI_ID1_CTRL0),
+	[CIF_REG_MIPI_LVDS_ID1_CTRL1] = CIF_REG(CIF_CSI_ID1_CTRL1),
+	[CIF_REG_MIPI_LVDS_ID2_CTRL0] = CIF_REG(CIF_CSI_ID2_CTRL0),
+	[CIF_REG_MIPI_LVDS_ID2_CTRL1] = CIF_REG(CIF_CSI_ID2_CTRL1),
+	[CIF_REG_MIPI_LVDS_ID3_CTRL0] = CIF_REG(CIF_CSI_ID3_CTRL0),
+	[CIF_REG_MIPI_LVDS_ID3_CTRL1] = CIF_REG(CIF_CSI_ID3_CTRL1),
+	[CIF_REG_MIPI_LVDS_CTRL] = CIF_REG(CIF_CSI_MIPI_LVDS_CTRL),
+	[CIF_REG_MIPI_LVDS_FRAME0_ADDR_Y_ID0] = CIF_REG(CIF_CSI_FRM0_ADDR_Y_ID0),
+	[CIF_REG_MIPI_LVDS_FRAME1_ADDR_Y_ID0] = CIF_REG(CIF_CSI_FRM1_ADDR_Y_ID0),
+	[CIF_REG_MIPI_LVDS_FRAME0_VLW_Y_ID0] = CIF_REG(CIF_CSI_FRM0_VLW_Y_ID0),
+	[CIF_REG_MIPI_LVDS_FRAME1_VLW_Y_ID0] = CIF_REG(CIF_CSI_FRM1_VLW_Y_ID0),
+	[CIF_REG_MIPI_LVDS_FRAME0_ADDR_Y_ID1] = CIF_REG(CIF_CSI_FRM0_ADDR_Y_ID1),
+	[CIF_REG_MIPI_LVDS_FRAME1_ADDR_Y_ID1] = CIF_REG(CIF_CSI_FRM1_ADDR_Y_ID1),
+	[CIF_REG_MIPI_LVDS_FRAME0_VLW_Y_ID1] = CIF_REG(CIF_CSI_FRM0_VLW_Y_ID1),
+	[CIF_REG_MIPI_LVDS_FRAME1_VLW_Y_ID1] = CIF_REG(CIF_CSI_FRM1_VLW_Y_ID1),
+	[CIF_REG_MIPI_LVDS_FRAME0_ADDR_Y_ID2] = CIF_REG(CIF_CSI_FRM0_ADDR_Y_ID2),
+	[CIF_REG_MIPI_LVDS_FRAME1_ADDR_Y_ID2] = CIF_REG(CIF_CSI_FRM1_ADDR_Y_ID2),
+	[CIF_REG_MIPI_LVDS_FRAME0_VLW_Y_ID2] = CIF_REG(CIF_CSI_FRM0_VLW_Y_ID2),
+	[CIF_REG_MIPI_LVDS_FRAME1_VLW_Y_ID2] = CIF_REG(CIF_CSI_FRM1_VLW_Y_ID2),
+	[CIF_REG_MIPI_LVDS_FRAME0_ADDR_Y_ID3] = CIF_REG(CIF_CSI_FRM0_ADDR_Y_ID3),
+	[CIF_REG_MIPI_LVDS_FRAME1_ADDR_Y_ID3] = CIF_REG(CIF_CSI_FRM1_ADDR_Y_ID3),
+	[CIF_REG_MIPI_LVDS_FRAME0_VLW_Y_ID3] = CIF_REG(CIF_CSI_FRM0_VLW_Y_ID3),
+	[CIF_REG_MIPI_LVDS_FRAME1_VLW_Y_ID3] = CIF_REG(CIF_CSI_FRM1_VLW_Y_ID3),
+	[CIF_REG_MIPI_LVDS_INTEN] = CIF_REG(CIF_CSI_INTEN),
+	[CIF_REG_MIPI_LVDS_INTSTAT] = CIF_REG(CIF_CSI_INTSTAT),
+	[CIF_REG_MIPI_LVDS_LINE_INT_NUM_ID0_1] = CIF_REG(CIF_CSI_LINE_INT_NUM_ID0_1),
+	[CIF_REG_MIPI_LVDS_LINE_INT_NUM_ID2_3] = CIF_REG(CIF_CSI_LINE_INT_NUM_ID2_3),
+	[CIF_REG_MIPI_LVDS_LINE_LINE_CNT_ID0_1] = CIF_REG(CIF_CSI_LINE_CNT_ID0_1),
+	[CIF_REG_MIPI_LVDS_LINE_LINE_CNT_ID2_3] = CIF_REG(CIF_CSI_LINE_CNT_ID2_3),
+	[CIF_REG_MIPI_LVDS_ID0_CROP_START] = CIF_REG(CIF_CSI_ID0_CROP_START),
+	[CIF_REG_MIPI_LVDS_ID1_CROP_START] = CIF_REG(CIF_CSI_ID1_CROP_START),
+	[CIF_REG_MIPI_LVDS_ID2_CROP_START] = CIF_REG(CIF_CSI_ID2_CROP_START),
+	[CIF_REG_MIPI_LVDS_ID3_CROP_START] = CIF_REG(CIF_CSI_ID3_CROP_START),
+	[CIF_REG_LVDS_SAV_EAV_ACT0_ID0] = CIF_REG(CIF_LVDS_SAV_EAV_ACT0_ID0),
+	[CIF_REG_LVDS_SAV_EAV_BLK0_ID0] = CIF_REG(CIF_LVDS_SAV_EAV_BLK0_ID0),
+	[CIF_REG_LVDS_SAV_EAV_ACT1_ID0] = CIF_REG(CIF_LVDS_SAV_EAV_ACT1_ID0),
+	[CIF_REG_LVDS_SAV_EAV_BLK1_ID0] = CIF_REG(CIF_LVDS_SAV_EAV_BLK1_ID0),
+	[CIF_REG_LVDS_SAV_EAV_ACT0_ID1] = CIF_REG(CIF_LVDS_SAV_EAV_ACT0_ID1),
+	[CIF_REG_LVDS_SAV_EAV_BLK0_ID1] = CIF_REG(CIF_LVDS_SAV_EAV_BLK0_ID1),
+	[CIF_REG_LVDS_SAV_EAV_ACT1_ID1] = CIF_REG(CIF_LVDS_SAV_EAV_ACT1_ID1),
+	[CIF_REG_LVDS_SAV_EAV_BLK1_ID1] = CIF_REG(CIF_LVDS_SAV_EAV_BLK1_ID1),
+	[CIF_REG_LVDS_SAV_EAV_ACT0_ID2] = CIF_REG(CIF_LVDS_SAV_EAV_ACT0_ID2),
+	[CIF_REG_LVDS_SAV_EAV_BLK0_ID2] = CIF_REG(CIF_LVDS_SAV_EAV_BLK0_ID2),
+	[CIF_REG_LVDS_SAV_EAV_ACT1_ID2] = CIF_REG(CIF_LVDS_SAV_EAV_ACT1_ID2),
+	[CIF_REG_LVDS_SAV_EAV_BLK1_ID2] = CIF_REG(CIF_LVDS_SAV_EAV_BLK1_ID2),
+	[CIF_REG_LVDS_SAV_EAV_ACT0_ID3] = CIF_REG(CIF_LVDS_SAV_EAV_ACT0_ID3),
+	[CIF_REG_LVDS_SAV_EAV_BLK0_ID3] = CIF_REG(CIF_LVDS_SAV_EAV_BLK0_ID3),
+	[CIF_REG_LVDS_SAV_EAV_ACT1_ID3] = CIF_REG(CIF_LVDS_SAV_EAV_ACT1_ID3),
+	[CIF_REG_LVDS_SAV_EAV_BLK1_ID3] = CIF_REG(CIF_LVDS_SAV_EAV_BLK1_ID3),
+	[CIF_REG_Y_STAT_CONTROL] = CIF_REG(CIF_Y_STAT_CONTROL),
+	[CIF_REG_Y_STAT_VALUE] = CIF_REG(CIF_Y_STAT_VALUE),
+};
+
 
 static const struct cif_match_data px30_cif_match_data = {
 	.chip_id = CHIP_PX30_CIF,
@@ -817,6 +996,15 @@ static const struct cif_match_data rv1126_cif_match_data = {
 	.cif_regs = rv1126_cif_regs,
 };
 
+static const struct cif_match_data rv1126_cif_lite_match_data = {
+	.chip_id = CHIP_RV1126_CIF_LITE,
+	.clks = rv1126_cif_lite_clks,
+	.clks_num = ARRAY_SIZE(rv1126_cif_lite_clks),
+	.rsts = rv1126_cif_lite_rsts,
+	.rsts_num = ARRAY_SIZE(rv1126_cif_lite_rsts),
+	.cif_regs = rv1126_cif_lite_regs,
+};
+
 static const struct of_device_id rkcif_plat_of_match[] = {
 	{
 		.compatible = "rockchip,px30-cif",
@@ -846,6 +1034,10 @@ static const struct of_device_id rkcif_plat_of_match[] = {
 		.compatible = "rockchip,rv1126-cif",
 		.data = &rv1126_cif_match_data,
 	},
+	{
+		.compatible = "rockchip,rv1126-cif-lite",
+		.data = &rv1126_cif_lite_match_data,
+	},
 	{},
 };
 
@@ -861,6 +1053,17 @@ static irqreturn_t rkcif_irq_handler(int irq, void *ctx)
 
 	return IRQ_HANDLED;
 }
+
+static irqreturn_t rkcif_irq_lite_handler(int irq, void *ctx)
+{
+	struct device *dev = ctx;
+	struct rkcif_device *cif_dev = dev_get_drvdata(dev);
+
+	rkcif_irq_lite_lvds(cif_dev);
+
+	return IRQ_HANDLED;
+}
+
 
 static void rkcif_disable_sys_clk(struct rkcif_device *cif_dev)
 {
@@ -950,6 +1153,7 @@ static int rkcif_plat_probe(struct platform_device *pdev)
 	const struct cif_match_data *data;
 	struct resource *res;
 	int i, ret, irq;
+	char name[V4L2_DEVICE_NAME_SIZE] = {'\0'};
 
 	sprintf(rkcif_version, "v%02x.%02x.%02x",
 		RKCIF_DRIVER_VERSION >> 16,
@@ -961,6 +1165,7 @@ static int rkcif_plat_probe(struct platform_device *pdev)
 	match = of_match_node(rkcif_plat_of_match, node);
 	if (IS_ERR(match))
 		return PTR_ERR(match);
+	data = match->data;
 
 	cif_dev = devm_kzalloc(dev, sizeof(*cif_dev), GFP_KERNEL);
 	if (!cif_dev)
@@ -973,18 +1178,25 @@ static int rkcif_plat_probe(struct platform_device *pdev)
 	if (irq < 0)
 		return irq;
 
-	ret = devm_request_irq(dev, irq, rkcif_irq_handler, IRQF_SHARED,
-			       dev_driver_string(dev), dev);
+	if (data->chip_id == CHIP_RV1126_CIF_LITE)
+		ret = devm_request_irq(dev, irq, rkcif_irq_lite_handler,
+				       IRQF_SHARED,
+				       dev_driver_string(dev), dev);
+	else
+		ret = devm_request_irq(dev, irq, rkcif_irq_handler,
+				       IRQF_SHARED,
+				       dev_driver_string(dev), dev);
 	if (ret < 0) {
 		dev_err(dev, "request irq failed: %d\n", ret);
 		return ret;
 	}
 
 	cif_dev->irq = irq;
-	data = match->data;
+
 	cif_dev->chip_id = data->chip_id;
 	if (data->chip_id == CHIP_RK1808_CIF ||
-	    data->chip_id == CHIP_RV1126_CIF) {
+	    data->chip_id == CHIP_RV1126_CIF ||
+	    data->chip_id == CHIP_RV1126_CIF_LITE) {
 		res = platform_get_resource_byname(pdev,
 						   IORESOURCE_MEM,
 						   "cif_regs");
@@ -1038,6 +1250,7 @@ static int rkcif_plat_probe(struct platform_device *pdev)
 	}
 
 	cif_dev->cif_regs = data->cif_regs;
+	cif_dev->hdr.mode = NO_HDR;
 
 	mutex_init(&cif_dev->stream_lock);
 	atomic_set(&cif_dev->pipe.power_cnt, 0);
@@ -1048,12 +1261,14 @@ static int rkcif_plat_probe(struct platform_device *pdev)
 	cif_dev->pipe.set_stream = rkcif_pipeline_set_stream;
 
 	if (data->chip_id == CHIP_RK1808_CIF ||
-	    data->chip_id == CHIP_RV1126_CIF) {
+	    data->chip_id == CHIP_RV1126_CIF ||
+	    data->chip_id == CHIP_RV1126_CIF_LITE) {
 		rkcif_stream_init(cif_dev, RKCIF_STREAM_MIPI_ID0);
 		rkcif_stream_init(cif_dev, RKCIF_STREAM_MIPI_ID1);
 		rkcif_stream_init(cif_dev, RKCIF_STREAM_MIPI_ID2);
 		rkcif_stream_init(cif_dev, RKCIF_STREAM_MIPI_ID3);
-		rkcif_stream_init(cif_dev, RKCIF_STREAM_DVP);
+		if (data->chip_id != CHIP_RV1126_CIF_LITE)
+			rkcif_stream_init(cif_dev, RKCIF_STREAM_DVP);
 	} else {
 		rkcif_stream_init(cif_dev, RKCIF_STREAM_CIF);
 	}
@@ -1066,12 +1281,17 @@ static int rkcif_plat_probe(struct platform_device *pdev)
 	cif_dev->workmode = RKCIF_WORKMODE_PINGPONG;
 #endif
 
-	strlcpy(cif_dev->media_dev.model, "rkcif",
+	if (data->chip_id == CHIP_RV1126_CIF_LITE)
+		strncpy(name, "rkcif_lite", strlen("rkcif_lite"));
+	else
+		strncpy(name, "rkcif", strlen("rkcif"));
+
+	strlcpy(cif_dev->media_dev.model, name,
 		sizeof(cif_dev->media_dev.model));
 	cif_dev->media_dev.dev = &pdev->dev;
 	v4l2_dev = &cif_dev->v4l2_dev;
 	v4l2_dev->mdev = &cif_dev->media_dev;
-	strlcpy(v4l2_dev->name, "rkcif", sizeof(v4l2_dev->name));
+	strlcpy(v4l2_dev->name, name, sizeof(v4l2_dev->name));
 	v4l2_ctrl_handler_init(&cif_dev->ctrl_handler, 8);
 	v4l2_dev->ctrl_handler = &cif_dev->ctrl_handler;
 
@@ -1091,6 +1311,10 @@ static int rkcif_plat_probe(struct platform_device *pdev)
 	ret = rkcif_register_platform_subdevs(cif_dev);
 	if (ret < 0)
 		goto err_unreg_media_dev;
+
+	if (data->chip_id == CHIP_RV1126_CIF ||
+	    data->chip_id == CHIP_RV1126_CIF_LITE)
+		rkcif_register_luma_vdev(&cif_dev->luma_vdev, v4l2_dev, cif_dev);
 
 	cif_dev->iommu_en = is_iommu_enable(dev);
 	if (!cif_dev->iommu_en) {
@@ -1126,11 +1350,16 @@ static int rkcif_plat_remove(struct platform_device *pdev)
 	if (cif_dev->iommu_en)
 		rkcif_iommu_cleanup(cif_dev);
 
+	if (cif_dev->active_sensor->mbus.type == V4L2_MBUS_CCP2)
+		rkcif_unregister_lvds_subdev(cif_dev);
+
 	media_device_unregister(&cif_dev->media_dev);
 	v4l2_device_unregister(&cif_dev->v4l2_dev);
 	if (cif_dev->chip_id == CHIP_RK1808_CIF ||
 	    cif_dev->chip_id == CHIP_RV1126_CIF)
 		stream_num = RKCIF_MULTI_STREAMS_NUM;
+	else if (cif_dev->chip_id == CHIP_RV1126_CIF_LITE)
+		stream_num = RKCIF_MAX_STREAM_LVDS;
 	else
 		stream_num = RKCIF_SINGLE_STREAM;
 	rkcif_unregister_stream_vdevs(cif_dev, stream_num);
@@ -1160,7 +1389,7 @@ static int __maybe_unused rkcif_runtime_resume(struct device *dev)
 	return 0;
 }
 
-static int __init rkcif_clr_unready_dev(void)
+static int __maybe_unused __rkcif_clr_unready_dev(void)
 {
 	struct rkcif_device *cif_dev;
 
@@ -1171,7 +1400,28 @@ static int __init rkcif_clr_unready_dev(void)
 
 	return 0;
 }
+
+static int rkcif_clr_unready_dev_param_set(const char *val, const struct kernel_param *kp)
+{
+#ifdef MODULE
+	__rkcif_clr_unready_dev();
+#endif
+
+	return 0;
+}
+
+module_param_call(clr_unready_dev, rkcif_clr_unready_dev_param_set, NULL, NULL, 0200);
+MODULE_PARM_DESC(clr_unready_dev, "clear unready devices");
+
+#ifndef MODULE
+static int __init rkcif_clr_unready_dev(void)
+{
+	__rkcif_clr_unready_dev();
+
+	return 0;
+}
 late_initcall_sync(rkcif_clr_unready_dev);
+#endif
 
 static const struct dev_pm_ops rkcif_plat_pm_ops = {
 	SET_SYSTEM_SLEEP_PM_OPS(pm_runtime_force_suspend,
@@ -1189,7 +1439,22 @@ static struct platform_driver rkcif_plat_drv = {
 	.remove = rkcif_plat_remove,
 };
 
+#ifdef MODULE
+static int __init rk_cif_plat_drv_init(void)
+{
+	int ret;
+
+	ret = platform_driver_register(&rkcif_plat_drv);
+	if (ret)
+		return ret;
+	return rkcif_csi2_plat_drv_init();
+}
+
+module_init(rk_cif_plat_drv_init);
+#else
 module_platform_driver(rkcif_plat_drv);
+#endif
+
 MODULE_AUTHOR("Rockchip Camera/ISP team");
 MODULE_DESCRIPTION("Rockchip CIF platform driver");
 MODULE_LICENSE("GPL v2");

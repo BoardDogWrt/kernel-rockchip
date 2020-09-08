@@ -34,6 +34,12 @@ struct drm_device;
 struct drm_connector;
 struct iommu_domain;
 
+struct rockchip_drm_sub_dev {
+	struct list_head list;
+	struct drm_connector *connector;
+	struct device_node *of_node;
+};
+
 /*
  * Rockchip drm private crtc funcs.
  * @loader_protect: protect loader logo crtc's power
@@ -112,7 +118,8 @@ struct rockchip_crtc_state {
 	int output_mode;
 	int output_bpc;
 	int output_flags;
-	int bus_format;
+	u32 bus_format;
+	u32 bus_flags;
 	int yuv_overlay;
 	int post_r2y_en;
 	int post_y2r_en;
@@ -143,13 +150,13 @@ struct rockchip_logo {
  */
 struct rockchip_drm_private {
 	struct rockchip_logo *logo;
-	struct drm_property *logo_ymirror_prop;
 	struct drm_property *eotf_prop;
 	struct drm_property *color_space_prop;
 	struct drm_property *global_alpha_prop;
 	struct drm_property *blend_mode_prop;
 	struct drm_property *alpha_scale_prop;
 	struct drm_property *async_commit_prop;
+	struct drm_property *share_id_prop;
 	struct drm_fb_helper *fbdev_helper;
 	struct drm_gem_object *fbdev_bo;
 	const struct rockchip_crtc_funcs *crtc_funcs[ROCKCHIP_MAX_CRTC];
@@ -170,6 +177,12 @@ struct rockchip_drm_private {
 	u8 dmc_support;
 	struct list_head psr_list;
 	struct mutex psr_list_lock;
+
+	/**
+	 * @loader_protect
+	 * ignore restore_fbdev_mode_atomic when in logo on state
+	 */
+	bool loader_protect;
 };
 
 #ifndef MODULE
@@ -184,6 +197,20 @@ int rockchip_register_crtc_funcs(struct drm_crtc *crtc,
 				 const struct rockchip_crtc_funcs *crtc_funcs);
 void rockchip_unregister_crtc_funcs(struct drm_crtc *crtc);
 int rockchip_drm_wait_vact_end(struct drm_crtc *crtc, unsigned int mstimeout);
+
+void rockchip_drm_register_sub_dev(struct rockchip_drm_sub_dev *sub_dev);
+void rockchip_drm_unregister_sub_dev(struct rockchip_drm_sub_dev *sub_dev);
+struct rockchip_drm_sub_dev *rockchip_drm_get_sub_dev(struct device_node *node);
+int rockchip_drm_add_modes_noedid(struct drm_connector *connector);
+#if IS_ENABLED(CONFIG_DRM_ROCKCHIP)
+int rockchip_drm_get_sub_dev_type(void);
+#else
+static inline int rockchip_drm_get_sub_dev_type(void)
+{
+	return DRM_MODE_CONNECTOR_Unknown;
+}
+#endif
+
 #if IS_ENABLED(CONFIG_DRM_ROCKCHIP)
 int rockchip_drm_crtc_send_mcu_cmd(struct drm_device *drm_dev,
 				   struct device_node *np_crtc,

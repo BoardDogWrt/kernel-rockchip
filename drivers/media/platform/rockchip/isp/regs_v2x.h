@@ -3,8 +3,11 @@
  * Copyright (C) 2019 Rockchip Electronics Co., Ltd.
  */
 
-#ifndef _RKISP1_REGS_V2X_H
-#define _RKISP1_REGS_V2X_H
+#ifndef _RKISP_REGS_V2X_H
+#define _RKISP_REGS_V2X_H
+
+#define ISP_SW_REG_SIZE					0x6000
+#define ISP_SW_MAX_SIZE					(ISP_SW_REG_SIZE * 2)
 
 #define CTRL_BASE					0x00000000
 #define CTRL_VI_ISP_EN					(CTRL_BASE + 0x00000)
@@ -1768,6 +1771,11 @@
 #define SW_LVDS_SAV(a)			((a) & 0xfff)
 #define SW_LVDS_EAV(a)			(((a) & 0xfff) << 16)
 
+/* ISP CTRL */
+#define NOC_HURRY_W_HIGH		(3 << 30)
+#define NOC_HURRY_W_MODE(a)		(((a) & 0x3) << 21)
+#define NOC_HURRY_R_MODE(a)		(((a) & 0x3) << 18)
+
 /* isp interrupt */
 #define ISP2X_OFF			BIT(0)
 #define ISP2X_FRAME			BIT(1)
@@ -2102,11 +2110,14 @@ static inline void mi_raw2_rd_set_addr(void __iomem *base, u32 val)
 	writel(val, base + MI_RAW2_RD_BASE);
 }
 
-static inline void raw_rd_set_pic_size(void __iomem *base,
-				       u32 width, u32 height)
+static inline void raw_rd_set_pic_size(struct rkisp_stream *stream)
 {
-	writel(height << 16 | width,
-	       base + CSI2RX_RAW_RD_PIC_SIZE);
+	struct rkisp_device *dev = stream->ispdev;
+	u32 w = stream->out_fmt.width;
+	u32 h = dev->isp_sdev.in_crop.top + dev->isp_sdev.in_crop.height;
+
+	/* rx height should equal to isp height + offset */
+	rkisp_write(dev, CSI2RX_RAW_RD_PIC_SIZE, h << 16 | w, false);
 }
 
 static inline void raw_rd_ctrl(void __iomem *base, u32 val)
@@ -2114,4 +2125,4 @@ static inline void raw_rd_ctrl(void __iomem *base, u32 val)
 	writel(val, base + CSI2RX_RAW_RD_CTRL);
 }
 
-#endif /* _RKISP1_REGS_V2X_H */
+#endif /* _RKISP_REGS_V2X_H */

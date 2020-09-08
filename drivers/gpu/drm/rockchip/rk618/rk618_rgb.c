@@ -22,6 +22,7 @@
 
 #include <video/videomode.h>
 
+#include "../rockchip_drm_drv.h"
 #include "rk618_dither.h"
 
 struct rk618_rgb {
@@ -33,7 +34,9 @@ struct rk618_rgb {
 	struct regmap *regmap;
 	struct clk *clock;
 	struct rk618 *parent;
+	u32 bus_format;
 	u32 id;
+	struct rockchip_drm_sub_dev sub_dev;
 };
 
 static inline struct rk618_rgb *bridge_to_rgb(struct drm_bridge *b)
@@ -57,8 +60,21 @@ rk618_rgb_connector_best_encoder(struct drm_connector *connector)
 static int rk618_rgb_connector_get_modes(struct drm_connector *connector)
 {
 	struct rk618_rgb *rgb = connector_to_rgb(connector);
+	struct drm_display_info *info = &connector->display_info;
+	u32 bus_format = MEDIA_BUS_FMT_RGB888_1X24;
+	int num_modes = 0;
 
-	return drm_panel_get_modes(rgb->panel);
+	num_modes = drm_panel_get_modes(rgb->panel);
+
+	if (info->num_bus_formats)
+		rgb->bus_format = info->bus_formats[0];
+	else
+		rgb->bus_format = MEDIA_BUS_FMT_RGB888_1X24;
+
+	drm_display_info_set_bus_formats(&connector->display_info,
+					 &bus_format, 1);
+
+	return num_modes;
 }
 
 static const struct drm_connector_helper_funcs
@@ -93,30 +109,12 @@ static const struct drm_connector_funcs rk618_rgb_connector_funcs = {
 static void rk618_rgb_bridge_enable(struct drm_bridge *bridge)
 {
 	struct rk618_rgb *rgb = bridge_to_rgb(bridge);
-	struct drm_connector *connector = &rgb->connector;
-	struct drm_display_info *info = &connector->display_info;
-	u32 bus_format = MEDIA_BUS_FMT_RGB888_1X24;
 	u32 value;
 
 	clk_prepare_enable(rgb->clock);
 
 	rk618_frc_dclk_invert(rgb->parent);
-
-	if (info->num_bus_formats)
-		bus_format = info->bus_formats[0];
-
-	switch (bus_format) {
-	case MEDIA_BUS_FMT_RGB666_1X18:
-	case MEDIA_BUS_FMT_RGB666_1X24_CPADHI:
-		rk618_frc_dither_enable(rgb->parent, bus_format);
-		break;
-	case MEDIA_BUS_FMT_RGB888_1X24:
-	default:
-		rk618_frc_dither_disable(rgb->parent);
-		break;
-	}
-
-	dev_dbg(rgb->dev, "id=%d\n", rgb->id);
+	rk618_frc_dither_init(rgb->parent, rgb->bus_format);
 
 	if (rgb->id) {
 		value = LVDS_CON_CBG_POWER_DOWN | LVDS_CON_CHA1_POWER_DOWN |
@@ -172,8 +170,6 @@ static int rk618_rgb_bridge_attach(struct drm_bridge *bridge)
 	int ret;
 
 	if (rgb->panel) {
-		connector->port = dev->of_node;
-
 		ret = drm_connector_init(drm, connector,
 					 &rk618_rgb_connector_funcs,
 					 DRM_MODE_CONNECTOR_DPI);
@@ -186,6 +182,10 @@ static int rk618_rgb_bridge_attach(struct drm_bridge *bridge)
 					 &rk618_rgb_connector_helper_funcs);
 		drm_connector_attach_encoder(connector, bridge->encoder);
 		drm_panel_attach(rgb->panel, connector);
+
+		rgb->sub_dev.connector = &rgb->connector;
+		rgb->sub_dev.of_node = rgb->dev->of_node;
+		rockchip_drm_register_sub_dev(&rgb->sub_dev);
 	} else {
 		ret = drm_bridge_attach(bridge->encoder, rgb->bridge, bridge);
 		if (ret) {
@@ -197,8 +197,16 @@ static int rk618_rgb_bridge_attach(struct drm_bridge *bridge)
 	return 0;
 }
 
+static void rk618_rgb_bridge_detach(struct drm_bridge *bridge)
+{
+	struct rk618_rgb *rgb = bridge_to_rgb(bridge);
+
+	rockchip_drm_unregister_sub_dev(&rgb->sub_dev);
+}
+
 static const struct drm_bridge_funcs rk618_rgb_bridge_funcs = {
 	.attach = rk618_rgb_bridge_attach,
+	.detach = rk618_rgb_bridge_detach,
 	.enable = rk618_rgb_bridge_enable,
 	.disable = rk618_rgb_bridge_disable,
 };
@@ -219,11 +227,8 @@ static int rk618_rgb_probe(struct platform_device *pdev)
 
 	rgb->dev = dev;
 	rgb->parent = rk618;
+	rgb->regmap = rk618->regmap;
 	platform_set_drvdata(pdev, rgb);
-
-	rgb->regmap = dev_get_regmap(dev->parent, NULL);
-	if (!rgb->regmap)
-		return -ENODEV;
 
 	rgb->clock = devm_clk_get(dev, "rgb");
 	if (IS_ERR(rgb->clock)) {

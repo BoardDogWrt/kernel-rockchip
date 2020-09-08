@@ -22,13 +22,14 @@
 #include <video/of_display_timing.h>
 #include <video/videomode.h>
 
+#include "../rockchip_drm_drv.h"
 #include "rk618_dither.h"
 
 enum {
-	LVDS_8BIT_MODE_FORMAT_1,
-	LVDS_8BIT_MODE_FORMAT_2,
-	LVDS_8BIT_MODE_FORMAT_3,
-	LVDS_6BIT_MODE,
+	LVDS_FORMAT_VESA_24BIT,
+	LVDS_FORMAT_JEIDA_24BIT,
+	LVDS_FORMAT_JEIDA_18BIT,
+	LVDS_FORMAT_VESA_18BIT,
 };
 
 struct rk618_lvds {
@@ -40,7 +41,8 @@ struct rk618_lvds {
 	struct clk *clock;
 	struct rk618 *parent;
 	bool dual_channel;
-	u32 format;
+	u32 bus_format;
+	struct rockchip_drm_sub_dev sub_dev;
 };
 
 static inline struct rk618_lvds *bridge_to_lvds(struct drm_bridge *b)
@@ -64,8 +66,21 @@ rk618_lvds_connector_best_encoder(struct drm_connector *connector)
 static int rk618_lvds_connector_get_modes(struct drm_connector *connector)
 {
 	struct rk618_lvds *lvds = connector_to_lvds(connector);
+	struct drm_display_info *info = &connector->display_info;
+	u32 bus_format = MEDIA_BUS_FMT_RGB888_1X24;
+	int num_modes = 0;
 
-	return drm_panel_get_modes(lvds->panel);
+	num_modes = drm_panel_get_modes(lvds->panel);
+
+	if (info->num_bus_formats)
+		lvds->bus_format = info->bus_formats[0];
+	else
+		lvds->bus_format = MEDIA_BUS_FMT_RGB888_1X7X4_SPWG;
+
+	drm_display_info_set_bus_formats(&connector->display_info,
+					 &bus_format, 1);
+
+	return num_modes;
 }
 
 static const struct drm_connector_helper_funcs
@@ -100,15 +115,33 @@ static const struct drm_connector_funcs rk618_lvds_connector_funcs = {
 static void rk618_lvds_bridge_enable(struct drm_bridge *bridge)
 {
 	struct rk618_lvds *lvds = bridge_to_lvds(bridge);
+	u8 format;
 	u32 value;
 
 	clk_prepare_enable(lvds->clock);
 
 	rk618_frc_dclk_invert(lvds->parent);
+	rk618_frc_dither_init(lvds->parent, lvds->bus_format);
+
+	switch (lvds->bus_format) {
+	case MEDIA_BUS_FMT_RGB666_1X7X3_JEIDA:
+		format = LVDS_FORMAT_JEIDA_18BIT;
+		break;
+	case MEDIA_BUS_FMT_RGB888_1X7X4_JEIDA:
+		format = LVDS_FORMAT_JEIDA_24BIT;
+		break;
+	case MEDIA_BUS_FMT_RGB666_1X7X3_SPWG:
+		format = LVDS_FORMAT_VESA_18BIT;
+		break;
+	case MEDIA_BUS_FMT_RGB888_1X7X4_SPWG:
+	default:
+		format = LVDS_FORMAT_VESA_24BIT;
+		break;
+	}
 
 	value = LVDS_CON_CHA0TTL_DISABLE | LVDS_CON_CHA1TTL_DISABLE |
 		LVDS_CON_CHA0_POWER_UP | LVDS_CON_CBG_POWER_UP |
-		LVDS_CON_PLL_POWER_UP | LVDS_CON_SELECT(lvds->format);
+		LVDS_CON_PLL_POWER_UP | LVDS_CON_SELECT(format);
 
 	if (lvds->dual_channel)
 		value |= LVDS_CON_CHA1_POWER_UP | LVDS_DCLK_INV |
@@ -137,45 +170,12 @@ static void rk618_lvds_bridge_disable(struct drm_bridge *bridge)
 	clk_disable_unprepare(lvds->clock);
 }
 
-static void rk618_lvds_bridge_mode_set(struct drm_bridge *bridge,
-				       struct drm_display_mode *mode,
-				       struct drm_display_mode *adj)
-{
-	struct rk618_lvds *lvds = bridge_to_lvds(bridge);
-	struct drm_connector *connector = &lvds->connector;
-	struct drm_display_info *info = &connector->display_info;
-	u32 bus_format;
-
-	if (info->num_bus_formats)
-		bus_format = info->bus_formats[0];
-	else
-		bus_format = MEDIA_BUS_FMT_RGB888_1X7X4_SPWG;
-
-	switch (bus_format) {
-	case MEDIA_BUS_FMT_RGB666_1X7X3_SPWG:	/* jeida-18 */
-		lvds->format = LVDS_6BIT_MODE;
-		break;
-	case MEDIA_BUS_FMT_RGB888_1X7X4_JEIDA:	/* jeida-24 */
-		lvds->format = LVDS_8BIT_MODE_FORMAT_2;
-		break;
-	case MEDIA_BUS_FMT_RGB888_1X7X4_SPWG:	/* vesa-24 */
-		lvds->format = LVDS_8BIT_MODE_FORMAT_1;
-		break;
-	default:
-		lvds->format = LVDS_8BIT_MODE_FORMAT_3;
-		break;
-	}
-}
-
 static int rk618_lvds_bridge_attach(struct drm_bridge *bridge)
 {
 	struct rk618_lvds *lvds = bridge_to_lvds(bridge);
-	struct device *dev = lvds->dev;
 	struct drm_connector *connector = &lvds->connector;
 	struct drm_device *drm = bridge->dev;
 	int ret;
-
-	connector->port = dev->of_node;
 
 	ret = drm_connector_init(drm, connector, &rk618_lvds_connector_funcs,
 				 DRM_MODE_CONNECTOR_LVDS);
@@ -193,12 +193,23 @@ static int rk618_lvds_bridge_attach(struct drm_bridge *bridge)
 		return ret;
 	}
 
+	lvds->sub_dev.connector = &lvds->connector;
+	lvds->sub_dev.of_node = lvds->dev->of_node;
+	rockchip_drm_register_sub_dev(&lvds->sub_dev);
+
 	return 0;
+}
+
+static void rk618_lvds_bridge_detach(struct drm_bridge *bridge)
+{
+	struct rk618_lvds *lvds = bridge_to_lvds(bridge);
+
+	rockchip_drm_unregister_sub_dev(&lvds->sub_dev);
 }
 
 static const struct drm_bridge_funcs rk618_lvds_bridge_funcs = {
 	.attach = rk618_lvds_bridge_attach,
-	.mode_set = rk618_lvds_bridge_mode_set,
+	.detach = rk618_lvds_bridge_detach,
 	.enable = rk618_lvds_bridge_enable,
 	.disable = rk618_lvds_bridge_disable,
 };
@@ -230,6 +241,7 @@ static int rk618_lvds_probe(struct platform_device *pdev)
 
 	lvds->dev = dev;
 	lvds->parent = rk618;
+	lvds->regmap = rk618->regmap;
 	platform_set_drvdata(pdev, lvds);
 
 	ret = rk618_lvds_parse_dt(lvds);
@@ -237,10 +249,6 @@ static int rk618_lvds_probe(struct platform_device *pdev)
 		dev_err(dev, "failed to parse DT\n");
 		return ret;
 	}
-
-	lvds->regmap = dev_get_regmap(dev->parent, NULL);
-	if (!lvds->regmap)
-		return -ENODEV;
 
 	endpoint = of_graph_get_endpoint_by_regs(dev->of_node, 1, -1);
 	if (endpoint) {

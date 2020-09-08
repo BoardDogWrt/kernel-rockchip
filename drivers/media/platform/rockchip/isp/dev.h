@@ -39,6 +39,7 @@
 #include "csi.h"
 #include "dmarx.h"
 #include "bridge.h"
+#include "hw.h"
 #include "rkisp.h"
 #include "isp_params.h"
 #include "isp_stats.h"
@@ -67,7 +68,6 @@
 #define GRP_ID_ISP_BRIDGE		BIT(6)
 #define GRP_ID_CSI			BIT(7)
 
-#define RKISP_MAX_BUS_CLK		8
 #define RKISP_MAX_SENSOR		2
 #define RKISP_MAX_PIPELINE		4
 
@@ -76,20 +76,14 @@
 
 #define RKISP_CONTI_ERR_MAX		50
 
-/* ISP_V10_1 for only support MP */
-enum rkisp_isp_ver {
-	ISP_V10 = 0x00,
-	ISP_V10_1 = 0x01,
-	ISP_V11 = 0x10,
-	ISP_V12 = 0x20,
-	ISP_V13 = 0x30,
-	ISP_V20 = 0x40,
-};
-
 enum rkisp_isp_state {
-	ISP_STOP = 0,
-	ISP_START,
-	ISP_ERROR
+	ISP_FRAME_END = BIT(0),
+	ISP_FRAME_IN = BIT(1),
+	ISP_FRAME_VS = BIT(2),
+
+	ISP_STOP = BIT(8),
+	ISP_START = BIT(9),
+	ISP_ERROR = BIT(10),
 };
 
 enum rkisp_isp_inp {
@@ -131,6 +125,7 @@ struct rkisp_pipeline {
 struct rkisp_sensor_info {
 	struct v4l2_subdev *sd;
 	struct v4l2_mbus_config mbus;
+	struct v4l2_subdev_frame_interval fi;
 	struct v4l2_subdev_format fmt[CSI_PAD_MAX - 1];
 	struct v4l2_subdev_pad_config cfg;
 };
@@ -171,12 +166,11 @@ struct rkisp_hdr {
  */
 struct rkisp_device {
 	struct list_head list;
-	struct regmap *grf;
 	void __iomem *base_addr;
-	int irq;
 	struct device *dev;
-	struct clk *clks[RKISP_MAX_BUS_CLK];
-	int num_clks;
+	char name[128];
+	void *sw_base_addr;
+	struct rkisp_hw_dev *hw_dev;
 	struct v4l2_device v4l2_dev;
 	struct v4l2_ctrl_handler ctrl_handler;
 	struct media_device media_dev;
@@ -194,16 +188,12 @@ struct rkisp_device {
 	struct rkisp_bridge_device br_dev;
 	struct rkisp_luma_vdev luma_vdev;
 	struct rkisp_pipeline pipe;
-	struct iommu_domain *domain;
 	enum rkisp_isp_ver isp_ver;
-	const unsigned int *clk_rate_tbl;
-	int num_clk_rate_tbl;
 	struct rkisp_emd_data emd_data_fifo[RKISP_EMDDATA_FIFO_MAX];
 	unsigned int emd_data_idx;
 	unsigned int emd_vc;
 	unsigned int emd_dt;
 	int vs_irq;
-	int mipi_irq;
 	struct gpio_desc *vs_irq_gpio;
 	struct rkisp_hdr hdr;
 	enum rkisp_isp_state isp_state;
@@ -212,6 +202,8 @@ struct rkisp_device {
 	struct mutex apilock; /* mutex to serialize the calls of stream */
 	struct mutex iqlock; /* mutex to serialize the calls of iq */
 	wait_queue_head_t sync_onoff;
+	phys_addr_t resmem_pa;
+	size_t resmem_size;
+	int dev_id;
 };
-
 #endif

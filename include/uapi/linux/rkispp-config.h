@@ -9,6 +9,8 @@
 #include <linux/types.h>
 #include <linux/v4l2-controls.h>
 
+#define ISPP_API_VERSION		KERNEL_VERSION(0, 1, 0x2)
+
 #define ISPP_MODULE_TNR			BIT(0)//2TO1
 #define ISPP_MODULE_NR			BIT(1)
 #define ISPP_MODULE_SHP			BIT(2)
@@ -167,6 +169,7 @@ struct rkispp_nr_config {
 } __attribute__ ((packed));
 
 struct rkispp_sharp_config {
+	u8 rotation;
 	u8 scl_down_v;
 	u8 scl_down_h;
 	u8 tile_ycnt;

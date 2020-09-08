@@ -5,7 +5,7 @@
 
 /dts-v1/;
 #include "rv1126.dtsi"
-#include "rv11xx-ai-cam.dtsi"
+#include "rv1126-ai-cam.dtsi"
 
 / {
 	model = "Rockchip RV1126 AI CAMERA DDR3L Board";
@@ -54,14 +54,14 @@
 		clock-names = "xvclk";
 		power-domains = <&power RV1126_PD_VI>;
 		pinctrl-names = "rockchip,camera_default";
-		pinctrl-0 = <&mipi_csi_clk0>;
+		pinctrl-0 = <&mipicsi_clk0>;
 		pwren-gpios= <&gpio2 RK_PD2 GPIO_ACTIVE_HIGH>;
 		pwdn-gpios = <&gpio1 RK_PD4 GPIO_ACTIVE_HIGH>;
 		reset-gpios = <&gpio1 RK_PD5 GPIO_ACTIVE_HIGH>;
 		rockchip,camera-module-index = <1>;
 		rockchip,camera-module-facing = "front";
 		rockchip,camera-module-name = "PCORW0009A";
-		rockchip,camera-module-lens-name = "4mm-4M";
+		rockchip,camera-module-lens-name = "40IRC-4M";
 		// NO_HDR:0 HDR_X2:5 HDR_X3:6
 		rockchip,camera-hdr-mode = <0>;
 		port {

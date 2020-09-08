@@ -1,24 +1,15 @@
 // SPDX-License-Identifier: (GPL-2.0+ OR MIT)
 /*
- * Copyright (c) 2020 Fuzhou Rockchip Electronics Co., Ltd.
+ * Copyright (c) 2020 Rockchip Electronics Co., Ltd.
  */
 
-#include "rv1126-evb-ddr3-v10.dts"
-
 / {
-	model = "Rockchip RV1126 EVB DDR3 Board (Thunder Boot)";
-	compatible = "rockchip,rv1126-evb-ddr3-v10-tb", "rockchip,rv1126";
-
-	chosen {
-		bootargs = "loglevel=0 initcall_nr_threads=-1 initcall_debug=0 printk.devkmsg=on root=/dev/rd0 rk.root2nd=/dev/mmcblk0p7 console=ttyFIQ0 snd_aloop.index=7 driver_async_probe=dwmmc_rockchip";
-	};
-
-	memory {
+	memory: memory {
 		device_type = "memory";
 		reg = <0x00000000 0x20000000>;
 	};
 
-	ramdisk {
+	ramdisk: ramdisk {
 		compatible = "rockchip,ramdisk";
 		memory-region = <&ramdisk_r>;
 	};
@@ -31,10 +22,6 @@
 
 		trust@200000 {
 			reg = <0x00200000 0x00008000>;
-		};
-
-		mmc_ecsd: mmc@20f000 {
-			reg = <0x0020f000 0x00001000>;
 		};
 
 		ramoops@210000 {
@@ -51,10 +38,6 @@
 			no-map;
 		};
 
-		idma_descriptor: mmc_idma@500000 {
-			reg = <0x00500000 0x00100000>;
-		};
-
 		ramdisk_r: ramdisk@2800000 {
 			reg = <0x02800000 (40 * 0x00100000)>;
 		};
@@ -62,14 +45,30 @@
 		ramdisk_c: ramdisk@5800000 {
 			reg = <0x05800000 (20 * 0x00100000)>;
 		};
+
+		rkisp_thunderboot: rkisp@10000000 {
+			reg = <0x10000000 (144 * 0x00100000)>;
+		};
 	};
 
-	rockchip_tb {
-		compatible = "rockchip,thunder-boot-mmc";
-		reg = <0xffc50000 0x4000>;
-		memory-region-src = <&ramdisk_c>;
-		memory-region-dst = <&ramdisk_r>;
-		memory-region-idmac = <&idma_descriptor>;
+	thunder_boot_rkisp: thunder-boot-rkisp {
+		compatible = "rockchip,thunder-boot-rkisp";
+		clocks = <&cru ACLK_ISP>, <&cru HCLK_ISP>,
+			 <&cru CLK_ISP>, <&cru CLK_MIPICSI_OUT>,
+			 <&cru CLK_I2C1>, <&cru PCLK_I2C1>,
+			 <&cru CLK_SCR1>, <&cru CLK_SCR1_CORE>,
+			 <&cru CLK_SCR1_RTC>, <&cru CLK_SCR1_JTAG>;
+		clock-names = "aclk_isp", "hclk_isp", "clk_isp",
+			      "xvclk", "i2c", "pclk",
+			      "clk_scr1", "clk_scr1_core",
+			      "clk_scr1_rtc", "clk_scr1_jtag";
+		assigned-clocks = <&cru ACLK_ISP>, <&cru HCLK_ISP>, <&cru CLK_MIPICSI_OUT>;
+		assigned-clock-rates = <500000000>, <250000000>, <24000000>;
+		power-domains = <&power RV1126_PD_VI>;
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&mipicsi_clk0>;
+		status = "okay";
 	};
 };
 
@@ -90,18 +89,9 @@
 	status = "disabled";
 };
 
-&emmc {
-	memory-region-ecsd = <&mmc_ecsd>;
-	post-power-on-delay-ms = <0>;
-};
-
 &hw_decompress {
 	status = "okay";
 	memory-region = <&ramdisk_c>;
-};
-
-&i2c0 {
-	clock-frequency = <1000000>;
 };
 
 &isp_reserved {
@@ -110,4 +100,8 @@
 
 &ramoops {
 	status = "disabled";
+};
+
+&rkisp_vir0 {
+	memory-region-thunderboot = <&rkisp_thunderboot>;
 };

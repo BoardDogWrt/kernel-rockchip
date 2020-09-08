@@ -144,6 +144,7 @@
 		regulator-name = "vcc18_lcd_n";
 		gpio = <&gpio3 RK_PA7 GPIO_ACTIVE_HIGH>;
 		enable-active-high;
+		regulator-boot-on;
 	};
 
 	vcc5v0_sys: vccsys {
@@ -194,7 +195,7 @@
 		status = "okay";
 	};
 
-	wireless-wlan {
+	wireless_wlan: wireless-wlan {
 		compatible = "wlan-platdata";
 		rockchip,grf = <&grf>;
 		clocks = <&rk809 1>;
@@ -213,11 +214,6 @@
 };
 
 &cpu_tsadc {
-	rockchip,hw-tshut-mode = <0>; /* tshut mode 0:CRU 1:GPIO */
-	rockchip,hw-tshut-polarity = <0>; /* tshut polarity 0:LOW 1:HIGH */
-	pinctrl-names = "gpio", "otpout";
-	pinctrl-0 = <&tsadcm0_pins>;
-	pinctrl-1 = <&tsadc_shutorg>;
 	status = "okay";
 };
 
@@ -881,8 +877,8 @@
 		clock-names = "xvclk";
 		power-domains = <&power RV1126_PD_VI>;
 		pinctrl-names = "rockchip,camera_default";
-		pinctrl-0 = <&mipim1_pins>;
-		/*pinctrl-0 = <&mipi_csi_clk0>;*/
+		pinctrl-0 = <&mipicsi_clk1>;
+		/*pinctrl-0 = <&mipicsi_clk0>;*/
 		avdd-supply = <&vcc_avdd>;
 		dovdd-supply = <&vcc_dovdd>;
 		dvdd-supply = <&vcc_dvdd>;
@@ -910,7 +906,7 @@
 		clock-names = "xvclk";
 		power-domains = <&power RV1126_PD_VI>;
 		pinctrl-names = "rockchip,camera_default";
-		pinctrl-0 = <&mipi_csi_clk0>;
+		pinctrl-0 = <&mipicsi_clk0>;
 		avdd-supply = <&vcc_avdd>;
 		dovdd-supply = <&vcc_dovdd>;
 		dvdd-supply = <&vcc_dvdd>;
@@ -918,7 +914,7 @@
 		rockchip,camera-module-index = <1>;
 		rockchip,camera-module-facing = "front";
 		rockchip,camera-module-name = "CMK-OT1607-FV1";
-		rockchip,camera-module-lens-name = "M12-4IR-4MP-F16";
+		rockchip,camera-module-lens-name = "M12-40IRC-4MP-F16";
 		ir-cut = <&cam_ircut0>;
 		port {
 			ucam_out0: endpoint {
@@ -933,11 +929,10 @@
 	status = "okay";
 	clock-frequency = <400000>;
 
-	gt1x: gt1x@5d {
+	gt1x: gt1x@14 {
 		compatible = "goodix,gt1x";
-		reg = <0x5d>;
-		pinctrl-names = "default";
-		pinctrl-0 = <&tp_int_pin>;
+		reg = <0x14>;
+		gtp_ics_slot_report;
 		power-supply = <&vcc18_lcd_n>;
 		goodix,rst-gpio = <&gpio2 RK_PB0 GPIO_ACTIVE_HIGH>;
 		goodix,irq-gpio = <&gpio2 RK_PB2 GPIO_ACTIVE_LOW>;
@@ -954,6 +949,14 @@
 		     &i2s0m0_lrck_tx
 		     &i2s0m0_sdo0
 		     &i2s0m0_sdo1_sdi3>;
+};
+
+&iep {
+	status = "okay";
+};
+
+&iep_mmu {
+	status = "okay";
 };
 
 &mdio {
@@ -1024,11 +1027,6 @@
 };
 
 &npu_tsadc {
-	rockchip,hw-tshut-mode = <0>; /* tshut mode 0:CRU 1:GPIO */
-	rockchip,hw-tshut-polarity = <0>; /* tshut polarity 0:LOW 1:HIGH */
-	pinctrl-names = "gpio", "otpout";
-	pinctrl-0 = <&tsadcm0_pins>;
-	pinctrl-1 = <&tsadc_shutorg>;
 	status = "okay";
 };
 
@@ -1089,13 +1087,6 @@
 		/omit-if-no-ref/
 		wifi_wake_host: wifi-wake-host {
 			rockchip,pins = <0 RK_PB0 0 &pcfg_pull_up>;
-		};
-	};
-
-	gt1x {
-		/omit-if-no-ref/
-		tp_int_pin: tp-int-pin {
-			rockchip,pins = <2 RK_PB2 RK_FUNC_GPIO &pcfg_pull_up>;
 		};
 	};
 };
@@ -1166,11 +1157,12 @@
 
 &rkisp {
 	status = "okay";
+};
+
+&rkisp_vir0 {
+	status = "okay";
 
 	ports {
-		#address-cells = <1>;
-		#size-cells = <0>;
-
 		port@0 {
 			reg = <0>;
 			#address-cells = <1>;
@@ -1179,17 +1171,6 @@
 			isp_in: endpoint@0 {
 				reg = <0>;
 				remote-endpoint = <&csidphy0_out>;
-			};
-		};
-
-		port@1 {
-			reg = <1>;
-			#address-cells = <1>;
-			#size-cells = <0>;
-
-			isp_out: endpoint@1 {
-				reg = <1>;
-				remote-endpoint = <&ispp_in>;
 			};
 		};
 	};
@@ -1201,16 +1182,12 @@
 
 &rkispp {
 	status = "okay";
+	/* the max input w h and fps of mulit sensor */
+	//max-input = <2688 1520 30>;
+};
 
-	port {
-		#address-cells = <1>;
-		#size-cells = <0>;
-
-		ispp_in: endpoint@0 {
-			reg = <0>;
-			remote-endpoint = <&isp_out>;
-		};
-	};
+&rkispp_vir0 {
+	status = "okay";
 };
 
 &rkispp_mmu {
@@ -1256,6 +1233,10 @@
 	>;
 };
 
+&route_dsi {
+	status = "okay";
+};
+
 &saradc {
 	status = "okay";
 	vref-supply = <&vcc_1v8>;
@@ -1295,6 +1276,7 @@
 
 &u2phy0 {
 	status = "okay";
+	vup-gpios = <&gpio0 RK_PC1 GPIO_ACTIVE_LOW>;
 	u2phy_otg: otg-port {
 		status = "okay";
 	};
@@ -1302,7 +1284,6 @@
 
 &u2phy1 {
 	status = "okay";
-
 	u2phy_host: host-port {
 		status = "okay";
 		phy-supply = <&vcc5v0_host>;

@@ -482,7 +482,17 @@ static int panel_loader_protect(struct drm_panel *panel, bool on)
 		if (p->enable_gpio)
 			gpiod_set_value_cansleep(p->enable_gpio, 1);
 
+		if (p->backlight) {
+			p->backlight->props.power = FB_BLANK_UNBLANK;
+			backlight_update_status(p->backlight);
+		}
+
 		p->prepared = true;
+		p->enabled = true;
+
+		if (panel->connector)
+			panel->connector->status = connector_status_connected;
+
 	} else {
 		/* do nothing */
 	}

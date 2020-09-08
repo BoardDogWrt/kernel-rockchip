@@ -217,12 +217,8 @@ set_best_encoder(struct drm_atomic_state *state,
 		 * As an exception restoring duplicated atomic state
 		 * during resume is allowed, so don't warn when
 		 * best_encoder is equal to encoder we intend to set.
-		 *
-		 * As rockchip maybe appear one crtc connect two connecter,
-		 * the conn_state->best_encoder always isn't NULL, so here no
-		 * need warning.
 		 */
-		WARN_ON(!crtc && encoder && encoder != conn_state->best_encoder);
+		WARN_ON(!crtc && encoder != conn_state->best_encoder);
 		if (crtc) {
 			crtc_state = drm_atomic_get_new_crtc_state(state, crtc);
 
@@ -2908,6 +2904,7 @@ int __drm_atomic_helper_disable_plane(struct drm_plane *plane,
 
 	return 0;
 }
+EXPORT_SYMBOL_GPL(__drm_atomic_helper_disable_plane);
 
 static int update_output_state(struct drm_atomic_state *state,
 			       struct drm_mode_set *set)

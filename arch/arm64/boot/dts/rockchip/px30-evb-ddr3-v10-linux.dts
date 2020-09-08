@@ -279,6 +279,30 @@
 				pixelclk-active = <0>;
 			};
 		};
+
+		ports {
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			port@0 {
+				reg = <0>;
+				panel_in_dsi: endpoint {
+					remote-endpoint = <&dsi_out_panel>;
+				};
+			};
+		};
+	};
+
+	ports {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		port@1 {
+			reg = <1>;
+			dsi_out_panel: endpoint {
+				remote-endpoint = <&panel_in_dsi>;
+			};
+		};
 	};
 };
 
@@ -577,15 +601,15 @@
 				};
 			};
 
-			vcc3v3_lcd: SWITCH_REG1 {
-				regulator-boot-on;
-				regulator-name = "vcc3v3_lcd";
-			};
-
-			vcc5v0_host: SWITCH_REG2 {
+			vcc5v0_host: SWITCH_REG1 {
 				regulator-always-on;
 				regulator-boot-on;
 				regulator-name = "vcc5v0_host";
+			};
+
+			vcc3v3_lcd: SWITCH_REG2 {
+				regulator-boot-on;
+				regulator-name = "vcc3v3_lcd";
 			};
 		};
 

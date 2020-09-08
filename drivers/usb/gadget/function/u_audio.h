@@ -11,21 +11,41 @@
 
 #include <linux/usb/composite.h>
 
+#define UAC_MAX_RATES 10
 struct uac_params {
 	/* playback */
 	int p_chmask;	/* channel mask */
-	int p_srate;	/* rate in Hz */
+	int p_srate[UAC_MAX_RATES];	/* rate in Hz */
+	int p_srate_active;		/* selected rate in Hz */
 	int p_ssize;	/* sample size */
 
 	/* capture */
 	int c_chmask;	/* channel mask */
-	int c_srate;	/* rate in Hz */
+	int c_srate[UAC_MAX_RATES];	/* rate in Hz */
+	int c_srate_active;		/* selected rate in Hz */
 	int c_ssize;	/* sample size */
 
 	int req_number; /* number of preallocated requests */
 };
 
+enum usb_state_index {
+	SET_INTERFACE_OUT,
+	SET_INTERFACE_IN,
+	SET_SAMPLE_RATE_OUT,
+	SET_SAMPLE_RATE_IN,
+};
+
+enum stream_state_index {
+	STATE_OUT,
+	STATE_IN,
+};
+
 struct g_audio {
+	struct device *device;
+	bool usb_state[4];
+	bool stream_state[2];
+	struct work_struct work;
+
 	struct usb_function func;
 	struct usb_gadget *gadget;
 
@@ -81,5 +101,7 @@ int u_audio_start_capture(struct g_audio *g_audio);
 void u_audio_stop_capture(struct g_audio *g_audio);
 int u_audio_start_playback(struct g_audio *g_audio);
 void u_audio_stop_playback(struct g_audio *g_audio);
+int u_audio_set_capture_srate(struct g_audio *audio_dev, int srate);
+int u_audio_set_playback_srate(struct g_audio *audio_dev, int srate);
 
 #endif /* __U_AUDIO_H */

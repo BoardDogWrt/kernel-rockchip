@@ -19,9 +19,7 @@
 
 #include <linux/irq.h>
 #include "gt1x.h"
-#if GTP_ICS_SLOT_REPORT
 #include <linux/input/mt.h>
-#endif
 
 static struct work_struct gt1x_work;
 static struct input_dev *input_dev;
@@ -32,6 +30,7 @@ static const char *input_dev_phys = "input/ts";
 static const struct dev_pm_ops gt1x_ts_pm_ops;
 #endif
 #ifdef GTP_CONFIG_OF
+bool gt1x_gt5688;
 int gt1x_rst_gpio;
 int gt1x_int_gpio;
 #endif
@@ -165,28 +164,30 @@ void gt1x_touch_down(s32 x, s32 y, s32 size, s32 id)
 	GTP_SWAP(x, y);
 #endif
 
-#if GTP_ICS_SLOT_REPORT
-	input_mt_slot(input_dev, id);
-	input_report_abs(input_dev, ABS_MT_PRESSURE, size);
-	input_report_abs(input_dev, ABS_MT_TOUCH_MAJOR, size);
-	input_report_abs(input_dev, ABS_MT_TRACKING_ID, id);
-	input_report_abs(input_dev, ABS_MT_POSITION_X, x);
-	input_report_abs(input_dev, ABS_MT_POSITION_Y, y);
-#else
-	input_report_key(input_dev, BTN_TOUCH, 1);
-	if ((!size) && (!id)) {
-		/* for virtual button */
-		input_report_abs(input_dev, ABS_MT_PRESSURE, 100);
-		input_report_abs(input_dev, ABS_MT_TOUCH_MAJOR, 100);
-	} else {
+	if (gt1x_ics_slot_report) {
+		input_mt_slot(input_dev, id);
 		input_report_abs(input_dev, ABS_MT_PRESSURE, size);
 		input_report_abs(input_dev, ABS_MT_TOUCH_MAJOR, size);
 		input_report_abs(input_dev, ABS_MT_TRACKING_ID, id);
+		input_report_abs(input_dev, ABS_MT_POSITION_X, x);
+		input_report_abs(input_dev, ABS_MT_POSITION_Y, y);
+	} else {
+		input_report_key(input_dev, BTN_TOUCH, 1);
+
+		if ((!size) && (!id)) {
+			/* for virtual button */
+			input_report_abs(input_dev, ABS_MT_PRESSURE, 100);
+			input_report_abs(input_dev, ABS_MT_TOUCH_MAJOR, 100);
+		} else {
+			input_report_abs(input_dev, ABS_MT_PRESSURE, size);
+			input_report_abs(input_dev, ABS_MT_TOUCH_MAJOR, size);
+			input_report_abs(input_dev, ABS_MT_TRACKING_ID, id);
+		}
+		input_report_abs(input_dev, ABS_MT_POSITION_X, x);
+		input_report_abs(input_dev, ABS_MT_POSITION_Y, y);
+		input_mt_sync(input_dev);
+
 	}
-	input_report_abs(input_dev, ABS_MT_POSITION_X, x);
-	input_report_abs(input_dev, ABS_MT_POSITION_Y, y);
-	input_mt_sync(input_dev);
-#endif
 }
 
 /**
@@ -196,13 +197,13 @@ void gt1x_touch_down(s32 x, s32 y, s32 size, s32 id)
  */
 void gt1x_touch_up(s32 id)
 {
-#if GTP_ICS_SLOT_REPORT
-	input_mt_slot(input_dev, id);
-	input_report_abs(input_dev, ABS_MT_TRACKING_ID, -1);
-#else
-	input_report_key(input_dev, BTN_TOUCH, 0);
-	input_mt_sync(input_dev);
-#endif
+	if (gt1x_ics_slot_report) {
+		input_mt_slot(input_dev, id);
+		input_report_abs(input_dev, ABS_MT_TRACKING_ID, -1);
+	} else {
+		input_report_key(input_dev, BTN_TOUCH, 0);
+		input_mt_sync(input_dev);
+	}
 }
 
 /**
@@ -301,6 +302,7 @@ static struct regulator *vdd_ana;
 static int gt1x_parse_dt(struct device *dev)
 {
 	struct device_node *np;
+	const char *tp_type;
 #ifdef CONFIG_PM
 	struct device_node *root;
 	const char *machine_compatible;
@@ -310,6 +312,14 @@ static int gt1x_parse_dt(struct device *dev)
 		return -ENODEV;
 
 	np = dev->of_node;
+
+	if (!of_property_read_string(np, "goodix,ic_type", &tp_type)) {
+		GTP_INFO("GTP ic_type: %s", tp_type);
+
+		if (strstr(tp_type, "gt5688"))
+			gt1x_gt5688 = true;
+	}
+
 	gt1x_int_gpio = of_get_named_gpio(np, "goodix,irq-gpio", 0);
 	gt1x_rst_gpio = of_get_named_gpio(np, "goodix,rst-gpio", 0);
 
@@ -333,6 +343,7 @@ static int gt1x_parse_dt(struct device *dev)
 		return PTR_ERR(vdd_ana);
 	}
 
+	gt1x_ics_slot_report = of_property_read_bool(dev->of_node, "gtp_ics_slot_report");
 #ifdef CONFIG_PM
 	root = of_find_node_by_path("/");
 	if (root) {
@@ -458,15 +469,15 @@ static s8 gt1x_request_input_dev(void)
 	}
 
 	input_dev->evbit[0] = BIT_MASK(EV_SYN) | BIT_MASK(EV_KEY) | BIT_MASK(EV_ABS);
-#if GTP_ICS_SLOT_REPORT
+	if (gt1x_ics_slot_report) {
 #if (LINUX_VERSION_CODE > KERNEL_VERSION(3, 7, 0))
-	input_mt_init_slots(input_dev, 16, INPUT_MT_DIRECT);
+		input_mt_init_slots(input_dev, 16, INPUT_MT_DIRECT);
 #else
-	input_mt_init_slots(input_dev, 16);
+		input_mt_init_slots(input_dev, 16);
 #endif
-#else
-	input_dev->keybit[BIT_WORD(BTN_TOUCH)] = BIT_MASK(BTN_TOUCH);
-#endif
+	} else {
+		input_dev->keybit[BIT_WORD(BTN_TOUCH)] = BIT_MASK(BTN_TOUCH);
+	}
 	set_bit(INPUT_PROP_DIRECT, input_dev->propbit);
 
 #if GTP_HAVE_TOUCH_KEY

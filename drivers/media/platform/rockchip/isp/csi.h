@@ -22,6 +22,13 @@
 	 __x == HDR_RDBK_FRAME3); \
 })
 
+enum {
+	T_CMD_QUEUE,
+	T_CMD_DEQUEUE,
+	T_CMD_LEN,
+	T_CMD_END,
+};
+
 enum hdr_op_mode {
 	HDR_NORMAL = 0,
 	HDR_RDBK_FRAME1 = 4,
@@ -66,7 +73,6 @@ struct sink_info {
  * filt_state: multiframe read back mode to filt irq event
  * tx_first: flags for dmatx first Y_STATE irq
  * memory: compact or big/little endian byte order for tx/rx
- * is_first: flags of first frame read back
  * is_isp_end: flags of isp frame end
  */
 struct rkisp_csi_device {
@@ -81,7 +87,6 @@ struct rkisp_csi_device {
 	u8 filt_state[CSI_F_MAX];
 	u8 tx_first[HDR_DMA_MAX];
 	u8 memory;
-	bool is_first;
 	bool is_isp_end;
 };
 
@@ -91,6 +96,6 @@ void rkisp_unregister_csi_subdev(struct rkisp_device *dev);
 
 int rkisp_csi_config_patch(struct rkisp_device *dev);
 void rkisp_trigger_read_back(struct rkisp_csi_device *csi, u8 dma2frm);
-int rkisp_csi_trigger_event(struct rkisp_csi_device *csi, void *arg);
+int rkisp_csi_trigger_event(struct rkisp_device *dev, u32 cmd, void *arg);
 void rkisp_csi_sof(struct rkisp_device *dev, u8 id);
 #endif

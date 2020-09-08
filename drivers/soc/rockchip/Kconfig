@@ -15,7 +15,7 @@ config ANDROID_VERSION
 	  The value is 0xAABBCCRR, corresponding to Android A.B.C release R
 
 config ROCKCHIP_CPUINFO
-	bool "Rockchip cpuinfo support"
+	tristate "Rockchip cpuinfo support"
 	depends on (ROCKCHIP_EFUSE || ROCKCHIP_OTP) && (ARM64 || ARM)
 	default y
 	help
@@ -127,5 +127,18 @@ config ROCKCHIP_THUNDER_BOOT_MMC
 	depends on ROCKCHIP_THUNDER_BOOT
 	help
 	  Say y if boot from MMC.
+
+config ROCKCHIP_THUNDER_BOOT_SFC
+	bool "Rockchip Thunder Boot from SFC"
+	depends on ROCKCHIP_THUNDER_BOOT
+	help
+	  Say y if boot from SPI Flash from SFC controller.
+
+config ROCKCHIP_SCHED_PERFORMANCE_BIAS
+	bool "Rockchip task scheduler optimization"
+	default y
+	help
+	  Say y here to enable rockchip optimize task scheduler for performance bias,
+	  this would cause a little more power consumption.
 
 endif

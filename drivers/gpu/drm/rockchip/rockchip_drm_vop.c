@@ -168,7 +168,6 @@ struct vop_plane_state {
 	struct drm_plane_state base;
 	int format;
 	int zpos;
-	unsigned int logo_ymirror;
 	struct drm_rect src;
 	struct drm_rect dest;
 	dma_addr_t yrgb_mst;
@@ -230,6 +229,7 @@ struct vop {
 	bool is_iommu_enabled;
 	bool is_iommu_needed;
 	bool is_enabled;
+	bool support_multi_area;
 
 	u32 version;
 
@@ -951,8 +951,11 @@ static int to_vop_csc_mode(int csc_mode)
 {
 	switch (csc_mode) {
 	case V4L2_COLORSPACE_SMPTE170M:
+	case V4L2_COLORSPACE_470_SYSTEM_M:
+	case V4L2_COLORSPACE_470_SYSTEM_BG:
 		return CSC_BT601L;
 	case V4L2_COLORSPACE_REC709:
+	case V4L2_COLORSPACE_SMPTE240M:
 	case V4L2_COLORSPACE_DEFAULT:
 		return CSC_BT709L;
 	case V4L2_COLORSPACE_JPEG:
@@ -1041,10 +1044,15 @@ static int vop_setup_csc_table(const struct vop_csc_table *csc_table,
 				*r2r_table = csc_table->r2r_bt2020_to_bt709;
 			if (!is_input_yuv || *y2r_table) {
 				if (output_csc == V4L2_COLORSPACE_REC709 ||
+				    output_csc == V4L2_COLORSPACE_SMPTE240M ||
 				    output_csc == V4L2_COLORSPACE_DEFAULT)
 					*r2y_table = csc_table->r2y_bt709;
+				else if (output_csc == V4L2_COLORSPACE_SMPTE170M ||
+					 output_csc == V4L2_COLORSPACE_470_SYSTEM_M ||
+					 output_csc == V4L2_COLORSPACE_470_SYSTEM_BG)
+					*r2y_table = csc_table->r2y_bt601_12_235; /* bt601 limit */
 				else
-					*r2y_table = csc_table->r2y_bt601;
+					*r2y_table = csc_table->r2y_bt601; /* bt601 full */
 			}
 		}
 	} else {
@@ -1059,11 +1067,16 @@ static int vop_setup_csc_table(const struct vop_csc_table *csc_table,
 
 		if (input_csc == V4L2_COLORSPACE_BT2020)
 			*y2r_table = csc_table->y2r_bt2020;
-		else if ((input_csc == V4L2_COLORSPACE_REC709) ||
-			 (input_csc == V4L2_COLORSPACE_DEFAULT))
+		else if (input_csc == V4L2_COLORSPACE_REC709 ||
+			 input_csc == V4L2_COLORSPACE_SMPTE240M ||
+			 input_csc == V4L2_COLORSPACE_DEFAULT)
 			*y2r_table = csc_table->y2r_bt709;
+		else if (input_csc == V4L2_COLORSPACE_SMPTE170M ||
+			 input_csc == V4L2_COLORSPACE_470_SYSTEM_M ||
+			 input_csc == V4L2_COLORSPACE_470_SYSTEM_BG)
+			*y2r_table = csc_table->y2r_bt601_12_235; /* bt601 limit */
 		else
-			*y2r_table = csc_table->y2r_bt601;
+			*y2r_table = csc_table->y2r_bt601;  /* bt601 full */
 
 		if (input_csc == V4L2_COLORSPACE_BT2020)
 			/*
@@ -1611,8 +1624,7 @@ static int vop_plane_atomic_check(struct drm_plane *plane,
 
 	offset = (src->x1 >> 16) * fb->format->bpp[0] / 8;
 	vop_plane_state->offset = offset + fb->offsets[0];
-	if (state->rotation & DRM_MODE_REFLECT_Y ||
-	    (rockchip_fb_is_logo(fb) && vop_plane_state->logo_ymirror))
+	if (state->rotation & DRM_MODE_REFLECT_Y)
 		offset += ((src->y2 >> 16) - 1) * fb->pitches[0];
 	else
 		offset += (src->y1 >> 16) * fb->pitches[0];
@@ -1783,20 +1795,20 @@ static void vop_plane_atomic_update(struct drm_plane *plane,
 	global_alpha_en = (vop_plane_state->global_alpha == 0xff) ? 0 : 1;
 	if ((is_alpha_support(fb->format->format) || global_alpha_en) &&
 	    (s->dsp_layer_sel & 0x3) != win->win_id) {
-		int src_bland_m0;
+		int src_blend_m0;
 
 		if (is_alpha_support(fb->format->format) && global_alpha_en)
-			src_bland_m0 = ALPHA_PER_PIX_GLOBAL;
+			src_blend_m0 = ALPHA_PER_PIX_GLOBAL;
 		else if (is_alpha_support(fb->format->format))
-			src_bland_m0 = ALPHA_PER_PIX;
+			src_blend_m0 = ALPHA_PER_PIX;
 		else
-			src_bland_m0 = ALPHA_GLOBAL;
+			src_blend_m0 = ALPHA_GLOBAL;
 
 		VOP_WIN_SET(vop, win, dst_alpha_ctl,
 			    DST_FACTOR_M0(ALPHA_SRC_INVERSE));
 		val = SRC_ALPHA_EN(1) | SRC_COLOR_M0(ALPHA_SRC_PRE_MUL) |
 			SRC_ALPHA_M0(ALPHA_STRAIGHT) |
-			SRC_BLEND_M0(src_bland_m0) |
+			SRC_BLEND_M0(src_blend_m0) |
 			SRC_ALPHA_CAL_M0(ALPHA_SATURATION) |
 			SRC_FACTOR_M0(global_alpha_en ?
 				      ALPHA_SRC_GLOBAL : ALPHA_ONE);
@@ -2054,11 +2066,6 @@ static int vop_atomic_plane_set_property(struct drm_plane *plane,
 		plane_state->zpos = val;
 		return 0;
 	}
-	if (property == private->logo_ymirror_prop) {
-		WARN_ON(!rockchip_fb_is_logo(state->fb));
-		plane_state->logo_ymirror = val;
-		return 0;
-	}
 
 	if (property == private->eotf_prop) {
 		plane_state->eotf = val;
@@ -2105,11 +2112,6 @@ static int vop_atomic_plane_get_property(struct drm_plane *plane,
 		return 0;
 	}
 
-	if (property == private->logo_ymirror_prop) {
-		*val = plane_state->logo_ymirror;
-		return 0;
-	}
-
 	if (property == private->eotf_prop) {
 		*val = plane_state->eotf;
 		return 0;
@@ -2133,6 +2135,18 @@ static int vop_atomic_plane_get_property(struct drm_plane *plane,
 	if (property == private->async_commit_prop) {
 		*val = plane_state->async_commit;
 		return 0;
+	}
+
+	if (property == private->share_id_prop) {
+		int i;
+		struct drm_mode_object *obj = &plane->base;
+
+		for (i = 0; i < obj->properties->count; i++) {
+			if (obj->properties->properties[i] == property) {
+				*val = obj->properties->values[i];
+				return 0;
+			}
+		}
 	}
 
 	DRM_ERROR("failed to get vop plane property id:%d, name:%s\n",
@@ -2275,7 +2289,7 @@ static int vop_plane_info_dump(struct seq_file *s, struct drm_plane *plane)
 		DRM_FORMAT_MOD_ARM_AFBC(AFBC_FORMAT_MOD_BLOCK_SIZE_16x16);
 
 	DEBUG_PRINT("    win%d-%d: %s\n", win->win_id, win->area_id,
-		    state->visible ? "ACTIVE" : "DISABLED");
+		    state->crtc ? "ACTIVE" : "DISABLED");
 	if (!fb)
 		return 0;
 
@@ -2368,10 +2382,10 @@ static void vop_crtc_regs_dump(struct drm_crtc *crtc, struct seq_file *s)
 	if (!crtc_state->active)
 		return;
 
-	for (i = 0; i < dump_len; i += 4) {
-		if (i % 16 == 0)
-			DEBUG_PRINT("\n0x%08x: ", i);
-		DEBUG_PRINT("%08x ", vop_readl(vop, i));
+	for (i = 0; i < dump_len; i += 16) {
+		DEBUG_PRINT("0x%08x: %08x %08x %08x %08x\n", i,
+			    vop_readl(vop, i), vop_readl(vop, i + 4),
+			    vop_readl(vop, i + 8), vop_readl(vop, i + 12));
 	}
 }
 
@@ -2892,7 +2906,7 @@ static void vop_crtc_atomic_enable(struct drm_crtc *crtc,
 	if (vop->mcu_timing.mcu_pix_total)
 		vop_mcu_mode(crtc);
 
-	dclk_inv = (adjusted_mode->flags & DRM_MODE_FLAG_PPIXDATA) ? 0 : 1;
+	dclk_inv = (s->bus_flags & DRM_BUS_FLAG_PIXDATA_DRIVE_NEGEDGE) ? 1 : 0;
 
 	VOP_CTRL_SET(vop, dclk_pol, dclk_inv);
 	val = (adjusted_mode->flags & DRM_MODE_FLAG_NHSYNC) ?
@@ -4000,16 +4014,11 @@ static int vop_plane_init(struct vop *vop, struct vop_win *win,
 			  unsigned long possible_crtcs)
 {
 	struct rockchip_drm_private *private = vop->drm_dev->dev_private;
-	struct drm_plane *share = NULL;
 	uint64_t feature = 0;
 	int ret;
 
-	if (win->parent)
-		share = &win->parent->base;
-
-	ret = drm_share_plane_init(vop->drm_dev, &win->base, share,
-				   possible_crtcs, &vop_plane_funcs,
-				   win->data_formats, win->nformats, win->type);
+	ret = drm_universal_plane_init(vop->drm_dev, &win->base, possible_crtcs, &vop_plane_funcs,
+				       win->data_formats, win->nformats, NULL, win->type, NULL);
 	if (ret) {
 		DRM_ERROR("failed to initialize plane %d\n", ret);
 		return ret;
@@ -4018,8 +4027,6 @@ static int vop_plane_init(struct vop *vop, struct vop_win *win,
 	drm_object_attach_property(&win->base.base,
 				   vop->plane_zpos_prop, win->win_id);
 
-	if (VOP_WIN_SUPPORT(vop, win, ymirror))
-		drm_object_attach_property(&win->base.base, private->logo_ymirror_prop, 0);
 	if (win->phy->scl)
 		feature |= BIT(ROCKCHIP_DRM_PLANE_FEATURE_SCALE);
 	if (VOP_WIN_SUPPORT(vop, win, src_alpha_ctl) ||
@@ -4044,6 +4051,13 @@ static int vop_plane_init(struct vop *vop, struct vop_win *win,
 				   private->blend_mode_prop, 0);
 	drm_object_attach_property(&win->base.base,
 				   private->async_commit_prop, 0);
+
+	if (win->parent)
+		drm_object_attach_property(&win->base.base, private->share_id_prop,
+					   win->parent->base.base.id);
+	else
+		drm_object_attach_property(&win->base.base, private->share_id_prop,
+					   win->base.base.id);
 
 	return 0;
 }
@@ -4330,6 +4344,9 @@ static int vop_win_init(struct vop *vop)
 
 		num_wins++;
 
+		if (!vop->support_multi_area)
+			continue;
+
 		for (j = 0; j < win_data->area_size; j++) {
 			struct vop_win *vop_area = &vop->win[num_wins];
 			const struct vop_win_phy *area = win_data->area[j];
@@ -4466,6 +4483,7 @@ static int vop_bind(struct device *dev, struct device *master, void *data)
 	vop->num_wins = num_wins;
 	vop->version = vop_data->version;
 	dev_set_drvdata(dev, vop);
+	vop->support_multi_area = of_property_read_bool(dev->of_node, "support-multi-area");
 
 	ret = vop_win_init(vop);
 	if (ret)

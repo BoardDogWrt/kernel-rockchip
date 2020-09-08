@@ -26,6 +26,7 @@
 #include <soc/rockchip/pm_domains.h>
 #include <soc/rockchip/rockchip_ipa.h>
 #include <soc/rockchip/rockchip_opp_select.h>
+#include <soc/rockchip/rockchip_system_monitor.h>
 
 #ifdef CONFIG_PM_DEVFREQ
 #include "../../../devfreq/governor.h"
@@ -79,8 +80,8 @@
 				(RKVENC_BIT_AXI_WRITE_CHANNEL) |\
 				(RKVENC_BIT_AXI_READ_CHANNEL) |\
 				(RKVENC_BIT_TIMEOUT))
-
-#define RKVENC_ENC_PIC_INDEX			10
+#define RKVENC_ENC_RSL_INDEX			12
+#define RKVENC_ENC_PIC_INDEX			13
 #define RKVENC_ENC_PIC_BASE			0x034
 #define RKVENC_GET_FORMAT(x)			((x) & 0x1)
 #define RKVENC_ENC_PIC_NODE_INT_EN		BIT(31)
@@ -105,6 +106,10 @@
 #define RKVENC_L2_WRITE_BASE			(0x3f4)
 #define RKVENC_L2_READ_BASE			(0x3f8)
 #define RKVENC_L2_BURST_TYPE			BIT(0)
+
+#define RKVENC_GET_WIDTH(x)			(((x & 0x1ff) + 1) << 3)
+#define RKVENC_GET_HEIGHT(x)			((((x >> 16) & 0x1ff) + 1) << 3)
+#define RKVENC_DEFAULT_MAX_LOAD			(1920 * 1088)
 
 #define to_rkvenc_task(ctx)		\
 		container_of(ctx, struct rkvenc_task, mpp_task)
@@ -136,6 +141,9 @@ struct rkvenc_task {
 	u32 reg_offset;
 	u32 reg_num;
 	u32 reg[RKVENC_REG_L1_NUM];
+	u32 width;
+	u32 height;
+	u32 pixels;
 	/* level 2 register setting */
 	u32 reg_l2_offset;
 	u32 reg_l2_num;
@@ -158,6 +166,7 @@ struct rkvenc_dev {
 	struct mpp_clk_info aclk_info;
 	struct mpp_clk_info hclk_info;
 	struct mpp_clk_info core_clk_info;
+	u32 default_max_load;
 #ifdef CONFIG_DEBUG_FS
 	struct dentry *debugfs;
 #endif
@@ -174,6 +183,7 @@ struct rkvenc_dev {
 	unsigned long core_last_rate_hz;
 	struct ipa_power_model_data *model_data;
 	struct thermal_cooling_device *devfreq_cooling;
+	struct monitor_dev_info *mdev_info;
 #endif
 };
 
@@ -338,6 +348,11 @@ static void *rkvenc_alloc_task(struct mpp_session *session,
 	}
 	task->link_mode = RKVENC_MODE_ONEFRAME;
 	task->clk_mode = CLK_MODE_NORMAL;
+	/* get resolution info */
+	task->width = RKVENC_GET_WIDTH(task->reg[RKVENC_ENC_RSL_INDEX]);
+	task->height = RKVENC_GET_HEIGHT(task->reg[RKVENC_ENC_RSL_INDEX]);
+	task->pixels = task->width * task->height;
+	mpp_debug(DEBUG_TASK_INFO, "width=%d, height=%d\n", task->width, task->height);
 
 	mpp_debug_leave();
 
@@ -751,6 +766,12 @@ static struct devfreq_cooling_power venc_cooling_power_data = {
 	.get_static_power = rkvenc_get_static_power,
 };
 
+static struct monitor_dev_profile enc_mdevp = {
+	.type = MONITOR_TPYE_DEV,
+	.low_temp_adjust = rockchip_monitor_dev_low_temp_adjust,
+	.high_temp_adjust = rockchip_monitor_dev_high_temp_adjust,
+};
+
 static int rkvenc_devfreq_init(struct mpp_dev *mpp)
 {
 	struct rkvenc_dev *enc = to_rkvenc_dev(mpp);
@@ -822,6 +843,14 @@ static int rkvenc_devfreq_init(struct mpp_dev *mpp)
 						  enc->devfreq, venc_dcp);
 	if (IS_ERR_OR_NULL(enc->devfreq_cooling))
 		dev_err(mpp->dev, "failed to register cooling device\n");
+
+	enc_mdevp.data = enc->devfreq;
+	enc->mdev_info = rockchip_system_monitor_register(mpp->dev, &enc_mdevp);
+	if (IS_ERR(enc->mdev_info)) {
+		dev_dbg(mpp->dev, "without system monitor\n");
+		enc->mdev_info = NULL;
+	}
+
 out:
 
 	return 0;
@@ -838,6 +867,8 @@ static int rkvenc_devfreq_remove(struct mpp_dev *mpp)
 {
 	struct rkvenc_dev *enc = to_rkvenc_dev(mpp);
 
+	if (enc->mdev_info)
+		rockchip_system_monitor_unregister(enc->mdev_info);
 	if (enc->devfreq) {
 		devfreq_unregister_opp_notifier(mpp->dev, enc->devfreq);
 		dev_pm_opp_of_remove_table(mpp->dev);
@@ -865,6 +896,12 @@ static int rkvenc_init(struct mpp_dev *mpp)
 	ret = mpp_get_clk_info(mpp, &enc->core_clk_info, "clk_core");
 	if (ret)
 		mpp_err("failed on clk_get clk_core\n");
+	/* Get normal max workload from dtsi */
+	of_property_read_u32(mpp->dev->of_node,
+			     "rockchip,default-max-load",
+			     &enc->default_max_load);
+	if (!enc->default_max_load)
+		enc->default_max_load = RKVENC_DEFAULT_MAX_LOAD;
 	/* Set default rates */
 	mpp_set_clk_info_rate_hz(&enc->aclk_info, CLK_MODE_DEFAULT, 300 * MHZ);
 	mpp_set_clk_info_rate_hz(&enc->core_clk_info, CLK_MODE_DEFAULT, 600 * MHZ);
@@ -954,6 +991,38 @@ static int rkvenc_clk_off(struct mpp_dev *mpp)
 	return 0;
 }
 
+static int rkvenc_get_freq(struct mpp_dev *mpp,
+			   struct mpp_task *mpp_task)
+{
+	u32 task_cnt;
+	u32 workload;
+	struct mpp_task *loop = NULL, *n;
+	struct rkvenc_dev *enc = to_rkvenc_dev(mpp);
+	struct rkvenc_task *task = to_rkvenc_task(mpp_task);
+
+	task_cnt = 1;
+	workload = task->pixels;
+	/* calc workload in pending list */
+	mutex_lock(&mpp->queue->pending_lock);
+	list_for_each_entry_safe(loop, n,
+				 &mpp->queue->pending_list,
+				 queue_link) {
+		struct rkvenc_task *loop_task = to_rkvenc_task(loop);
+
+		task_cnt++;
+		workload += loop_task->pixels;
+	}
+	mutex_unlock(&mpp->queue->pending_lock);
+
+	if (workload > enc->default_max_load)
+		task->clk_mode = CLK_MODE_ADVANCED;
+
+	mpp_debug(DEBUG_TASK_INFO, "pending task %d, workload %d, clk_mode=%d\n",
+		  task_cnt, workload, task->clk_mode);
+
+	return 0;
+}
+
 static int rkvenc_set_freq(struct mpp_dev *mpp,
 			   struct mpp_task *mpp_task)
 {
@@ -993,6 +1062,7 @@ static struct mpp_hw_ops rkvenc_hw_ops = {
 	.exit = rkvenc_exit,
 	.clk_on = rkvenc_clk_on,
 	.clk_off = rkvenc_clk_off,
+	.get_freq = rkvenc_get_freq,
 	.set_freq = rkvenc_set_freq,
 	.reset = rkvenc_reset,
 };

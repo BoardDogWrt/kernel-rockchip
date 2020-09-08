@@ -17,9 +17,41 @@
 #include <linux/crypto.h>
 #include <linux/reset.h>
 #include <linux/slab.h>
+#include <linux/string.h>
+
 #include "rk_crypto_core.h"
 #include "rk_crypto_v1.h"
 #include "rk_crypto_v2.h"
+
+#define RK_CRYPTO_V1_SOC_DATA_INIT(names) {\
+	.use_soft_aes192 = false,\
+	.valid_algs_name = (names),\
+	.valid_algs_num = ARRAY_SIZE(names),\
+	.total_algs = crypto_v1_algs,\
+	.total_algs_num = ARRAY_SIZE(crypto_v1_algs),\
+	.clks = crypto_v1_clks,\
+	.clks_num = ARRAY_SIZE(crypto_v1_clks),\
+	.rsts = crypto_v1_rsts,\
+	.rsts_num = ARRAY_SIZE(crypto_v1_rsts),\
+	.hw_init = rk_hw_crypto_v1_init,\
+	.hw_deinit = rk_hw_crypto_v1_deinit,\
+	.hw_info_size = sizeof(struct rk_hw_crypto_v1_info),\
+}
+
+#define RK_CRYPTO_V2_SOC_DATA_INIT(names, soft_aes_192) {\
+	.use_soft_aes192 = soft_aes_192,\
+	.valid_algs_name = (names),\
+	.valid_algs_num = ARRAY_SIZE(names),\
+	.total_algs = crypto_v2_algs,\
+	.total_algs_num = ARRAY_SIZE(crypto_v2_algs),\
+	.clks = crypto_v2_clks,\
+	.clks_num = ARRAY_SIZE(crypto_v2_clks),\
+	.rsts = crypto_v2_rsts,\
+	.rsts_num = ARRAY_SIZE(crypto_v2_rsts),\
+	.hw_init = rk_hw_crypto_v2_init,\
+	.hw_deinit = rk_hw_crypto_v2_deinit,\
+	.hw_info_size = sizeof(struct rk_hw_crypto_v2_info),\
+}
 
 static int rk_crypto_enable_clk(struct rk_crypto_info *dev)
 {
@@ -29,17 +61,16 @@ static int rk_crypto_enable_clk(struct rk_crypto_info *dev)
 
 	ret = clk_bulk_prepare_enable(dev->soc_data->clks_num,
 				      &dev->clk_bulks[0]);
-	if (ret < 0) {
+	if (ret < 0)
 		dev_err(dev->dev, "failed to enable clks %d\n", ret);
-		return ret;
-	}
 
-	return 0;
+	return ret;
 }
 
 static void rk_crypto_disable_clk(struct rk_crypto_info *dev)
 {
 	dev_dbg(dev->dev, "clk_bulk_disable_unprepare.\n");
+
 	clk_bulk_disable_unprepare(dev->soc_data->clks_num, &dev->clk_bulks[0]);
 }
 
@@ -70,7 +101,7 @@ static int rk_load_data(struct rk_crypto_info *dev,
 		check_alignment(sg_src, sg_dst, dev->align_size) :
 		dev->aligned;
 	if (dev->aligned) {
-		count = min(dev->left_bytes, sg_src->length);
+		count = min_t(unsigned int, dev->left_bytes, sg_src->length);
 		dev->left_bytes -= count;
 
 		if (!dma_map_sg(dev->dev, sg_src, 1, DMA_TO_DEVICE)) {
@@ -219,35 +250,81 @@ static void rk_crypto_done_task_cb(unsigned long data)
 		dev->complete(dev->async_req, dev->err);
 }
 
+static struct rk_crypto_tmp *rk_crypto_find_algs(struct rk_crypto_info *crypto_info, char *name)
+{
+	u32 i;
+	struct rk_crypto_tmp **algs;
+	struct rk_crypto_tmp *tmp_algs;
+
+	algs = crypto_info->soc_data->total_algs;
+
+	for (i = 0; i < crypto_info->soc_data->total_algs_num; i++, algs++) {
+		tmp_algs = *algs;
+		tmp_algs->dev = crypto_info;
+
+		if (strcmp(tmp_algs->name, name) == 0)
+			return tmp_algs;
+	}
+
+	return NULL;
+}
+
 static int rk_crypto_register(struct rk_crypto_info *crypto_info)
 {
 	unsigned int i, k;
-	struct rk_crypto_tmp **algs;
+	char **algs_name;
 	struct rk_crypto_tmp *tmp_algs;
+	struct rk_crypto_soc_data *soc_data;
 	int err = 0;
 
-	algs = crypto_info->soc_data->cipher_algs;
+	soc_data = crypto_info->soc_data;
 
-	for (i = 0; i < crypto_info->soc_data->cipher_num; i++, algs++) {
-		tmp_algs = *algs;
+	algs_name = soc_data->valid_algs_name;
+
+	for (i = 0; i < soc_data->valid_algs_num; i++, algs_name++) {
+		tmp_algs = rk_crypto_find_algs(crypto_info, *algs_name);
+		if (!tmp_algs) {
+			CRYPTO_TRACE("%s not matched!!!\n", *algs_name);
+			continue;
+		}
+
+		CRYPTO_TRACE("%s matched!!!\n", *algs_name);
+
 		tmp_algs->dev = crypto_info;
-		if (tmp_algs->type == ALG_TYPE_CIPHER)
+
+		if (tmp_algs->type == ALG_TYPE_CIPHER) {
+			if (tmp_algs->algo == CIPHER_ALGO_AES &&
+			    tmp_algs->mode != CIPHER_MODE_XTS &&
+			    soc_data->use_soft_aes192)
+				tmp_algs->alg.crypto.cra_flags |= CRYPTO_ALG_NEED_FALLBACK;
+
 			err = crypto_register_alg(&tmp_algs->alg.crypto);
-		else
+		} else if (tmp_algs->type == ALG_TYPE_HASH || tmp_algs->type == ALG_TYPE_HMAC) {
 			err = crypto_register_ahash(&tmp_algs->alg.hash);
+		} else if (tmp_algs->type == ALG_TYPE_ASYM) {
+			err = crypto_register_akcipher(&tmp_algs->alg.asym);
+		} else {
+			continue;
+		}
+
 		if (err)
 			goto err_cipher_algs;
+
+		CRYPTO_TRACE("%s register OK!!!\n", *algs_name);
 	}
 	return 0;
 
 err_cipher_algs:
-	algs = crypto_info->soc_data->cipher_algs;
-	for (k = 0; k < i; k++, algs++) {
-		tmp_algs = *algs;
+	algs_name = soc_data->valid_algs_name;
+
+	for (k = 0; k < i; k++, algs_name++) {
+		tmp_algs = rk_crypto_find_algs(crypto_info, *algs_name);
 		if (tmp_algs->type == ALG_TYPE_CIPHER)
 			crypto_unregister_alg(&tmp_algs->alg.crypto);
-		else
+		else if (tmp_algs->type == ALG_TYPE_HASH || tmp_algs->type == ALG_TYPE_HMAC)
 			crypto_unregister_ahash(&tmp_algs->alg.hash);
+		else if (tmp_algs->type == ALG_TYPE_ASYM)
+			crypto_unregister_akcipher(&tmp_algs->alg.asym);
 	}
 	return err;
 }
@@ -255,18 +332,38 @@ err_cipher_algs:
 static void rk_crypto_unregister(struct rk_crypto_info *crypto_info)
 {
 	unsigned int i;
-	struct rk_crypto_tmp **algs;
+	char **algs_name;
 	struct rk_crypto_tmp *tmp_algs;
 
-	algs = crypto_info->soc_data->cipher_algs;
+	algs_name = crypto_info->soc_data->valid_algs_name;
 
-	for (i = 0; i < crypto_info->soc_data->cipher_num; i++, algs++) {
-		tmp_algs = *algs;
+	for (i = 0; i < crypto_info->soc_data->valid_algs_num; i++, algs_name++) {
+		tmp_algs = rk_crypto_find_algs(crypto_info, *algs_name);
 		if (tmp_algs->type == ALG_TYPE_CIPHER)
 			crypto_unregister_alg(&tmp_algs->alg.crypto);
-		else
+		else if (tmp_algs->type == ALG_TYPE_HASH || tmp_algs->type == ALG_TYPE_HMAC)
 			crypto_unregister_ahash(&tmp_algs->alg.hash);
+		else if (tmp_algs->type == ALG_TYPE_ASYM)
+			crypto_unregister_akcipher(&tmp_algs->alg.asym);
 	}
+}
+
+static void rk_crypto_request(struct rk_crypto_info *dev, const char *name)
+{
+	CRYPTO_TRACE("Crypto is requested by %s\n", name);
+
+	mutex_lock(&dev->mutex);
+
+	rk_crypto_enable_clk(dev);
+}
+
+static void rk_crypto_release(struct rk_crypto_info *dev, const char *name)
+{
+	CRYPTO_TRACE("Crypto is released by %s\n", name);
+
+	rk_crypto_disable_clk(dev);
+
+	mutex_unlock(&dev->mutex);
 }
 
 static void rk_crypto_action(void *data)
@@ -288,46 +385,68 @@ static const char * const crypto_v2_rsts[] = {
 	"crypto-rst",
 };
 
-static struct rk_crypto_tmp *px30_cipher_algs[] = {
-	&rk_v2_ecb_aes_alg,
-	&rk_v2_cbc_aes_alg,
-	&rk_v2_xts_aes_alg,
-	&rk_v2_ecb_des_alg,
-	&rk_v2_cbc_des_alg,
-	&rk_v2_ecb_des3_ede_alg,
-	&rk_v2_cbc_des3_ede_alg,
+static struct rk_crypto_tmp *crypto_v2_algs[] = {
+	&rk_v2_ecb_sm4_alg,		/* ecb(sm4) */
+	&rk_v2_cbc_sm4_alg,		/* cbc(sm4) */
+	&rk_v2_xts_sm4_alg,		/* xts(sm4) */
+	&rk_v2_cfb_sm4_alg,		/* cfb(sm4) */
+	&rk_v2_ofb_sm4_alg,		/* ofb(sm4) */
+	&rk_v2_ctr_sm4_alg,		/* ctr(sm4) */
+
+	&rk_v2_ecb_aes_alg,		/* ecb(aes) */
+	&rk_v2_cbc_aes_alg,		/* cbc(aes) */
+	&rk_v2_xts_aes_alg,		/* xts(aes) */
+	&rk_v2_cfb_aes_alg,		/* cfb(aes) */
+	&rk_v2_ofb_aes_alg,		/* ofb(aes) */
+	&rk_v2_ctr_aes_alg,		/* ctr(aes) */
+
+	&rk_v2_ecb_des_alg,		/* ecb(des) */
+	&rk_v2_cbc_des_alg,		/* cbc(des) */
+	&rk_v2_cfb_des_alg,		/* cfb(des) */
+	&rk_v2_ofb_des_alg,		/* ofb(des) */
+
+	&rk_v2_ecb_des3_ede_alg,	/* ecb(des3_ede) */
+	&rk_v2_cbc_des3_ede_alg,	/* cbc(des3_ede) */
+	&rk_v2_cfb_des3_ede_alg,	/* cfb(des3_ede) */
+	&rk_v2_ofb_des3_ede_alg,	/* ofb(des3_ede) */
+
+	&rk_v2_ahash_sha1,		/* sha1 */
+	&rk_v2_ahash_sha256,		/* sha256 */
+	&rk_v2_ahash_sha512,		/* sha512 */
+	&rk_v2_ahash_md5,		/* md5 */
+	&rk_v2_ahash_sm3,		/* sm3 */
+
+	&rk_v2_ahash_hmac_sha1,		/* hmac(sha1) */
+	&rk_v2_ahash_hmac_sha256,	/* hmac(sha256) */
+	&rk_v2_ahash_hmac_sha512,	/* hmac(sha512) */
+	&rk_v2_ahash_hmac_md5,		/* hmac(md5) */
+	&rk_v2_ahash_hmac_sm3,		/* hmac(sm3) */
+
+	&rk_v2_asym_rsa,		/* rsa */
 };
 
-static const struct rk_crypto_soc_data px30_soc_data = {
-	.cipher_algs = &px30_cipher_algs[0],
-	.cipher_num = ARRAY_SIZE(px30_cipher_algs),
-	.clks = crypto_v2_clks,
-	.clks_num = ARRAY_SIZE(crypto_v2_clks),
-	.rsts = crypto_v2_rsts,
-	.rsts_num = ARRAY_SIZE(crypto_v2_rsts),
-	.hw_init = rk_hw_crypto_v2_init,
-	.hw_deinit = rk_hw_crypto_v2_deinit,
-	.hw_info_size = sizeof(struct rk_hw_crypto_v2_info),
+static char *px30_algs_name[] = {
+	"ecb(aes)", "cbc(aes)", "xts(aes)",
+	"ecb(des)", "cbc(des)",
+	"ecb(des3_ede)", "cbc(des3_ede)",
+	"sha1", "sha256", "sha512", "md5",
 };
 
-static struct rk_crypto_tmp *rv1126_cipher_algs[] = {
-	&rk_v2_ecb_des_alg,
-	&rk_v2_cbc_des_alg,
-	&rk_v2_ecb_des3_ede_alg,
-	&rk_v2_cbc_des3_ede_alg,
+static char *rv1126_algs_name[] = {
+	"ecb(sm4)", "cbc(sm4)", "cfb(sm4)", "ofb(sm4)", "ctr(sm4)", "xts(sm4)",
+	"ecb(aes)", "cbc(aes)", "cfb(aes)", "ctr(aes)", "xts(aes)",
+	"ecb(des)", "cbc(des)", "cfb(des)", "ofb(des)",
+	"ecb(des3_ede)", "cbc(des3_ede)", "cfb(des3_ede)", "ofb(des3_ede)",
+	"sha1", "sha256", "sha512", "md5", "sm3",
+	"hmac(sha1)", "hmac(sha256)", "hmac(sha512)", "hmac(md5)", "hmac(sm3)",
+	"rsa"
 };
 
-static const struct rk_crypto_soc_data rv1126_soc_data = {
-	.cipher_algs = &rv1126_cipher_algs[0],
-	.cipher_num = ARRAY_SIZE(rv1126_cipher_algs),
-	.clks = crypto_v2_clks,
-	.clks_num = ARRAY_SIZE(crypto_v2_clks),
-	.rsts = crypto_v2_rsts,
-	.rsts_num = ARRAY_SIZE(crypto_v2_rsts),
-	.hw_init = rk_hw_crypto_v2_init,
-	.hw_deinit = rk_hw_crypto_v2_deinit,
-	.hw_info_size = sizeof(struct rk_hw_crypto_v2_info),
-};
+static const struct rk_crypto_soc_data px30_soc_data =
+	RK_CRYPTO_V2_SOC_DATA_INIT(px30_algs_name, false);
+
+static const struct rk_crypto_soc_data rv1126_soc_data =
+	RK_CRYPTO_V2_SOC_DATA_INIT(rv1126_algs_name, true);
 
 static const char * const crypto_v1_clks[] = {
 	"hclk",
@@ -340,29 +459,30 @@ static const char * const crypto_v1_rsts[] = {
 	"crypto-rst",
 };
 
-static struct rk_crypto_tmp *rk3288_cipher_algs[] = {
-	&rk_v1_ecb_aes_alg,
-	&rk_v1_cbc_aes_alg,
-	&rk_v1_ecb_des_alg,
-	&rk_v1_cbc_des_alg,
-	&rk_v1_ecb_des3_ede_alg,
-	&rk_v1_cbc_des3_ede_alg,
-	&rk_v1_ahash_sha1,
-	&rk_v1_ahash_sha256,
-	&rk_v1_ahash_md5,
+static struct rk_crypto_tmp *crypto_v1_algs[] = {
+	&rk_v1_ecb_aes_alg,		/* ecb(aes) */
+	&rk_v1_cbc_aes_alg,		/* cbc(aes) */
+
+	&rk_v1_ecb_des_alg,		/* ecb(des) */
+	&rk_v1_cbc_des_alg,		/* cbc(des) */
+
+	&rk_v1_ecb_des3_ede_alg,	/* ecb(des3_ede) */
+	&rk_v1_cbc_des3_ede_alg,	/* cbc(des3_ede) */
+
+	&rk_v1_ahash_sha1,		/* sha1 */
+	&rk_v1_ahash_sha256,		/* sha256 */
+	&rk_v1_ahash_md5,		/* md5 */
 };
 
-static const struct rk_crypto_soc_data rk3288_soc_data = {
-	.cipher_algs = &rk3288_cipher_algs[0],
-	.cipher_num = ARRAY_SIZE(rk3288_cipher_algs),
-	.clks = crypto_v1_clks,
-	.clks_num = ARRAY_SIZE(crypto_v1_clks),
-	.rsts = crypto_v1_rsts,
-	.rsts_num = ARRAY_SIZE(crypto_v1_rsts),
-	.hw_init = rk_hw_crypto_v1_init,
-	.hw_deinit = rk_hw_crypto_v1_deinit,
-	.hw_info_size = sizeof(struct rk_hw_crypto_v1_info),
+static char *rk3288_cipher_algs[] = {
+	"ecb(aes)", "cbc(aes)",
+	"ecb(des)", "cbc(des)",
+	"ecb(des3_ede)", "cbc(des3_ede)",
+	"sha1", "sha256", "md5",
 };
+
+static const struct rk_crypto_soc_data rk3288_soc_data =
+	RK_CRYPTO_V1_SOC_DATA_INIT(rk3288_cipher_algs);
 
 static const struct of_device_id crypto_of_id_table[] = {
 	/* crypto v2 in belows */
@@ -491,8 +611,10 @@ static int rk_crypto_probe(struct platform_device *pdev)
 		     rk_crypto_done_task_cb, (unsigned long)crypto_info);
 	crypto_init_queue(&crypto_info->queue, 50);
 
-	crypto_info->enable_clk = rk_crypto_enable_clk;
-	crypto_info->disable_clk = rk_crypto_disable_clk;
+	mutex_init(&crypto_info->mutex);
+
+	crypto_info->request_crypto = rk_crypto_request;
+	crypto_info->release_crypto = rk_crypto_release;
 	crypto_info->load_data = rk_load_data;
 	crypto_info->unload_data = rk_unload_data;
 	crypto_info->enqueue = rk_crypto_enqueue;
@@ -508,6 +630,7 @@ static int rk_crypto_probe(struct platform_device *pdev)
 	return 0;
 
 err_register_alg:
+	mutex_destroy(&crypto_info->mutex);
 	tasklet_kill(&crypto_info->queue_task);
 	tasklet_kill(&crypto_info->done_task);
 err_crypto:
@@ -526,6 +649,8 @@ static int rk_crypto_remove(struct platform_device *pdev)
 		free_page((unsigned long)crypto_info->addr_vir);
 
 	crypto_info->soc_data->hw_deinit(&pdev->dev, crypto_info->hw_info);
+
+	mutex_destroy(&crypto_info->mutex);
 
 	return 0;
 }

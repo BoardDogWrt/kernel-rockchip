@@ -70,6 +70,7 @@ struct rockchip_rgb {
 	struct regmap *grf;
 	bool data_sync_bypass;
 	const struct rockchip_rgb_funcs *funcs;
+	struct rockchip_drm_sub_dev sub_dev;
 };
 
 static inline struct rockchip_rgb *connector_to_rgb(struct drm_connector *c)
@@ -205,6 +206,7 @@ rockchip_rgb_encoder_atomic_check(struct drm_encoder *encoder,
 	}
 
 	s->output_type = DRM_MODE_CONNECTOR_DPI;
+	s->bus_flags = info->bus_flags;
 	s->tv_state = &conn_state->tv;
 	s->eotf = TRADITIONAL_GAMMA_SDR;
 	s->color_space = V4L2_COLORSPACE_DEFAULT;
@@ -251,7 +253,6 @@ static int rockchip_rgb_bind(struct device *dev, struct device *master,
 		return ret;
 	}
 
-	encoder->port = dev->of_node;
 	encoder->possible_crtcs = drm_of_find_possible_crtcs(drm_dev,
 							     dev->of_node);
 
@@ -291,7 +292,9 @@ static int rockchip_rgb_bind(struct device *dev, struct device *master,
 			DRM_DEV_ERROR(dev, "failed to attach panel: %d\n", ret);
 			goto err_free_connector;
 		}
-		connector->port = dev->of_node;
+		rgb->sub_dev.connector = &rgb->connector;
+		rgb->sub_dev.of_node = rgb->dev->of_node;
+		rockchip_drm_register_sub_dev(&rgb->sub_dev);
 	} else {
 		rgb->bridge->encoder = encoder;
 		ret = drm_bridge_attach(encoder, rgb->bridge, NULL);
@@ -317,6 +320,8 @@ static void rockchip_rgb_unbind(struct device *dev, struct device *master,
 {
 	struct rockchip_rgb *rgb = dev_get_drvdata(dev);
 
+	if (rgb->sub_dev.connector)
+		rockchip_drm_register_sub_dev(&rgb->sub_dev);
 	if (rgb->panel) {
 		drm_panel_detach(rgb->panel);
 		drm_connector_cleanup(&rgb->connector);
