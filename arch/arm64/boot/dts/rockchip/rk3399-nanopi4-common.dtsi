@@ -459,7 +459,7 @@
 };
 
 &dp_in_vopl {
-	status = "disabled";
+	status = "okay";
 };
 
 &hdmi {
