@@ -54,9 +54,9 @@ static struct lcd_desc hd700 = {
 		.v_sw = 8,
 	},
 	.polarity = {
-		.rise_vclk = 1,
-		.inv_hsync = 0,
-		.inv_vsync = 0,
+		.rise_vclk = 0,
+		.inv_hsync = 1,
+		.inv_vsync = 1,
 		.inv_vden = 0,
 	},
 };
@@ -159,8 +159,8 @@ static struct lcd_desc k116e = {
 	},
 	.polarity = {
 		.rise_vclk = 0,
-		.inv_hsync = 0,
-		.inv_vsync = 0,
+		.inv_hsync = 1,
+		.inv_vsync = 1,
 		.inv_vden = 0,
 	},
 };
@@ -521,6 +521,7 @@ static int panel_get_modes(struct drm_panel *panel)
 				&ctx->bus_format, 1);
 
 	drm_mode_probed_add(connector, mode);
+
 	return 1;
 }
 
@@ -579,8 +580,7 @@ static int panel_display_mode_init(struct panel_desc *ctx)
 	/*
 	 * ugly converion:
 	 * [LCD] polarity.inv_hsync (0)
-	 *   --> DRM_MODE_FLAG_PHSYNC --> DISPLAY_FLAGS_HSYNC_HIGH -->
-	 * [NXP] sync->h_sync_invert (1)
+	 *   --> DRM_MODE_FLAG_PHSYNC --> DISPLAY_FLAGS_HSYNC_HIGH
 	 */
 	if (lcd->polarity.inv_hsync)
 		dmode->flags |= DRM_MODE_FLAG_NHSYNC;
