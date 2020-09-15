@@ -861,7 +861,7 @@
 };
 
 &pwm3 {
-	status = "okay";
+	status = "disabled";
 	pinctrl-names = "default";
 	pinctrl-0 = <&pwm3a_pin>;
 

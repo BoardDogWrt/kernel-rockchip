@@ -57,3 +57,7 @@
 	num-lanes = <4>;
 	max-link-speed = <2>;
 };
+
+&pwm3 {
+	status = "okay";
+};
