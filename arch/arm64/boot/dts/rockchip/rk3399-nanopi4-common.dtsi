@@ -385,8 +385,12 @@
 	assigned-clock-parents = <&clkin_gmac>;
 	pinctrl-names = "default";
 	pinctrl-0 = <&rgmii_pins>;
+	snps,aal;
+	snps,rxpbl = <0x4>;
+	snps,txpbl = <0x4>;
 	tx_delay = <0x28>;
 	rx_delay = <0x11>;
+	handle_cpu_id = <1>;
 	status = "okay";
 };
 
