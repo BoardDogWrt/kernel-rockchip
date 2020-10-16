@@ -1,1 +1,1 @@
-obj-$(CONFIG_MACH_NANOPI4)	+= board.o
+obj-$(CONFIG_VENDOR_FRIENDLYELEC)	+= board.o

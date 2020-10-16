@@ -195,13 +195,14 @@ endif
 LOGO := $(notdir $(wildcard $(srctree)/logo.bmp))
 LOGO_KERNEL := $(notdir $(wildcard $(srctree)/logo_kernel.bmp))
 
-ifeq ($(CONFIG_MACH_NANOPI4),y)
-DTBS := rk3399-nanopi4-rev*.dtb
+ifeq ($(CONFIG_VENDOR_FRIENDLYELEC),y)
+DTBS := rk33*-nanopi*-rev*.dtb
 
 nanopi4-images: dtbs kernel.img $(LOGO) $(LOGO_KERNEL)
 	$(Q)$(srctree)/scripts/mkimg --dtb $(DTBS) --keep-dtb-name
 
-PHONY += nanopi4-images
+PHONY += nanopi4-images nanopi-r2-images
+nanopi-r2-images: nanopi4-images
 endif
 
 %.img: rockchip/%.dtb kernel.img $(LOGO) $(LOGO_KERNEL)
