@@ -97,7 +97,10 @@ static int tc3589x_gpio_get_direction(struct gpio_chip *chip,
 	if (ret < 0)
 		return ret;
 
-	return !(ret & BIT(pos));
+	if (ret & BIT(pos))
+		return GPIO_LINE_DIRECTION_OUT;
+
+	return GPIO_LINE_DIRECTION_IN;
 }
 
 static int tc3589x_gpio_set_config(struct gpio_chip *chip, unsigned int offset,
@@ -209,7 +212,7 @@ static void tc3589x_gpio_irq_sync_unlock(struct irq_data *d)
 				continue;
 
 			tc3589x_gpio->oldregs[i][j] = new;
-			tc3589x_reg_write(tc3589x, regmap[i] + j * 8, new);
+			tc3589x_reg_write(tc3589x, regmap[i] + j, new);
 		}
 	}
 
@@ -286,6 +289,7 @@ static int tc3589x_gpio_probe(struct platform_device *pdev)
 	struct tc3589x *tc3589x = dev_get_drvdata(pdev->dev.parent);
 	struct device_node *np = pdev->dev.of_node;
 	struct tc3589x_gpio *tc3589x_gpio;
+	struct gpio_irq_chip *girq;
 	int ret;
 	int irq;
 
@@ -314,6 +318,16 @@ static int tc3589x_gpio_probe(struct platform_device *pdev)
 	tc3589x_gpio->chip.base = -1;
 	tc3589x_gpio->chip.of_node = np;
 
+	girq = &tc3589x_gpio->chip.irq;
+	girq->chip = &tc3589x_gpio_irq_chip;
+	/* This will let us handle the parent IRQ in the driver */
+	girq->parent_handler = NULL;
+	girq->num_parents = 0;
+	girq->parents = NULL;
+	girq->default_type = IRQ_TYPE_NONE;
+	girq->handler = handle_simple_irq;
+	girq->threaded = true;
+
 	/* Bring the GPIO module out of reset */
 	ret = tc3589x_set_bits(tc3589x, TC3589x_RSTCTRL,
 			       TC3589x_RSTCTRL_GPIRST, 0);
@@ -335,21 +349,6 @@ static int tc3589x_gpio_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "unable to add gpiochip: %d\n", ret);
 		return ret;
 	}
-
-	ret =  gpiochip_irqchip_add_nested(&tc3589x_gpio->chip,
-					   &tc3589x_gpio_irq_chip,
-					   0,
-					   handle_simple_irq,
-					   IRQ_TYPE_NONE);
-	if (ret) {
-		dev_err(&pdev->dev,
-			"could not connect irqchip to gpiochip\n");
-		return ret;
-	}
-
-	gpiochip_set_nested_irqchip(&tc3589x_gpio->chip,
-				    &tc3589x_gpio_irq_chip,
-				    irq);
 
 	platform_set_drvdata(pdev, tc3589x_gpio);
 

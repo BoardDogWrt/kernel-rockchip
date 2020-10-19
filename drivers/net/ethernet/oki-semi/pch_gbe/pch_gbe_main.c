@@ -2064,7 +2064,7 @@ static int pch_gbe_stop(struct net_device *netdev)
  *	- NETDEV_TX_OK:   Normal end
  *	- NETDEV_TX_BUSY: Error end
  */
-static int pch_gbe_xmit_frame(struct sk_buff *skb, struct net_device *netdev)
+static netdev_tx_t pch_gbe_xmit_frame(struct sk_buff *skb, struct net_device *netdev)
 {
 	struct pch_gbe_adapter *adapter = netdev_priv(netdev);
 	struct pch_gbe_tx_ring *tx_ring = adapter->tx_ring;
@@ -2271,7 +2271,7 @@ static int pch_gbe_ioctl(struct net_device *netdev, struct ifreq *ifr, int cmd)
  * pch_gbe_tx_timeout - Respond to a Tx Hang
  * @netdev:   Network interface device structure
  */
-static void pch_gbe_tx_timeout(struct net_device *netdev)
+static void pch_gbe_tx_timeout(struct net_device *netdev, unsigned int txqueue)
 {
 	struct pch_gbe_adapter *adapter = netdev_priv(netdev);
 

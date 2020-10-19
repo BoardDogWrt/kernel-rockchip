@@ -95,8 +95,8 @@ struct generic_pm_domain {
 	struct device dev;
 	struct dev_pm_domain domain;	/* PM domain operations */
 	struct list_head gpd_list_node;	/* Node in the global PM domains list */
-	struct list_head master_links;	/* Links with PM domain as a master */
-	struct list_head slave_links;	/* Links with PM domain as a slave */
+	struct list_head parent_links;	/* Links with PM domain as a parent */
+	struct list_head child_links;	/* Links with PM domain as a child */
 	struct list_head dev_list;	/* List of devices */
 	struct dev_power_governor *gov;
 	struct work_struct power_off_work;
@@ -151,10 +151,10 @@ static inline struct generic_pm_domain *pd_to_genpd(struct dev_pm_domain *pd)
 }
 
 struct gpd_link {
-	struct generic_pm_domain *master;
-	struct list_head master_node;
-	struct generic_pm_domain *slave;
-	struct list_head slave_node;
+	struct generic_pm_domain *parent;
+	struct list_head parent_node;
+	struct generic_pm_domain *child;
+	struct list_head child_node;
 
 	/* Sub-domain's per-master domain performance state */
 	unsigned int performance_state;
@@ -284,6 +284,8 @@ void of_genpd_del_provider(struct device_node *np);
 int of_genpd_add_device(struct of_phandle_args *args, struct device *dev);
 int of_genpd_add_subdomain(struct of_phandle_args *parent_spec,
 			   struct of_phandle_args *subdomain_spec);
+int of_genpd_remove_subdomain(struct of_phandle_args *parent_spec,
+			      struct of_phandle_args *subdomain_spec);
 struct generic_pm_domain *of_genpd_remove_last(struct device_node *np);
 int of_genpd_parse_idle_states(struct device_node *dn,
 			       struct genpd_power_state **states, int *n);
@@ -318,6 +320,12 @@ static inline int of_genpd_add_device(struct of_phandle_args *args,
 
 static inline int of_genpd_add_subdomain(struct of_phandle_args *parent_spec,
 					 struct of_phandle_args *subdomain_spec)
+{
+	return -ENODEV;
+}
+
+static inline int of_genpd_remove_subdomain(struct of_phandle_args *parent_spec,
+					struct of_phandle_args *subdomain_spec)
 {
 	return -ENODEV;
 }
@@ -366,6 +374,7 @@ struct device *dev_pm_domain_attach_by_id(struct device *dev,
 struct device *dev_pm_domain_attach_by_name(struct device *dev,
 					    const char *name);
 void dev_pm_domain_detach(struct device *dev, bool power_off);
+int dev_pm_domain_start(struct device *dev);
 void dev_pm_domain_set(struct device *dev, struct dev_pm_domain *pd);
 #else
 static inline int dev_pm_domain_attach(struct device *dev, bool power_on)
@@ -383,6 +392,10 @@ static inline struct device *dev_pm_domain_attach_by_name(struct device *dev,
 	return NULL;
 }
 static inline void dev_pm_domain_detach(struct device *dev, bool power_off) {}
+static inline int dev_pm_domain_start(struct device *dev)
+{
+	return 0;
+}
 static inline void dev_pm_domain_set(struct device *dev,
 				     struct dev_pm_domain *pd) {}
 #endif

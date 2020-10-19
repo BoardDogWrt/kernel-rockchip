@@ -110,8 +110,8 @@ static int mlxsw_sp_port_pg_destroy(struct mlxsw_sp_port *mlxsw_sp_port,
 	return mlxsw_reg_write(mlxsw_sp->core, MLXSW_REG(pbmc), pbmc_pl);
 }
 
-static int mlxsw_sp_port_headroom_set(struct mlxsw_sp_port *mlxsw_sp_port,
-				      struct ieee_ets *ets)
+static int mlxsw_sp_port_headroom_ets_set(struct mlxsw_sp_port *mlxsw_sp_port,
+					  struct ieee_ets *ets)
 {
 	bool pause_en = mlxsw_sp_port_is_pause_en(mlxsw_sp_port);
 	struct ieee_ets *my_ets = mlxsw_sp_port->dcb.ets;
@@ -138,7 +138,7 @@ static int mlxsw_sp_port_headroom_set(struct mlxsw_sp_port *mlxsw_sp_port,
 	err = mlxsw_sp_port_pg_destroy(mlxsw_sp_port, my_ets->prio_tc,
 				       ets->prio_tc);
 	if (err)
-		netdev_warn(dev, "Failed to remove ununsed PGs\n");
+		netdev_warn(dev, "Failed to remove unused PGs\n");
 
 	return 0;
 
@@ -160,7 +160,7 @@ static int __mlxsw_sp_dcbnl_ieee_setets(struct mlxsw_sp_port *mlxsw_sp_port,
 		u8 weight = ets->tc_tx_bw[i];
 
 		err = mlxsw_sp_port_ets_set(mlxsw_sp_port,
-					    MLXSW_REG_QEEC_HIERARCY_SUBGROUP, i,
+					    MLXSW_REG_QEEC_HR_SUBGROUP, i,
 					    0, dwrr, weight);
 		if (err) {
 			netdev_err(dev, "Failed to link subgroup ETS element %d to group\n",
@@ -180,7 +180,7 @@ static int __mlxsw_sp_dcbnl_ieee_setets(struct mlxsw_sp_port *mlxsw_sp_port,
 	}
 
 	/* Ingress configuration. */
-	err = mlxsw_sp_port_headroom_set(mlxsw_sp_port, ets);
+	err = mlxsw_sp_port_headroom_ets_set(mlxsw_sp_port, ets);
 	if (err)
 		goto err_port_headroom_set;
 
@@ -198,7 +198,7 @@ err_port_ets_set:
 		u8 weight = my_ets->tc_tx_bw[i];
 
 		err = mlxsw_sp_port_ets_set(mlxsw_sp_port,
-					    MLXSW_REG_QEEC_HIERARCY_SUBGROUP, i,
+					    MLXSW_REG_QEEC_HR_SUBGROUP, i,
 					    0, dwrr, weight);
 	}
 	return err;
@@ -369,6 +369,17 @@ err_update_qrwe:
 }
 
 static int
+mlxsw_sp_port_dcb_app_update_qpdp(struct mlxsw_sp_port *mlxsw_sp_port,
+				  u8 default_prio)
+{
+	struct mlxsw_sp *mlxsw_sp = mlxsw_sp_port->mlxsw_sp;
+	char qpdp_pl[MLXSW_REG_QPDP_LEN];
+
+	mlxsw_reg_qpdp_pack(qpdp_pl, mlxsw_sp_port->local_port, default_prio);
+	return mlxsw_reg_write(mlxsw_sp->core, MLXSW_REG(qpdp), qpdp_pl);
+}
+
+static int
 mlxsw_sp_port_dcb_app_update_qpdpm(struct mlxsw_sp_port *mlxsw_sp_port,
 				   struct dcb_ieee_app_dscp_map *map)
 {
@@ -405,6 +416,12 @@ static int mlxsw_sp_port_dcb_app_update(struct mlxsw_sp_port *mlxsw_sp_port)
 	int err;
 
 	default_prio = mlxsw_sp_port_dcb_app_default_prio(mlxsw_sp_port);
+	err = mlxsw_sp_port_dcb_app_update_qpdp(mlxsw_sp_port, default_prio);
+	if (err) {
+		netdev_err(mlxsw_sp_port->dev, "Couldn't configure port default priority\n");
+		return err;
+	}
+
 	have_dscp = mlxsw_sp_port_dcb_app_prio_dscp_map(mlxsw_sp_port,
 							&prio_map);
 
@@ -507,9 +524,9 @@ static int mlxsw_sp_dcbnl_ieee_setmaxrate(struct net_device *dev,
 
 	for (i = 0; i < IEEE_8021QAZ_MAX_TCS; i++) {
 		err = mlxsw_sp_port_ets_maxrate_set(mlxsw_sp_port,
-						    MLXSW_REG_QEEC_HIERARCY_SUBGROUP,
+						    MLXSW_REG_QEEC_HR_SUBGROUP,
 						    i, 0,
-						    maxrate->tc_maxrate[i]);
+						    maxrate->tc_maxrate[i], 0);
 		if (err) {
 			netdev_err(dev, "Failed to set maxrate for TC %d\n", i);
 			goto err_port_ets_maxrate_set;
@@ -523,8 +540,9 @@ static int mlxsw_sp_dcbnl_ieee_setmaxrate(struct net_device *dev,
 err_port_ets_maxrate_set:
 	for (i--; i >= 0; i--)
 		mlxsw_sp_port_ets_maxrate_set(mlxsw_sp_port,
-					      MLXSW_REG_QEEC_HIERARCY_SUBGROUP,
-					      i, 0, my_maxrate->tc_maxrate[i]);
+					      MLXSW_REG_QEEC_HR_SUBGROUP,
+					      i, 0,
+					      my_maxrate->tc_maxrate[i], 0);
 	return err;
 }
 

@@ -139,7 +139,7 @@ static enum vc4_scaling_mode vc4_get_scaling_mode(u32 src, u32 dst)
 
 static bool plane_enabled(struct drm_plane_state *state)
 {
-	return state->fb && state->crtc;
+	return state->fb && !WARN_ON(!state->crtc);
 }
 
 static struct drm_plane_state *vc4_plane_duplicate_state(struct drm_plane *plane)
@@ -178,7 +178,7 @@ static void vc4_plane_destroy_state(struct drm_plane *plane,
 	struct vc4_dev *vc4 = to_vc4_dev(plane->dev);
 	struct vc4_plane_state *vc4_state = to_vc4_plane_state(state);
 
-	if (vc4_state->lbm.allocated) {
+	if (drm_mm_node_allocated(&vc4_state->lbm)) {
 		unsigned long irqflags;
 
 		spin_lock_irqsave(&vc4->hvs->mm_lock, irqflags);
@@ -557,7 +557,7 @@ static int vc4_plane_allocate_lbm(struct drm_plane_state *state)
 	/* Allocate the LBM memory that the HVS will use for temporary
 	 * storage due to our scaling/format conversion.
 	 */
-	if (!vc4_state->lbm.allocated) {
+	if (!drm_mm_node_allocated(&vc4_state->lbm)) {
 		int ret;
 
 		spin_lock_irqsave(&vc4->hvs->mm_lock, irqflags);
@@ -1266,4 +1266,45 @@ struct drm_plane *vc4_plane_init(struct drm_device *dev,
 					   DRM_MODE_REFLECT_Y);
 
 	return plane;
+}
+
+int vc4_plane_create_additional_planes(struct drm_device *drm)
+{
+	struct drm_plane *cursor_plane;
+	struct drm_crtc *crtc;
+	unsigned int i;
+
+	/* Set up some arbitrary number of planes.  We're not limited
+	 * by a set number of physical registers, just the space in
+	 * the HVS (16k) and how small an plane can be (28 bytes).
+	 * However, each plane we set up takes up some memory, and
+	 * increases the cost of looping over planes, which atomic
+	 * modesetting does quite a bit.  As a result, we pick a
+	 * modest number of planes to expose, that should hopefully
+	 * still cover any sane usecase.
+	 */
+	for (i = 0; i < 8; i++) {
+		struct drm_plane *plane =
+			vc4_plane_init(drm, DRM_PLANE_TYPE_OVERLAY);
+
+		if (IS_ERR(plane))
+			continue;
+
+		plane->possible_crtcs =
+			GENMASK(drm->mode_config.num_crtc - 1, 0);
+	}
+
+	drm_for_each_crtc(crtc, drm) {
+		/* Set up the legacy cursor after overlay initialization,
+		 * since we overlay planes on the CRTC in the order they were
+		 * initialized.
+		 */
+		cursor_plane = vc4_plane_init(drm, DRM_PLANE_TYPE_CURSOR);
+		if (!IS_ERR(cursor_plane)) {
+			cursor_plane->possible_crtcs = drm_crtc_mask(crtc);
+			crtc->cursor = cursor_plane;
+		}
+	}
+
+	return 0;
 }

@@ -10,7 +10,6 @@
 #include <linux/bitops.h>
 #include <linux/delay.h>
 #include <linux/device.h>
-#include <linux/gpio.h>
 #include <linux/gpio/consumer.h>
 #include <linux/module.h>
 #include <linux/mutex.h>
@@ -158,7 +157,6 @@ static int ad2s1200_probe(struct spi_device *spi)
 		return PTR_ERR(st->rdvel);
 	}
 
-	indio_dev->dev.parent = &spi->dev;
 	indio_dev->info = &ad2s1200_info;
 	indio_dev->modes = INDIO_DIRECT_MODE;
 	indio_dev->channels = ad2s1200_channels;

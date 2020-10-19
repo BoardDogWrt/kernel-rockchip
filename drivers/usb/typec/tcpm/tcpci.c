@@ -157,7 +157,7 @@ static enum typec_cc_status tcpci_to_typec_cc(unsigned int cc, bool sink)
 	case 0x3:
 		if (sink)
 			return TYPEC_CC_RP_3_0;
-		/* fall through */
+		fallthrough;
 	case 0x0:
 	default:
 		return TYPEC_CC_OPEN;
@@ -225,6 +225,14 @@ static int tcpci_set_vconn(struct tcpc_dev *tcpc, bool enable)
 	return regmap_update_bits(tcpci->regmap, TCPC_POWER_CTRL,
 				TCPC_POWER_CTRL_VCONN_ENABLE,
 				enable ? TCPC_POWER_CTRL_VCONN_ENABLE : 0);
+}
+
+static int tcpci_set_bist_data(struct tcpc_dev *tcpc, bool enable)
+{
+	struct tcpci *tcpci = tcpc_to_tcpci(tcpc);
+
+	return regmap_update_bits(tcpci->regmap, TCPC_TCPC_CTRL, TCPC_TCPC_CTRL_BIST_TM,
+				 enable ? TCPC_TCPC_CTRL_BIST_TM : 0);
 }
 
 static int tcpci_set_roles(struct tcpc_dev *tcpc, bool attached,
@@ -432,20 +440,30 @@ irqreturn_t tcpci_irq(struct tcpci *tcpci)
 
 	if (status & TCPC_ALERT_RX_STATUS) {
 		struct pd_message msg;
-		unsigned int cnt;
+		unsigned int cnt, payload_cnt;
 		u16 header;
 
 		regmap_read(tcpci->regmap, TCPC_RX_BYTE_CNT, &cnt);
+		/*
+		 * 'cnt' corresponds to READABLE_BYTE_COUNT in section 4.4.14
+		 * of the TCPCI spec [Rev 2.0 Ver 1.0 October 2017] and is
+		 * defined in table 4-36 as one greater than the number of
+		 * bytes received. And that number includes the header. So:
+		 */
+		if (cnt > 3)
+			payload_cnt = cnt - (1 + sizeof(msg.header));
+		else
+			payload_cnt = 0;
 
 		tcpci_read16(tcpci, TCPC_RX_HDR, &header);
 		msg.header = cpu_to_le16(header);
 
-		if (WARN_ON(cnt > sizeof(msg.payload)))
-			cnt = sizeof(msg.payload);
+		if (WARN_ON(payload_cnt > sizeof(msg.payload)))
+			payload_cnt = sizeof(msg.payload);
 
-		if (cnt > 0)
+		if (payload_cnt > 0)
 			regmap_raw_read(tcpci->regmap, TCPC_RX_DATA,
-					&msg.payload, cnt);
+					&msg.payload, payload_cnt);
 
 		/* Read complete, clear RX status alert bit */
 		tcpci_write16(tcpci, TCPC_ALERT, TCPC_ALERT_RX_STATUS);
@@ -520,6 +538,7 @@ struct tcpci *tcpci_register_port(struct device *dev, struct tcpci_data *data)
 	tcpci->tcpc.set_pd_rx = tcpci_set_pd_rx;
 	tcpci->tcpc.set_roles = tcpci_set_roles;
 	tcpci->tcpc.pd_transmit = tcpci_pd_transmit;
+	tcpci->tcpc.set_bist_data = tcpci_set_bist_data;
 
 	err = tcpci_parse_config(tcpci);
 	if (err < 0)
@@ -581,6 +600,12 @@ static int tcpci_probe(struct i2c_client *client,
 static int tcpci_remove(struct i2c_client *client)
 {
 	struct tcpci_chip *chip = i2c_get_clientdata(client);
+	int err;
+
+	/* Disable chip interrupts before unregistering port */
+	err = tcpci_write16(chip->tcpci, TCPC_ALERT_MASK, 0);
+	if (err < 0)
+		return err;
 
 	tcpci_unregister_port(chip->tcpci);
 

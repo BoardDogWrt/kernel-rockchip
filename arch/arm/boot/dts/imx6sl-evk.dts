@@ -575,16 +575,13 @@
 };
 
 &pwm1 {
+	#pwm-cells = <2>;
 	pinctrl-names = "default";
 	pinctrl-0 = <&pinctrl_pwm1>;
 	status = "okay";
 };
 
 &reg_vdd1p1 {
-	vin-supply = <&sw2_reg>;
-};
-
-&reg_vdd3p0 {
 	vin-supply = <&sw2_reg>;
 };
 

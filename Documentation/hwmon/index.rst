@@ -29,6 +29,7 @@ Hardware Monitoring Kernel Drivers
    adm1025
    adm1026
    adm1031
+   adm1177
    adm1275
    adm9240
    ads7828
@@ -38,13 +39,20 @@ Hardware Monitoring Kernel Drivers
    adt7470
    adt7475
    amc6821
+   amd_energy
    asb100
    asc7621
    aspeed-pwm-tacho
+   bcm54140
+   bel-pfe
+   bt1-pvt
    coretemp
+   corsair-cpro
    da9052
    da9055
+   dell-smm-hwmon
    dme1737
+   drivetemp
    ds1621
    ds620
    emc1403
@@ -56,6 +64,7 @@ Hardware Monitoring Kernel Drivers
    ftsteutates
    g760a
    g762
+   gsc-hwmon
    gl518sm
    hih6130
    ibmaem
@@ -90,6 +99,7 @@ Hardware Monitoring Kernel Drivers
    lm95245
    lochnagar
    ltc2945
+   ltc2947
    ltc2978
    ltc2990
    ltc3815
@@ -101,10 +111,13 @@ Hardware Monitoring Kernel Drivers
    max16064
    max16065
    max1619
+   max16601
    max1668
    max197
+   max20730
    max20751
    max31722
+   max31730
    max31785
    max31790
    max34440
@@ -153,7 +166,9 @@ Hardware Monitoring Kernel Drivers
    tmp108
    tmp401
    tmp421
+   tmp513
    tps40422
+   tps53679
    twl4030-madc-hwmon
    ucd9000
    ucd9200
@@ -173,6 +188,7 @@ Hardware Monitoring Kernel Drivers
    wm831x
    wm8350
    xgene-hwmon
+   xdpe12284
    zl6100
 
 .. only::  subproject and html

@@ -1,6 +1,20 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+void preserce_ptr_sz_fn(long x) {}
+
+#define __bpf_aligned __attribute__((aligned(8)))
+
+/*
+ * KERNEL
+ */
+
+struct core_reloc_kernel_output {
+	int valid[10];
+	char comm[sizeof("test_progs")];
+	int comm_len;
+};
+
 /*
  * FLAVORS
  */
@@ -318,6 +332,7 @@ struct core_reloc_arrays_output {
 	char b123;
 	int c1c;
 	int d00d;
+	int f10c;
 };
 
 struct core_reloc_arrays_substruct {
@@ -330,6 +345,7 @@ struct core_reloc_arrays {
 	char b[2][3][4];
 	struct core_reloc_arrays_substruct c[3];
 	struct core_reloc_arrays_substruct d[1][2];
+	struct core_reloc_arrays_substruct f[][2];
 };
 
 /* bigger array dimensions */
@@ -338,6 +354,7 @@ struct core_reloc_arrays___diff_arr_dim {
 	char b[3][4][5];
 	struct core_reloc_arrays_substruct c[4];
 	struct core_reloc_arrays_substruct d[2][3];
+	struct core_reloc_arrays_substruct f[1][3];
 };
 
 /* different size of array's value (struct) */
@@ -354,6 +371,29 @@ struct core_reloc_arrays___diff_arr_val_sz {
 		int d;
 		int __padding2;
 	} d[1][2];
+	struct {
+		int __padding1;
+		int c;
+		int __padding2;
+	} f[][2];
+};
+
+struct core_reloc_arrays___equiv_zero_sz_arr {
+	int a[5];
+	char b[2][3][4];
+	struct core_reloc_arrays_substruct c[3];
+	struct core_reloc_arrays_substruct d[1][2];
+	/* equivalent to flexible array */
+	struct core_reloc_arrays_substruct f[][2];
+};
+
+struct core_reloc_arrays___fixed_arr {
+	int a[5];
+	char b[2][3][4];
+	struct core_reloc_arrays_substruct c[3];
+	struct core_reloc_arrays_substruct d[1][2];
+	/* not a flexible array anymore, but within access bounds */
+	struct core_reloc_arrays_substruct f[1][2];
 };
 
 struct core_reloc_arrays___err_too_small {
@@ -361,6 +401,7 @@ struct core_reloc_arrays___err_too_small {
 	char b[2][3][4];
 	struct core_reloc_arrays_substruct c[3];
 	struct core_reloc_arrays_substruct d[1][2];
+	struct core_reloc_arrays_substruct f[][2];
 };
 
 struct core_reloc_arrays___err_too_shallow {
@@ -368,6 +409,7 @@ struct core_reloc_arrays___err_too_shallow {
 	char b[2][3]; /* this one lacks one dimension */
 	struct core_reloc_arrays_substruct c[3];
 	struct core_reloc_arrays_substruct d[1][2];
+	struct core_reloc_arrays_substruct f[][2];
 };
 
 struct core_reloc_arrays___err_non_array {
@@ -375,19 +417,23 @@ struct core_reloc_arrays___err_non_array {
 	char b[2][3][4];
 	struct core_reloc_arrays_substruct c[3];
 	struct core_reloc_arrays_substruct d[1][2];
+	struct core_reloc_arrays_substruct f[][2];
 };
 
-struct core_reloc_arrays___err_wrong_val_type1 {
-	char a[5]; /* char instead of int */
-	char b[2][3][4];
-	struct core_reloc_arrays_substruct c[3];
-	struct core_reloc_arrays_substruct d[1][2];
-};
-
-struct core_reloc_arrays___err_wrong_val_type2 {
+struct core_reloc_arrays___err_wrong_val_type {
 	int a[5];
 	char b[2][3][4];
 	int c[3]; /* value is not a struct */
+	struct core_reloc_arrays_substruct d[1][2];
+	struct core_reloc_arrays_substruct f[][2];
+};
+
+struct core_reloc_arrays___err_bad_zero_sz_arr {
+	/* zero-sized array, but not at the end */
+	struct core_reloc_arrays_substruct f[0][2];
+	int a[5];
+	char b[2][3][4];
+	struct core_reloc_arrays_substruct c[3];
 	struct core_reloc_arrays_substruct d[1][2];
 };
 
@@ -403,51 +449,51 @@ struct core_reloc_primitives {
 	char a;
 	int b;
 	enum core_reloc_primitives_enum c;
-	void *d;
-	int (*f)(const char *);
+	void *d __bpf_aligned;
+	int (*f)(const char *) __bpf_aligned;
 };
 
 struct core_reloc_primitives___diff_enum_def {
 	char a;
 	int b;
-	void *d;
-	int (*f)(const char *);
+	void *d __bpf_aligned;
+	int (*f)(const char *) __bpf_aligned;
 	enum {
 		X = 100,
 		Y = 200,
-	} c; /* inline enum def with differing set of values */
+	} c __bpf_aligned; /* inline enum def with differing set of values */
 };
 
 struct core_reloc_primitives___diff_func_proto {
-	void (*f)(int); /* incompatible function prototype */
-	void *d;
-	enum core_reloc_primitives_enum c;
+	void (*f)(int) __bpf_aligned; /* incompatible function prototype */
+	void *d __bpf_aligned;
+	enum core_reloc_primitives_enum c __bpf_aligned;
 	int b;
 	char a;
 };
 
 struct core_reloc_primitives___diff_ptr_type {
-	const char * const d; /* different pointee type + modifiers */
-	char a;
+	const char * const d __bpf_aligned; /* different pointee type + modifiers */
+	char a __bpf_aligned;
 	int b;
 	enum core_reloc_primitives_enum c;
-	int (*f)(const char *);
+	int (*f)(const char *) __bpf_aligned;
 };
 
 struct core_reloc_primitives___err_non_enum {
 	char a[1];
 	int b;
 	int c; /* int instead of enum */
-	void *d;
-	int (*f)(const char *);
+	void *d __bpf_aligned;
+	int (*f)(const char *) __bpf_aligned;
 };
 
 struct core_reloc_primitives___err_non_int {
 	char a[1];
-	int *b; /* ptr instead of int */
-	enum core_reloc_primitives_enum c;
-	void *d;
-	int (*f)(const char *);
+	int *b __bpf_aligned; /* ptr instead of int */
+	enum core_reloc_primitives_enum c __bpf_aligned;
+	void *d __bpf_aligned;
+	int (*f)(const char *) __bpf_aligned;
 };
 
 struct core_reloc_primitives___err_non_ptr {
@@ -455,7 +501,7 @@ struct core_reloc_primitives___err_non_ptr {
 	int b;
 	enum core_reloc_primitives_enum c;
 	int d; /* int instead of ptr */
-	int (*f)(const char *);
+	int (*f)(const char *) __bpf_aligned;
 };
 
 /*
@@ -466,7 +512,7 @@ struct core_reloc_mods_output {
 };
 
 typedef const int int_t;
-typedef const char *char_ptr_t;
+typedef const char *char_ptr_t __bpf_aligned;
 typedef const int arr_t[7];
 
 struct core_reloc_mods_substruct {
@@ -482,9 +528,9 @@ typedef struct {
 struct core_reloc_mods {
 	int a;
 	int_t b;
-	char *c;
+	char *c __bpf_aligned;
 	char_ptr_t d;
-	int e[3];
+	int e[3] __bpf_aligned;
 	arr_t f;
 	struct core_reloc_mods_substruct g;
 	core_reloc_mods_substruct_t h;
@@ -494,9 +540,9 @@ struct core_reloc_mods {
 struct core_reloc_mods___mod_swap {
 	int b;
 	int_t a;
-	char *d;
+	char *d __bpf_aligned;
 	char_ptr_t c;
-	int f[3];
+	int f[3] __bpf_aligned;
 	arr_t e;
 	struct {
 		int y;
@@ -514,7 +560,7 @@ typedef arr1_t arr2_t;
 typedef arr2_t arr3_t;
 typedef arr3_t arr4_t;
 
-typedef const char * const volatile fancy_char_ptr_t;
+typedef const char * const volatile fancy_char_ptr_t __bpf_aligned;
 
 typedef core_reloc_mods_substruct_t core_reloc_mods_substruct_tt;
 
@@ -526,7 +572,7 @@ struct core_reloc_mods___typedefs {
 	arr4_t e;
 	fancy_char_ptr_t d;
 	fancy_char_ptr_t c;
-	int3_t b;
+	int3_t b __bpf_aligned;
 	int3_t a;
 };
 
@@ -580,67 +626,6 @@ struct core_reloc_ints___bool {
 	int64_t		s64_field;
 };
 
-struct core_reloc_ints___err_bitfield {
-	uint8_t		u8_field;
-	int8_t		s8_field;
-	uint16_t	u16_field;
-	int16_t		s16_field;
-	uint32_t	u32_field: 32; /* bitfields are not supported */
-	int32_t		s32_field;
-	uint64_t	u64_field;
-	int64_t		s64_field;
-};
-
-struct core_reloc_ints___err_wrong_sz_8 {
-	uint16_t	u8_field; /* not 8-bit anymore */
-	int16_t		s8_field; /* not 8-bit anymore */
-
-	uint16_t	u16_field;
-	int16_t		s16_field;
-	uint32_t	u32_field;
-	int32_t		s32_field;
-	uint64_t	u64_field;
-	int64_t		s64_field;
-};
-
-struct core_reloc_ints___err_wrong_sz_16 {
-	uint8_t		u8_field;
-	int8_t		s8_field;
-
-	uint32_t	u16_field; /* not 16-bit anymore */
-	int32_t		s16_field; /* not 16-bit anymore */
-
-	uint32_t	u32_field;
-	int32_t		s32_field;
-	uint64_t	u64_field;
-	int64_t		s64_field;
-};
-
-struct core_reloc_ints___err_wrong_sz_32 {
-	uint8_t		u8_field;
-	int8_t		s8_field;
-	uint16_t	u16_field;
-	int16_t		s16_field;
-
-	uint64_t	u32_field; /* not 32-bit anymore */
-	int64_t		s32_field; /* not 32-bit anymore */
-
-	uint64_t	u64_field;
-	int64_t		s64_field;
-};
-
-struct core_reloc_ints___err_wrong_sz_64 {
-	uint8_t		u8_field;
-	int8_t		s8_field;
-	uint16_t	u16_field;
-	int16_t		s16_field;
-	uint32_t	u32_field;
-	int32_t		s32_field;
-
-	uint32_t	u64_field; /* not 64-bit anymore */
-	int32_t		s64_field; /* not 64-bit anymore */
-};
-
 /*
  * MISC
  */
@@ -664,4 +649,163 @@ struct core_reloc_misc_extensible {
 	int b;
 	int c;
 	int d;
+};
+
+/*
+ * EXISTENCE
+ */
+struct core_reloc_existence_output {
+	int a_exists;
+	int a_value;
+	int b_exists;
+	int b_value;
+	int c_exists;
+	int c_value;
+	int arr_exists;
+	int arr_value;
+	int s_exists;
+	int s_value;
+};
+
+struct core_reloc_existence {
+	int a;
+	struct {
+		int b;
+	};
+	int c;
+	int arr[1];
+	struct {
+		int x;
+	} s;
+};
+
+struct core_reloc_existence___minimal {
+	int a;
+};
+
+struct core_reloc_existence___err_wrong_int_sz {
+	short a;
+};
+
+struct core_reloc_existence___err_wrong_int_type {
+	int b[1];
+};
+
+struct core_reloc_existence___err_wrong_int_kind {
+	struct{ int x; } c;
+};
+
+struct core_reloc_existence___err_wrong_arr_kind {
+	int arr;
+};
+
+struct core_reloc_existence___err_wrong_arr_value_type {
+	short arr[1];
+};
+
+struct core_reloc_existence___err_wrong_struct_type {
+	int s;
+};
+
+/*
+ * BITFIELDS
+ */
+/* bitfield read results, all as plain integers */
+struct core_reloc_bitfields_output {
+	int64_t		ub1;
+	int64_t		ub2;
+	int64_t		ub7;
+	int64_t		sb4;
+	int64_t		sb20;
+	int64_t		u32;
+	int64_t		s32;
+};
+
+struct core_reloc_bitfields {
+	/* unsigned bitfields */
+	uint8_t		ub1: 1;
+	uint8_t		ub2: 2;
+	uint32_t	ub7: 7;
+	/* signed bitfields */
+	int8_t		sb4: 4;
+	int32_t		sb20: 20;
+	/* non-bitfields */
+	uint32_t	u32;
+	int32_t		s32;
+};
+
+/* different bit sizes (both up and down) */
+struct core_reloc_bitfields___bit_sz_change {
+	/* unsigned bitfields */
+	uint16_t	ub1: 3;		/*  1 ->  3 */
+	uint32_t	ub2: 20;	/*  2 -> 20 */
+	uint8_t		ub7: 1;		/*  7 ->  1 */
+	/* signed bitfields */
+	int8_t		sb4: 1;		/*  4 ->  1 */
+	int32_t		sb20: 30;	/* 20 -> 30 */
+	/* non-bitfields */
+	uint16_t	u32;			/* 32 -> 16 */
+	int64_t		s32 __bpf_aligned;	/* 32 -> 64 */
+};
+
+/* turn bitfield into non-bitfield and vice versa */
+struct core_reloc_bitfields___bitfield_vs_int {
+	uint64_t	ub1;		/*  3 -> 64 non-bitfield */
+	uint8_t		ub2;		/* 20 ->  8 non-bitfield */
+	int64_t		ub7 __bpf_aligned;	/*  7 -> 64 non-bitfield signed */
+	int64_t		sb4 __bpf_aligned;	/*  4 -> 64 non-bitfield signed */
+	uint64_t	sb20 __bpf_aligned;	/* 20 -> 16 non-bitfield unsigned */
+	int32_t		u32: 20;		/* 32 non-bitfield -> 20 bitfield */
+	uint64_t	s32: 60 __bpf_aligned;	/* 32 non-bitfield -> 60 bitfield */
+};
+
+struct core_reloc_bitfields___just_big_enough {
+	uint64_t	ub1: 4;
+	uint64_t	ub2: 60; /* packed tightly */
+	uint32_t	ub7;
+	uint32_t	sb4;
+	uint32_t	sb20;
+	uint32_t	u32;
+	uint32_t	s32;
+} __attribute__((packed)) ;
+
+struct core_reloc_bitfields___err_too_big_bitfield {
+	uint64_t	ub1: 4;
+	uint64_t	ub2: 61; /* packed tightly */
+	uint32_t	ub7;
+	uint32_t	sb4;
+	uint32_t	sb20;
+	uint32_t	u32;
+	uint32_t	s32;
+} __attribute__((packed)) ;
+
+/*
+ * SIZE
+ */
+struct core_reloc_size_output {
+	int int_sz;
+	int struct_sz;
+	int union_sz;
+	int arr_sz;
+	int arr_elem_sz;
+	int ptr_sz;
+	int enum_sz;
+};
+
+struct core_reloc_size {
+	int int_field;
+	struct { int x; } struct_field;
+	union { int x; } union_field;
+	int arr_field[4];
+	void *ptr_field;
+	enum { VALUE = 123 } enum_field;
+};
+
+struct core_reloc_size___diff_sz {
+	uint64_t int_field;
+	struct { int x; int y; int z; } struct_field;
+	union { int x; char bla[123]; } union_field;
+	char arr_field[10];
+	void *ptr_field;
+	enum { OTHER_VALUE = 0xFFFFFFFFFFFFFFFF } enum_field;
 };

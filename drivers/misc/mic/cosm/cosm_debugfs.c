@@ -15,7 +15,7 @@
 /* Debugfs parent dir */
 static struct dentry *cosm_dbg;
 
-/**
+/*
  * log_buf_show - Display MIC kernel log buffer
  *
  * log_buf addr/len is read from System.map by user space
@@ -68,7 +68,7 @@ done:
 
 DEFINE_SHOW_ATTRIBUTE(log_buf);
 
-/**
+/*
  * force_reset_show - Force MIC reset
  *
  * Invokes the force_reset COSM bus op instead of the standard reset
@@ -102,9 +102,6 @@ void cosm_create_debug_dir(struct cosm_device *cdev)
 
 void cosm_delete_debug_dir(struct cosm_device *cdev)
 {
-	if (!cdev->dbg_dir)
-		return;
-
 	debugfs_remove_recursive(cdev->dbg_dir);
 }
 

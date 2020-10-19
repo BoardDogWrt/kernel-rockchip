@@ -95,8 +95,8 @@ static inline bool elv_support_features(unsigned int elv_features,
  * @name: Elevator name to test
  * @required_features: Features that the elevator must provide
  *
- * Return true is the elevator @e name matches @name and if @e provides all the
- * the feratures spcified by @required_features.
+ * Return true if the elevator @e name matches @name and if @e provides all
+ * the features specified by @required_features.
  */
 static bool elevator_match(const struct elevator_type *e, const char *name,
 			   unsigned int required_features)
@@ -832,3 +832,12 @@ struct request *elv_rb_latter_request(struct request_queue *q,
 	return NULL;
 }
 EXPORT_SYMBOL(elv_rb_latter_request);
+
+static int __init elevator_setup(char *str)
+{
+	pr_warn("Kernel parameter elevator= does not have any effect anymore.\n"
+		"Please use sysfs to set IO scheduler for individual devices.\n");
+	return 1;
+}
+
+__setup("elevator=", elevator_setup);

@@ -121,8 +121,8 @@ static void init_once(void *foo)
 {
 	struct affs_inode_info *ei = (struct affs_inode_info *) foo;
 
-	sema_init(&ei->i_link_lock, 1);
-	sema_init(&ei->i_ext_lock, 1);
+	mutex_init(&ei->i_link_lock);
+	mutex_init(&ei->i_ext_lock);
 	inode_init_once(&ei->vfs_inode);
 }
 
@@ -474,7 +474,7 @@ got_root:
 	case MUFS_INTLFFS:
 	case MUFS_DCFFS:
 		affs_set_opt(sbi->s_flags, SF_MUFS);
-		/* fall thru */
+		fallthrough;
 	case FS_INTLFFS:
 	case FS_DCFFS:
 		affs_set_opt(sbi->s_flags, SF_INTL);
@@ -486,7 +486,7 @@ got_root:
 		break;
 	case MUFS_OFS:
 		affs_set_opt(sbi->s_flags, SF_MUFS);
-		/* fall through */
+		fallthrough;
 	case FS_OFS:
 		affs_set_opt(sbi->s_flags, SF_OFS);
 		sb->s_flags |= SB_NOEXEC;
@@ -494,7 +494,7 @@ got_root:
 	case MUFS_DCOFS:
 	case MUFS_INTLOFS:
 		affs_set_opt(sbi->s_flags, SF_MUFS);
-		/* fall through */
+		fallthrough;
 	case FS_DCOFS:
 	case FS_INTLOFS:
 		affs_set_opt(sbi->s_flags, SF_INTL);
@@ -561,13 +561,8 @@ affs_remount(struct super_block *sb, int *flags, char *data)
 	int			 root_block;
 	unsigned long		 mount_flags;
 	int			 res = 0;
-	char			*new_opts;
 	char			 volume[32];
 	char			*prefix = NULL;
-
-	new_opts = kstrdup(data, GFP_KERNEL);
-	if (data && !new_opts)
-		return -ENOMEM;
 
 	pr_debug("%s(flags=0x%x,opts=\"%s\")\n", __func__, *flags, data);
 
@@ -579,7 +574,6 @@ affs_remount(struct super_block *sb, int *flags, char *data)
 			   &blocksize, &prefix, volume,
 			   &mount_flags)) {
 		kfree(prefix);
-		kfree(new_opts);
 		return -EINVAL;
 	}
 

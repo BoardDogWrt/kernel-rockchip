@@ -30,7 +30,6 @@
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
 #define DRV_NAME		"de2104x"
-#define DRV_VERSION		"0.7"
 #define DRV_RELDATE		"Mar 17, 2004"
 
 #include <linux/module.h>
@@ -52,14 +51,9 @@
 #include <linux/uaccess.h>
 #include <asm/unaligned.h>
 
-/* These identify the driver base version and may not be removed. */
-static char version[] =
-"PCI Ethernet driver v" DRV_VERSION " (" DRV_RELDATE ")";
-
 MODULE_AUTHOR("Jeff Garzik <jgarzik@pobox.com>");
 MODULE_DESCRIPTION("Intel/Digital 21040/1 series PCI Ethernet driver");
 MODULE_LICENSE("GPL");
-MODULE_VERSION(DRV_VERSION);
 
 static int debug = -1;
 module_param (debug, int, 0);
@@ -91,7 +85,7 @@ MODULE_PARM_DESC (rx_copybreak, "de2104x Breakpoint at which Rx packets are copi
 #define DSL			CONFIG_DE2104X_DSL
 #endif
 
-#define DE_RX_RING_SIZE		64
+#define DE_RX_RING_SIZE		128
 #define DE_TX_RING_SIZE		64
 #define DE_RING_BYTES		\
 		((sizeof(struct de_desc) * DE_RX_RING_SIZE) +	\
@@ -417,7 +411,10 @@ static void de_rx (struct de_private *de)
 		if (status & DescOwn)
 			break;
 
-		len = ((status >> 16) & 0x7ff) - 4;
+		/* the length is actually a 15 bit value here according
+		 * to Table 4-1 in the DE2104x spec so mask is 0x7fff
+		 */
+		len = ((status >> 16) & 0x7fff) - 4;
 		mapping = de->rx_skb[rx_tail].mapping;
 
 		if (unlikely(drop)) {
@@ -1436,7 +1433,7 @@ static int de_close (struct net_device *dev)
 	return 0;
 }
 
-static void de_tx_timeout (struct net_device *dev)
+static void de_tx_timeout (struct net_device *dev, unsigned int txqueue)
 {
 	struct de_private *de = netdev_priv(dev);
 	const int irq = de->pdev->irq;
@@ -1600,7 +1597,6 @@ static void de_get_drvinfo (struct net_device *dev,struct ethtool_drvinfo *info)
 	struct de_private *de = netdev_priv(dev);
 
 	strlcpy(info->driver, DRV_NAME, sizeof(info->driver));
-	strlcpy(info->version, DRV_VERSION, sizeof(info->version));
 	strlcpy(info->bus_info, pci_name(de->pdev), sizeof(info->bus_info));
 }
 
@@ -1977,11 +1973,6 @@ static int de_init_one(struct pci_dev *pdev, const struct pci_device_id *ent)
 
 	board_idx++;
 
-#ifndef MODULE
-	if (board_idx == 0)
-		pr_info("%s\n", version);
-#endif
-
 	/* allocate a new ethernet device structure, and fill in defaults */
 	dev = alloc_etherdev(sizeof(struct de_private));
 	if (!dev)
@@ -2039,7 +2030,7 @@ static int de_init_one(struct pci_dev *pdev, const struct pci_device_id *ent)
 	}
 
 	/* remap CSR registers */
-	regs = ioremap_nocache(pciaddr, DE_REGS_SIZE);
+	regs = ioremap(pciaddr, DE_REGS_SIZE);
 	if (!regs) {
 		rc = -EIO;
 		pr_err("Cannot map PCI MMIO (%llx@%lx) on pci dev %s\n",
@@ -2114,11 +2105,10 @@ static void de_remove_one(struct pci_dev *pdev)
 	free_netdev(dev);
 }
 
-#ifdef CONFIG_PM
-
-static int de_suspend (struct pci_dev *pdev, pm_message_t state)
+static int __maybe_unused de_suspend(struct device *dev_d)
 {
-	struct net_device *dev = pci_get_drvdata (pdev);
+	struct pci_dev *pdev = to_pci_dev(dev_d);
+	struct net_device *dev = pci_get_drvdata(pdev);
 	struct de_private *de = netdev_priv(dev);
 
 	rtnl_lock();
@@ -2145,7 +2135,6 @@ static int de_suspend (struct pci_dev *pdev, pm_message_t state)
 		de_clean_rings(de);
 
 		de_adapter_sleep(de);
-		pci_disable_device(pdev);
 	} else {
 		netif_device_detach(dev);
 	}
@@ -2153,21 +2142,17 @@ static int de_suspend (struct pci_dev *pdev, pm_message_t state)
 	return 0;
 }
 
-static int de_resume (struct pci_dev *pdev)
+static int __maybe_unused de_resume(struct device *dev_d)
 {
-	struct net_device *dev = pci_get_drvdata (pdev);
+	struct pci_dev *pdev = to_pci_dev(dev_d);
+	struct net_device *dev = pci_get_drvdata(pdev);
 	struct de_private *de = netdev_priv(dev);
-	int retval = 0;
 
 	rtnl_lock();
 	if (netif_device_present(dev))
 		goto out;
 	if (!netif_running(dev))
 		goto out_attach;
-	if ((retval = pci_enable_device(pdev))) {
-		netdev_err(dev, "pci_enable_device failed in resume\n");
-		goto out;
-	}
 	pci_set_master(pdev);
 	de_init_rings(de);
 	de_init_hw(de);
@@ -2178,24 +2163,18 @@ out:
 	return 0;
 }
 
-#endif /* CONFIG_PM */
+static SIMPLE_DEV_PM_OPS(de_pm_ops, de_suspend, de_resume);
 
 static struct pci_driver de_driver = {
 	.name		= DRV_NAME,
 	.id_table	= de_pci_tbl,
 	.probe		= de_init_one,
 	.remove		= de_remove_one,
-#ifdef CONFIG_PM
-	.suspend	= de_suspend,
-	.resume		= de_resume,
-#endif
+	.driver.pm	= &de_pm_ops,
 };
 
 static int __init de_init (void)
 {
-#ifdef MODULE
-	pr_info("%s\n", version);
-#endif
 	return pci_register_driver(&de_driver);
 }
 

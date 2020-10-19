@@ -35,7 +35,8 @@ struct partial_cluster;
 	{ EXT4_MB_DELALLOC_RESERVED,	"DELALLOC_RESV" },	\
 	{ EXT4_MB_STREAM_ALLOC,		"STREAM_ALLOC" },	\
 	{ EXT4_MB_USE_ROOT_BLOCKS,	"USE_ROOT_BLKS" },	\
-	{ EXT4_MB_USE_RESERVED,		"USE_RESV" })
+	{ EXT4_MB_USE_RESERVED,		"USE_RESV" },		\
+	{ EXT4_MB_STRICT_CHECK,		"STRICT_CHECK" })
 
 #define show_map_flags(flags) __print_flags(flags, "|",			\
 	{ EXT4_GET_BLOCKS_CREATE,		"CREATE" },		\
@@ -45,8 +46,20 @@ struct partial_cluster;
 	{ EXT4_GET_BLOCKS_CONVERT,		"CONVERT" },		\
 	{ EXT4_GET_BLOCKS_METADATA_NOFAIL,	"METADATA_NOFAIL" },	\
 	{ EXT4_GET_BLOCKS_NO_NORMALIZE,		"NO_NORMALIZE" },	\
-	{ EXT4_GET_BLOCKS_KEEP_SIZE,		"KEEP_SIZE" },		\
-	{ EXT4_GET_BLOCKS_ZERO,			"ZERO" })
+	{ EXT4_GET_BLOCKS_CONVERT_UNWRITTEN,	"CONVERT_UNWRITTEN" },  \
+	{ EXT4_GET_BLOCKS_ZERO,			"ZERO" },		\
+	{ EXT4_GET_BLOCKS_IO_SUBMIT,		"IO_SUBMIT" },		\
+	{ EXT4_EX_NOCACHE,			"EX_NOCACHE" })
+
+/*
+ * __print_flags() requires that all enum values be wrapped in the
+ * TRACE_DEFINE_ENUM macro so that the enum value can be encoded in the ftrace
+ * ring buffer.
+ */
+TRACE_DEFINE_ENUM(BH_New);
+TRACE_DEFINE_ENUM(BH_Mapped);
+TRACE_DEFINE_ENUM(BH_Unwritten);
+TRACE_DEFINE_ENUM(BH_Boundary);
 
 #define show_mflags(flags) __print_flags(flags, "",	\
 	{ EXT4_MAP_NEW,		"N" },			\
@@ -62,11 +75,18 @@ struct partial_cluster;
 	{ EXT4_FREE_BLOCKS_NOFREE_FIRST_CLUSTER,"1ST_CLUSTER" },\
 	{ EXT4_FREE_BLOCKS_NOFREE_LAST_CLUSTER,	"LAST_CLUSTER" })
 
+TRACE_DEFINE_ENUM(ES_WRITTEN_B);
+TRACE_DEFINE_ENUM(ES_UNWRITTEN_B);
+TRACE_DEFINE_ENUM(ES_DELAYED_B);
+TRACE_DEFINE_ENUM(ES_HOLE_B);
+TRACE_DEFINE_ENUM(ES_REFERENCED_B);
+
 #define show_extent_status(status) __print_flags(status, "",	\
 	{ EXTENT_STATUS_WRITTEN,	"W" },			\
 	{ EXTENT_STATUS_UNWRITTEN,	"U" },			\
 	{ EXTENT_STATUS_DELAYED,	"D" },			\
-	{ EXTENT_STATUS_HOLE,		"H" })
+	{ EXTENT_STATUS_HOLE,		"H" },			\
+	{ EXTENT_STATUS_REFERENCED,	"R" })
 
 #define show_falloc_mode(mode) __print_flags(mode, "|",		\
 	{ FALLOC_FL_KEEP_SIZE,		"KEEP_SIZE"},		\
@@ -726,24 +746,29 @@ TRACE_EVENT(ext4_mb_release_group_pa,
 );
 
 TRACE_EVENT(ext4_discard_preallocations,
-	TP_PROTO(struct inode *inode),
+	TP_PROTO(struct inode *inode, unsigned int len, unsigned int needed),
 
-	TP_ARGS(inode),
+	TP_ARGS(inode, len, needed),
 
 	TP_STRUCT__entry(
-		__field(	dev_t,	dev			)
-		__field(	ino_t,	ino			)
+		__field(	dev_t,		dev		)
+		__field(	ino_t,		ino		)
+		__field(	unsigned int,	len		)
+		__field(	unsigned int,	needed		)
 
 	),
 
 	TP_fast_assign(
 		__entry->dev	= inode->i_sb->s_dev;
 		__entry->ino	= inode->i_ino;
+		__entry->len	= len;
+		__entry->needed	= needed;
 	),
 
-	TP_printk("dev %d,%d ino %lu",
+	TP_printk("dev %d,%d ino %lu len: %u needed %u",
 		  MAJOR(__entry->dev), MINOR(__entry->dev),
-		  (unsigned long) __entry->ino)
+		  (unsigned long) __entry->ino, __entry->len,
+		  __entry->needed)
 );
 
 TRACE_EVENT(ext4_mb_discard_preallocations,
@@ -1292,18 +1317,34 @@ DEFINE_EVENT(ext4__bitmap_load, ext4_mb_buddy_bitmap_load,
 	TP_ARGS(sb, group)
 );
 
-DEFINE_EVENT(ext4__bitmap_load, ext4_read_block_bitmap_load,
+DEFINE_EVENT(ext4__bitmap_load, ext4_load_inode_bitmap,
 
 	TP_PROTO(struct super_block *sb, unsigned long group),
 
 	TP_ARGS(sb, group)
 );
 
-DEFINE_EVENT(ext4__bitmap_load, ext4_load_inode_bitmap,
+TRACE_EVENT(ext4_read_block_bitmap_load,
+	TP_PROTO(struct super_block *sb, unsigned long group, bool prefetch),
 
-	TP_PROTO(struct super_block *sb, unsigned long group),
+	TP_ARGS(sb, group, prefetch),
 
-	TP_ARGS(sb, group)
+	TP_STRUCT__entry(
+		__field(	dev_t,	dev			)
+		__field(	__u32,	group			)
+		__field(	bool,	prefetch		)
+
+	),
+
+	TP_fast_assign(
+		__entry->dev	= sb->s_dev;
+		__entry->group	= group;
+		__entry->prefetch = prefetch;
+	),
+
+	TP_printk("dev %d,%d group %u prefetch %d",
+		  MAJOR(__entry->dev), MINOR(__entry->dev),
+		  __entry->group, __entry->prefetch)
 );
 
 TRACE_EVENT(ext4_direct_IO_enter,
@@ -1746,15 +1787,16 @@ TRACE_EVENT(ext4_load_inode,
 
 TRACE_EVENT(ext4_journal_start,
 	TP_PROTO(struct super_block *sb, int blocks, int rsv_blocks,
-		 unsigned long IP),
+		 int revoke_creds, unsigned long IP),
 
-	TP_ARGS(sb, blocks, rsv_blocks, IP),
+	TP_ARGS(sb, blocks, rsv_blocks, revoke_creds, IP),
 
 	TP_STRUCT__entry(
 		__field(	dev_t,	dev			)
 		__field(unsigned long,	ip			)
 		__field(	  int,	blocks			)
 		__field(	  int,	rsv_blocks		)
+		__field(	  int,	revoke_creds		)
 	),
 
 	TP_fast_assign(
@@ -1762,11 +1804,13 @@ TRACE_EVENT(ext4_journal_start,
 		__entry->ip		 = IP;
 		__entry->blocks		 = blocks;
 		__entry->rsv_blocks	 = rsv_blocks;
+		__entry->revoke_creds	 = revoke_creds;
 	),
 
-	TP_printk("dev %d,%d blocks, %d rsv_blocks, %d caller %pS",
-		  MAJOR(__entry->dev), MINOR(__entry->dev),
-		  __entry->blocks, __entry->rsv_blocks, (void *)__entry->ip)
+	TP_printk("dev %d,%d blocks %d, rsv_blocks %d, revoke_creds %d, "
+		  "caller %pS", MAJOR(__entry->dev), MINOR(__entry->dev),
+		  __entry->blocks, __entry->rsv_blocks, __entry->revoke_creds,
+		  (void *)__entry->ip)
 );
 
 TRACE_EVENT(ext4_journal_start_reserved,
@@ -2262,7 +2306,7 @@ DECLARE_EVENT_CLASS(ext4__es_extent,
 		__entry->ino	= inode->i_ino;
 		__entry->lblk	= es->es_lblk;
 		__entry->len	= es->es_len;
-		__entry->pblk	= ext4_es_pblock(es);
+		__entry->pblk	= ext4_es_show_pblock(es);
 		__entry->status	= ext4_es_status(es);
 	),
 
@@ -2351,7 +2395,7 @@ TRACE_EVENT(ext4_es_find_extent_range_exit,
 		__entry->ino	= inode->i_ino;
 		__entry->lblk	= es->es_lblk;
 		__entry->len	= es->es_len;
-		__entry->pblk	= ext4_es_pblock(es);
+		__entry->pblk	= ext4_es_show_pblock(es);
 		__entry->status	= ext4_es_status(es);
 	),
 
@@ -2405,7 +2449,7 @@ TRACE_EVENT(ext4_es_lookup_extent_exit,
 		__entry->ino	= inode->i_ino;
 		__entry->lblk	= es->es_lblk;
 		__entry->len	= es->es_len;
-		__entry->pblk	= ext4_es_pblock(es);
+		__entry->pblk	= ext4_es_show_pblock(es);
 		__entry->status	= ext4_es_status(es);
 		__entry->found	= found;
 	),
@@ -2573,7 +2617,7 @@ TRACE_EVENT(ext4_es_insert_delayed_block,
 		__entry->ino		= inode->i_ino;
 		__entry->lblk		= es->es_lblk;
 		__entry->len		= es->es_len;
-		__entry->pblk		= ext4_es_pblock(es);
+		__entry->pblk		= ext4_es_show_pblock(es);
 		__entry->status		= ext4_es_status(es);
 		__entry->allocated	= allocated;
 	),
@@ -2701,6 +2745,50 @@ TRACE_EVENT(ext4_error,
 	TP_printk("dev %d,%d function %s line %u",
 		  MAJOR(__entry->dev), MINOR(__entry->dev),
 		  __entry->function, __entry->line)
+);
+
+TRACE_EVENT(ext4_prefetch_bitmaps,
+	    TP_PROTO(struct super_block *sb, ext4_group_t group,
+		     ext4_group_t next, unsigned int prefetch_ios),
+
+	TP_ARGS(sb, group, next, prefetch_ios),
+
+	TP_STRUCT__entry(
+		__field(	dev_t,	dev			)
+		__field(	__u32,	group			)
+		__field(	__u32,	next			)
+		__field(	__u32,	ios			)
+	),
+
+	TP_fast_assign(
+		__entry->dev	= sb->s_dev;
+		__entry->group	= group;
+		__entry->next	= next;
+		__entry->ios	= prefetch_ios;
+	),
+
+	TP_printk("dev %d,%d group %u next %u ios %u",
+		  MAJOR(__entry->dev), MINOR(__entry->dev),
+		  __entry->group, __entry->next, __entry->ios)
+);
+
+TRACE_EVENT(ext4_lazy_itable_init,
+	    TP_PROTO(struct super_block *sb, ext4_group_t group),
+
+	TP_ARGS(sb, group),
+
+	TP_STRUCT__entry(
+		__field(	dev_t,	dev			)
+		__field(	__u32,	group			)
+	),
+
+	TP_fast_assign(
+		__entry->dev	= sb->s_dev;
+		__entry->group	= group;
+	),
+
+	TP_printk("dev %d,%d group %u",
+		  MAJOR(__entry->dev), MINOR(__entry->dev), __entry->group)
 );
 
 #endif /* _TRACE_EXT4_H */

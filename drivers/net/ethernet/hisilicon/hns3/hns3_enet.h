@@ -8,10 +8,6 @@
 
 #include "hnae3.h"
 
-#define HNS3_MOD_VERSION "1.0"
-
-extern const char hns3_driver_version[];
-
 enum hns3_nic_state {
 	HNS3_NIC_STATE_TESTING,
 	HNS3_NIC_STATE_RESETTING,
@@ -50,23 +46,6 @@ enum hns3_nic_state {
 #define HNS3_RING_CFG_VF_NUM_REG		0x00080
 #define HNS3_RING_ASID_REG			0x0008C
 #define HNS3_RING_EN_REG			0x00090
-#define HNS3_RING_T0_BE_RST			0x00094
-#define HNS3_RING_COULD_BE_RST			0x00098
-#define HNS3_RING_WRR_WEIGHT_REG		0x0009c
-
-#define HNS3_RING_INTMSK_RXWL_REG		0x000A0
-#define HNS3_RING_INTSTS_RX_RING_REG		0x000A4
-#define HNS3_RX_RING_INT_STS_REG		0x000A8
-#define HNS3_RING_INTMSK_TXWL_REG		0x000AC
-#define HNS3_RING_INTSTS_TX_RING_REG		0x000B0
-#define HNS3_TX_RING_INT_STS_REG		0x000B4
-#define HNS3_RING_INTMSK_RX_OVERTIME_REG	0x000B8
-#define HNS3_RING_INTSTS_RX_OVERTIME_REG	0x000BC
-#define HNS3_RING_INTMSK_TX_OVERTIME_REG	0x000C4
-#define HNS3_RING_INTSTS_TX_OVERTIME_REG	0x000C8
-
-#define HNS3_RING_MB_CTRL_REG			0x00100
-#define HNS3_RING_MB_DATA_BASE_REG		0x00200
 
 #define HNS3_TX_REG_OFFSET			0x40
 
@@ -76,7 +55,7 @@ enum hns3_nic_state {
 #define HNS3_RING_NAME_LEN			16
 #define HNS3_BUFFER_SIZE_2048			2048
 #define HNS3_RING_MAX_PENDING			32760
-#define HNS3_RING_MIN_PENDING			24
+#define HNS3_RING_MIN_PENDING			72
 #define HNS3_RING_BD_MULTIPLE			8
 /* max frame size of mac */
 #define HNS3_MAC_MAX_FRAME			9728
@@ -186,8 +165,6 @@ enum hns3_nic_state {
 #define HNS3_TXD_MSS_S				0
 #define HNS3_TXD_MSS_M				(0x3fff << HNS3_TXD_MSS_S)
 
-#define HNS3_TX_LAST_SIZE_M                    0xffff
-
 #define HNS3_VECTOR_TX_IRQ			BIT_ULL(0)
 #define HNS3_VECTOR_RX_IRQ			BIT_ULL(1)
 
@@ -195,9 +172,13 @@ enum hns3_nic_state {
 #define HNS3_VECTOR_INITED			1
 
 #define HNS3_MAX_BD_SIZE			65535
-#define HNS3_MAX_BD_NUM_NORMAL			8
-#define HNS3_MAX_BD_NUM_TSO			63
-#define HNS3_MAX_BD_PER_PKT			MAX_SKB_FRAGS
+#define HNS3_MAX_NON_TSO_BD_NUM			8U
+#define HNS3_MAX_TSO_BD_NUM			63U
+#define HNS3_MAX_TSO_SIZE \
+	(HNS3_MAX_BD_SIZE * HNS3_MAX_TSO_BD_NUM)
+
+#define HNS3_MAX_NON_TSO_SIZE \
+	(HNS3_MAX_BD_SIZE * HNS3_MAX_NON_TSO_BD_NUM)
 
 #define HNS3_VECTOR_GL0_OFFSET			0x100
 #define HNS3_VECTOR_GL1_OFFSET			0x200
@@ -309,7 +290,7 @@ struct hns3_desc_cb {
 
 	u16 reuse_flag;
 
-       /* desc type, used by the ring user to mark the type of the priv data */
+	/* desc type, used by the ring user to mark the type of the priv data */
 	u16 type;
 };
 
@@ -405,6 +386,7 @@ struct hns3_enet_ring {
 	struct hns3_enet_ring *next;
 	struct hns3_enet_tqp_vector *tqp_vector;
 	struct hnae3_queue *tqp;
+	int queue_index;
 	struct device *dev; /* will be used for DMA mapping of descriptors */
 
 	/* statistic */
@@ -423,25 +405,14 @@ struct hns3_enet_ring {
 
 	u32 pull_len; /* head length for current packet */
 	u32 frag_num;
-	unsigned char *va; /* first buffer address for current packet */
+	void *va; /* first buffer address for current packet */
 
 	u32 flag;          /* ring attribute */
 
 	int pending_buf;
 	struct sk_buff *skb;
 	struct sk_buff *tail_skb;
-};
-
-struct hns_queue;
-
-struct hns3_nic_ring_data {
-	struct hns3_enet_ring *ring;
-	struct napi_struct napi;
-	int queue_index;
-	int (*poll_one)(struct hns3_nic_ring_data *, int, void *);
-	void (*ex_process)(struct hns3_nic_ring_data *, struct sk_buff *);
-	void (*fini_process)(struct hns3_nic_ring_data *);
-};
+} ____cacheline_internodealigned_in_smp;
 
 enum hns3_flow_level_range {
 	HNS3_FLOW_LOW = 0,
@@ -496,21 +467,8 @@ struct hns3_enet_tqp_vector {
 	unsigned long last_jiffies;
 } ____cacheline_internodealigned_in_smp;
 
-enum hns3_udp_tnl_type {
-	HNS3_UDP_TNL_VXLAN,
-	HNS3_UDP_TNL_GENEVE,
-	HNS3_UDP_TNL_MAX,
-};
-
-struct hns3_udp_tunnel {
-	u16 dst_port;
-	int used;
-};
-
 struct hns3_nic_priv {
 	struct hnae3_handle *ae_handle;
-	u32 enet_ver;
-	u32 port_id;
 	struct net_device *netdev;
 	struct device *dev;
 
@@ -518,23 +476,14 @@ struct hns3_nic_priv {
 	 * the cb for nic to manage the ring buffer, the first half of the
 	 * array is for tx_ring and vice versa for the second half
 	 */
-	struct hns3_nic_ring_data *ring_data;
+	struct hns3_enet_ring *ring;
 	struct hns3_enet_tqp_vector *tqp_vector;
 	u16 vector_num;
 
-	/* The most recently read link state */
-	int link;
 	u64 tx_timeout_count;
 
 	unsigned long state;
 
-	struct timer_list service_timer;
-
-	struct work_struct service_task;
-
-	struct notifier_block notifier_block;
-	/* Vxlan/Geneve information */
-	struct hns3_udp_tunnel udp_tnl[HNS3_UDP_TNL_MAX];
 	struct hns3_enet_coalesce tx_coal;
 	struct hns3_enet_coalesce rx_coal;
 };
@@ -586,15 +535,6 @@ static inline void hns3_write_reg(void __iomem *base, u32 reg, u32 value)
 	writel(value, reg_addr + reg);
 }
 
-static inline bool hns3_dev_ongoing_func_reset(struct hnae3_ae_dev *ae_dev)
-{
-	return (ae_dev && (ae_dev->reset_type == HNAE3_FUNC_RESET ||
-			   ae_dev->reset_type == HNAE3_FLR_RESET ||
-			   ae_dev->reset_type == HNAE3_VF_FUNC_RESET ||
-			   ae_dev->reset_type == HNAE3_VF_FULL_RESET ||
-			   ae_dev->reset_type == HNAE3_VF_PF_FUNC_RESET));
-}
-
 #define hns3_read_dev(a, reg) \
 	hns3_read_reg((a)->io_base, (reg))
 
@@ -613,10 +553,10 @@ static inline bool hns3_nic_resetting(struct net_device *netdev)
 
 #define ring_to_dev(ring) ((ring)->dev)
 
+#define ring_to_netdev(ring)	((ring)->tqp_vector->napi.dev)
+
 #define ring_to_dma_dir(ring) (HNAE3_IS_TX_RING(ring) ? \
 	DMA_TO_DEVICE : DMA_FROM_DEVICE)
-
-#define tx_ring_data(priv, idx) ((priv)->ring_data[idx])
 
 #define hns3_buf_size(_ring) ((_ring)->buf_size)
 
@@ -668,6 +608,7 @@ void hns3_set_vector_coalesce_rl(struct hns3_enet_tqp_vector *tqp_vector,
 
 void hns3_enable_vlan_filter(struct net_device *netdev, bool enable);
 int hns3_update_promisc_mode(struct net_device *netdev, u8 promisc_flags);
+void hns3_request_update_promisc_mode(struct hnae3_handle *handle);
 
 #ifdef CONFIG_HNS3_DCB
 void hns3_dcbnl_setup(struct hnae3_handle *handle);
@@ -679,4 +620,5 @@ void hns3_dbg_init(struct hnae3_handle *handle);
 void hns3_dbg_uninit(struct hnae3_handle *handle);
 void hns3_dbg_register_debugfs(const char *debugfs_dir_name);
 void hns3_dbg_unregister_debugfs(void);
+void hns3_shinfo_pack(struct skb_shared_info *shinfo, __u32 *size);
 #endif

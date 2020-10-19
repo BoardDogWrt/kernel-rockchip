@@ -483,7 +483,7 @@ static void sgp_init(struct sgp_data *data)
 		data->iaq_defval_skip_jiffies =
 			43 * data->measure_interval_jiffies;
 		break;
-	};
+	}
 }
 
 static const struct iio_info sgp_info = {
@@ -533,7 +533,6 @@ static int sgp_probe(struct i2c_client *client,
 	if (ret)
 		return ret;
 
-	indio_dev->dev.parent = &client->dev;
 	indio_dev->info = &sgp_info;
 	indio_dev->name = id->name;
 	indio_dev->modes = INDIO_DIRECT_MODE;

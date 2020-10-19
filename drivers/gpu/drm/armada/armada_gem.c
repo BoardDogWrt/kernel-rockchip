@@ -256,7 +256,7 @@ int armada_gem_dumb_create(struct drm_file *file, struct drm_device *dev,
 	/* drop reference from allocate - handle holds it now */
 	DRM_DEBUG_DRIVER("obj %p size %zu handle %#x\n", dobj, size, handle);
  err:
-	drm_gem_object_put_unlocked(&dobj->obj);
+	drm_gem_object_put(&dobj->obj);
 	return ret;
 }
 
@@ -288,7 +288,7 @@ int armada_gem_create_ioctl(struct drm_device *dev, void *data,
 	/* drop reference from allocate - handle holds it now */
 	DRM_DEBUG_DRIVER("obj %p size %zu handle %#x\n", dobj, size, handle);
  err:
-	drm_gem_object_put_unlocked(&dobj->obj);
+	drm_gem_object_put(&dobj->obj);
 	return ret;
 }
 
@@ -305,13 +305,13 @@ int armada_gem_mmap_ioctl(struct drm_device *dev, void *data,
 		return -ENOENT;
 
 	if (!dobj->obj.filp) {
-		drm_gem_object_put_unlocked(&dobj->obj);
+		drm_gem_object_put(&dobj->obj);
 		return -EINVAL;
 	}
 
 	addr = vm_mmap(dobj->obj.filp, 0, args->size, PROT_READ | PROT_WRITE,
 		       MAP_SHARED, args->offset);
-	drm_gem_object_put_unlocked(&dobj->obj);
+	drm_gem_object_put(&dobj->obj);
 	if (IS_ERR_VALUE(addr))
 		return addr;
 
@@ -366,7 +366,7 @@ int armada_gem_pwrite_ioctl(struct drm_device *dev, void *data,
 	}
 
  unref:
-	drm_gem_object_put_unlocked(&dobj->obj);
+	drm_gem_object_put(&dobj->obj);
 	return ret;
 }
 
@@ -461,16 +461,6 @@ static void armada_gem_prime_unmap_dma_buf(struct dma_buf_attachment *attach,
 	kfree(sgt);
 }
 
-static void *armada_gem_dmabuf_no_kmap(struct dma_buf *buf, unsigned long n)
-{
-	return NULL;
-}
-
-static void
-armada_gem_dmabuf_no_kunmap(struct dma_buf *buf, unsigned long n, void *addr)
-{
-}
-
 static int
 armada_gem_dmabuf_mmap(struct dma_buf *buf, struct vm_area_struct *vma)
 {
@@ -481,8 +471,6 @@ static const struct dma_buf_ops armada_gem_prime_dmabuf_ops = {
 	.map_dma_buf	= armada_gem_prime_map_dma_buf,
 	.unmap_dma_buf	= armada_gem_prime_unmap_dma_buf,
 	.release	= drm_gem_dmabuf_release,
-	.map		= armada_gem_dmabuf_no_kmap,
-	.unmap		= armada_gem_dmabuf_no_kunmap,
 	.mmap		= armada_gem_dmabuf_mmap,
 };
 

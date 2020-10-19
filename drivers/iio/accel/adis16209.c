@@ -243,6 +243,12 @@ static const char * const adis16209_status_error_msgs[] = {
 	[ADIS16209_STAT_POWER_LOW_BIT] = "Power supply below 2.975V",
 };
 
+static const struct adis_timeout adis16209_timeouts = {
+	.reset_ms = ADIS16209_STARTUP_DELAY_MS,
+	.self_test_ms = ADIS16209_STARTUP_DELAY_MS,
+	.sw_reset_ms = ADIS16209_STARTUP_DELAY_MS,
+};
+
 static const struct adis_data adis16209_data = {
 	.read_delay = 30,
 	.msc_ctrl_reg = ADIS16209_MSC_CTRL_REG,
@@ -250,8 +256,9 @@ static const struct adis_data adis16209_data = {
 	.diag_stat_reg = ADIS16209_STAT_REG,
 
 	.self_test_mask = ADIS16209_MSC_CTRL_SELF_TEST_EN,
+	.self_test_reg = ADIS16209_MSC_CTRL_REG,
 	.self_test_no_autoclear = true,
-	.startup_delay = ADIS16209_STARTUP_DELAY_MS,
+	.timeouts = &adis16209_timeouts,
 
 	.status_error_msgs = adis16209_status_error_msgs,
 	.status_error_mask = BIT(ADIS16209_STAT_SELFTEST_FAIL_BIT) |
@@ -275,7 +282,6 @@ static int adis16209_probe(struct spi_device *spi)
 	spi_set_drvdata(spi, indio_dev);
 
 	indio_dev->name = spi->dev.driver->name;
-	indio_dev->dev.parent = &spi->dev;
 	indio_dev->info = &adis16209_info;
 	indio_dev->channels = adis16209_channels;
 	indio_dev->num_channels = ARRAY_SIZE(adis16209_channels);

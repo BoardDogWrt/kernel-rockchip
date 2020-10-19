@@ -5,7 +5,7 @@
 #define VCHIQ_IOCTLS_H
 
 #include <linux/ioctl.h>
-#include "vchiq_if.h"
+#include <linux/raspberrypi/vchiq.h>
 
 #define VCHIQ_IOC_MAGIC 0xc4
 #define VCHIQ_INVALID_HANDLE (~0)
@@ -28,11 +28,11 @@ struct vchiq_queue_bulk_transfer {
 	void *data;
 	unsigned int size;
 	void *userdata;
-	VCHIQ_BULK_MODE_T mode;
+	enum vchiq_bulk_mode mode;
 };
 
 struct vchiq_completion_data {
-	VCHIQ_REASON_T reason;
+	enum vchiq_reason reason;
 	struct vchiq_header *header;
 	void *service_userdata;
 	void *bulk_userdata;
@@ -60,7 +60,7 @@ struct vchiq_get_config {
 
 struct vchiq_set_service_option {
 	unsigned int handle;
-	VCHIQ_SERVICE_OPTION_T option;
+	enum vchiq_service_option option;
 	int value;
 };
 

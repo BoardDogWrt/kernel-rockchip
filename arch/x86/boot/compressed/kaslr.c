@@ -19,13 +19,6 @@
  */
 #define BOOT_CTYPE_H
 
-/*
- * _ctype[] in lib/ctype.c is needed by isspace() of linux/ctype.h.
- * While both lib/ctype.c and lib/cmdline.c will bring EXPORT_SYMBOL
- * which is meaningless and will cause compiling error in some cases.
- */
-#define __DISABLE_EXPORTS
-
 #include "misc.h"
 #include "error.h"
 #include "../string.h"
@@ -132,8 +125,14 @@ char *skip_spaces(const char *str)
 #include "../../../../lib/ctype.c"
 #include "../../../../lib/cmdline.c"
 
+enum parse_mode {
+	PARSE_MEMMAP,
+	PARSE_EFI,
+};
+
 static int
-parse_memmap(char *p, unsigned long long *start, unsigned long long *size)
+parse_memmap(char *p, unsigned long long *start, unsigned long long *size,
+		enum parse_mode mode)
 {
 	char *oldp;
 
@@ -156,9 +155,30 @@ parse_memmap(char *p, unsigned long long *start, unsigned long long *size)
 		*start = memparse(p + 1, &p);
 		return 0;
 	case '@':
-		/* memmap=nn@ss specifies usable region, should be skipped */
-		*size = 0;
-		/* Fall through */
+		if (mode == PARSE_MEMMAP) {
+			/*
+			 * memmap=nn@ss specifies usable region, should
+			 * be skipped
+			 */
+			*size = 0;
+		} else {
+			unsigned long long flags;
+
+			/*
+			 * efi_fake_mem=nn@ss:attr the attr specifies
+			 * flags that might imply a soft-reservation.
+			 */
+			*start = memparse(p + 1, &p);
+			if (p && *p == ':') {
+				p++;
+				if (kstrtoull(p, 0, &flags) < 0)
+					*size = 0;
+				else if (flags & EFI_MEMORY_SP)
+					return 0;
+			}
+			*size = 0;
+		}
+		fallthrough;
 	default:
 		/*
 		 * If w/o offset, only size specified, memmap=nn[KMG] has the
@@ -172,7 +192,7 @@ parse_memmap(char *p, unsigned long long *start, unsigned long long *size)
 	return -EINVAL;
 }
 
-static void mem_avoid_memmap(char *str)
+static void mem_avoid_memmap(enum parse_mode mode, char *str)
 {
 	static int i;
 
@@ -187,7 +207,7 @@ static void mem_avoid_memmap(char *str)
 		if (k)
 			*k++ = 0;
 
-		rc = parse_memmap(str, &start, &size);
+		rc = parse_memmap(str, &start, &size, mode);
 		if (rc < 0)
 			break;
 		str = k;
@@ -238,7 +258,6 @@ static void parse_gb_huge_pages(char *param, char *val)
 	}
 }
 
-
 static void handle_mem_options(void)
 {
 	char *args = (char *)get_cmd_line_ptr();
@@ -271,7 +290,7 @@ static void handle_mem_options(void)
 		}
 
 		if (!strcmp(param, "memmap")) {
-			mem_avoid_memmap(val);
+			mem_avoid_memmap(PARSE_MEMMAP, val);
 		} else if (strstr(param, "hugepages")) {
 			parse_gb_huge_pages(param, val);
 		} else if (!strcmp(param, "mem")) {
@@ -284,6 +303,8 @@ static void handle_mem_options(void)
 				goto out;
 
 			mem_limit = mem_size;
+		} else if (!strcmp(param, "efi_fake_mem")) {
+			mem_avoid_memmap(PARSE_EFI, val);
 		}
 	}
 
@@ -457,6 +478,18 @@ static bool mem_avoid_overlap(struct mem_vector *img,
 			*overlap = avoid;
 			earliest = overlap->start;
 			is_overlapping = true;
+		}
+
+		if (ptr->type == SETUP_INDIRECT &&
+		    ((struct setup_indirect *)ptr->data)->type != SETUP_INDIRECT) {
+			avoid.start = ((struct setup_indirect *)ptr->data)->addr;
+			avoid.size = ((struct setup_indirect *)ptr->data)->len;
+
+			if (mem_overlaps(img, &avoid) && (avoid.start < earliest)) {
+				*overlap = avoid;
+				earliest = overlap->start;
+				is_overlapping = true;
+			}
 		}
 
 		ptr = (struct setup_data *)(unsigned long)ptr->next;
@@ -758,6 +791,10 @@ process_efi_entries(unsigned long minimum, unsigned long image_size)
 		 * Only EFI_CONVENTIONAL_MEMORY is guaranteed to be free.
 		 */
 		if (md->type != EFI_CONVENTIONAL_MEMORY)
+			continue;
+
+		if (efi_soft_reserve_enabled() &&
+		    (md->attribute & EFI_MEMORY_SP))
 			continue;
 
 		if (efi_mirror_found &&

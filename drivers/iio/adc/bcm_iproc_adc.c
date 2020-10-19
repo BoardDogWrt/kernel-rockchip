@@ -308,7 +308,7 @@ static int iproc_adc_do_read(struct iio_dev *indio_dev,
 				"IntMask set failed. Read will likely fail.");
 			read_len = -EIO;
 			goto adc_err;
-		};
+		}
 	}
 	regmap_read(adc_priv->regmap, IPROC_INTERRUPT_MASK, &val_check);
 
@@ -573,8 +573,6 @@ static int iproc_adc_probe(struct platform_device *pdev)
 	}
 
 	indio_dev->name = "iproc-static-adc";
-	indio_dev->dev.parent = &pdev->dev;
-	indio_dev->dev.of_node = pdev->dev.of_node;
 	indio_dev->info = &iproc_adc_iio_info;
 	indio_dev->modes = INDIO_DIRECT_MODE;
 	indio_dev->channels = iproc_adc_iio_channels;

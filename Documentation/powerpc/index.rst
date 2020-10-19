@@ -18,8 +18,11 @@ powerpc
     elfnote
     firmware-assisted-dump
     hvcs
+    imc
     isa-versions
+    kaslr-booke32
     mpc52xx
+    papr_hcalls
     pci_iov_resource_on_powernv
     pmu-ebb
     ptrace
@@ -27,6 +30,8 @@ powerpc
     syscall64-abi
     transactional_memory
     ultravisor
+    vas-api
+    vcpudispatch_stats
 
 .. only::  subproject and html
 

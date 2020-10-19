@@ -458,17 +458,16 @@ static __init int px30_dfi_init(struct platform_device *pdev,
 				  struct devfreq_event_desc *desc)
 {
 	struct device_node *np = pdev->dev.of_node, *node;
-	struct resource *res;
 	u32 val;
 
-	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	data->regs = devm_ioremap_resource(&pdev->dev, res);
+	data->regs = devm_platform_ioremap_resource(pdev, 0);
 	if (IS_ERR(data->regs))
 		return PTR_ERR(data->regs);
 
 	node = of_parse_phandle(np, "rockchip,pmugrf", 0);
 	if (node) {
 		data->regmap_pmugrf = syscon_node_to_regmap(node);
+		of_node_put(node);
 		if (IS_ERR(data->regmap_pmugrf))
 			return PTR_ERR(data->regmap_pmugrf);
 	}
@@ -492,6 +491,7 @@ static __init int rk3128_dfi_init(struct platform_device *pdev,
 	node = of_parse_phandle(np, "rockchip,grf", 0);
 	if (node) {
 		data->regmap_grf = syscon_node_to_regmap(node);
+		of_node_put(node);
 		if (IS_ERR(data->regmap_grf))
 			return PTR_ERR(data->regmap_grf);
 	}
@@ -511,6 +511,7 @@ static __init int rk3288_dfi_init(struct platform_device *pdev,
 	node = of_parse_phandle(np, "rockchip,pmu", 0);
 	if (node) {
 		data->regmap_pmu = syscon_node_to_regmap(node);
+		of_node_put(node);
 		if (IS_ERR(data->regmap_pmu))
 			return PTR_ERR(data->regmap_pmu);
 	}
@@ -518,6 +519,7 @@ static __init int rk3288_dfi_init(struct platform_device *pdev,
 	node = of_parse_phandle(np, "rockchip,grf", 0);
 	if (node) {
 		data->regmap_grf = syscon_node_to_regmap(node);
+		of_node_put(node);
 		if (IS_ERR(data->regmap_grf))
 			return PTR_ERR(data->regmap_grf);
 	}
@@ -534,6 +536,35 @@ static __init int rk3288_dfi_init(struct platform_device *pdev,
 			     RK3288_LPDDR_SEL);
 
 	desc->ops = &rk3288_dfi_ops;
+
+	return 0;
+}
+
+static __init int rk3328_dfi_init(struct platform_device *pdev,
+				  struct rockchip_dfi *data,
+				  struct devfreq_event_desc *desc)
+{
+	struct device_node *np = pdev->dev.of_node, *node;
+	u32 val;
+
+	data->regs = devm_platform_ioremap_resource(pdev, 0);
+	if (IS_ERR(data->regs))
+		return PTR_ERR(data->regs);
+
+	node = of_parse_phandle(np, "rockchip,grf", 0);
+	if (node) {
+		data->regmap_grf = syscon_node_to_regmap(node);
+		of_node_put(node);
+		if (IS_ERR(data->regmap_grf))
+			return PTR_ERR(data->regmap_grf);
+	}
+
+	regmap_read(data->regmap_grf, RK3328_GRF_OS_REG2, &val);
+	data->dram_type = READ_DRAMTYPE_INFO(val);
+	data->ch_msk = 1;
+	data->clk = NULL;
+
+	desc->ops = &rockchip_dfi_ops;
 
 	return 0;
 }
@@ -561,12 +592,10 @@ static __init int rockchip_dfi_init(struct platform_device *pdev,
 				    struct devfreq_event_desc *desc)
 {
 	struct device *dev = &pdev->dev;
-	struct resource *res;
 	struct device_node *np = pdev->dev.of_node, *node;
 	u32 val;
 
-	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	data->regs = devm_ioremap_resource(&pdev->dev, res);
+	data->regs = devm_platform_ioremap_resource(pdev, 0);
 	if (IS_ERR(data->regs))
 		return PTR_ERR(data->regs);
 
@@ -580,6 +609,7 @@ static __init int rockchip_dfi_init(struct platform_device *pdev,
 	node = of_parse_phandle(np, "rockchip,pmu", 0);
 	if (node) {
 		data->regmap_pmu = syscon_node_to_regmap(node);
+		of_node_put(node);
 		if (IS_ERR(data->regmap_pmu))
 			return PTR_ERR(data->regmap_pmu);
 	}
@@ -587,36 +617,6 @@ static __init int rockchip_dfi_init(struct platform_device *pdev,
 	regmap_read(data->regmap_pmu, PMUGRF_OS_REG2, &val);
 	data->dram_type = READ_DRAMTYPE_INFO(val);
 	data->ch_msk = READ_CH_INFO(val);
-
-	desc->ops = &rockchip_dfi_ops;
-
-	return 0;
-}
-
-static __init int rk3328_dfi_init(struct platform_device *pdev,
-				  struct rockchip_dfi *data,
-				  struct devfreq_event_desc *desc)
-{
-	struct device_node *np = pdev->dev.of_node, *node;
-	struct resource *res;
-	u32 val;
-
-	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	data->regs = devm_ioremap_resource(&pdev->dev, res);
-	if (IS_ERR(data->regs))
-		return PTR_ERR(data->regs);
-
-	node = of_parse_phandle(np, "rockchip,grf", 0);
-	if (node) {
-		data->regmap_grf = syscon_node_to_regmap(node);
-		if (IS_ERR(data->regmap_grf))
-			return PTR_ERR(data->regmap_grf);
-	}
-
-	regmap_read(data->regmap_grf, RK3328_GRF_OS_REG2, &val);
-	data->dram_type = READ_DRAMTYPE_INFO(val);
-	data->ch_msk = 1;
-	data->clk = NULL;
 
 	desc->ops = &rockchip_dfi_ops;
 

@@ -647,10 +647,10 @@ static int rocker_dma_rings_init(struct rocker *rocker)
 err_dma_event_ring_bufs_alloc:
 	rocker_dma_ring_destroy(rocker, &rocker->event_ring);
 err_dma_event_ring_create:
+	rocker_dma_cmd_ring_waits_free(rocker);
+err_dma_cmd_ring_waits_alloc:
 	rocker_dma_ring_bufs_free(rocker, &rocker->cmd_ring,
 				  PCI_DMA_BIDIRECTIONAL);
-err_dma_cmd_ring_waits_alloc:
-	rocker_dma_cmd_ring_waits_free(rocker);
 err_dma_cmd_ring_bufs_alloc:
 	rocker_dma_ring_destroy(rocker, &rocker->cmd_ring);
 	return err;
@@ -2159,7 +2159,7 @@ static void rocker_router_fib_event_work(struct work_struct *work)
 	/* Protect internal structures from changes */
 	rtnl_lock();
 	switch (fib_work->event) {
-	case FIB_EVENT_ENTRY_ADD:
+	case FIB_EVENT_ENTRY_REPLACE:
 		err = rocker_world_fib4_add(rocker, &fib_work->fen_info);
 		if (err)
 			rocker_world_fib4_abort(rocker);
@@ -2169,7 +2169,7 @@ static void rocker_router_fib_event_work(struct work_struct *work)
 		rocker_world_fib4_del(rocker, &fib_work->fen_info);
 		fib_info_put(fib_work->fen_info.fi);
 		break;
-	case FIB_EVENT_RULE_ADD: /* fall through */
+	case FIB_EVENT_RULE_ADD:
 	case FIB_EVENT_RULE_DEL:
 		rule = fib_work->fr_info.rule;
 		if (!fib4_rule_default(rule))
@@ -2189,9 +2189,6 @@ static int rocker_router_fib_event(struct notifier_block *nb,
 	struct rocker_fib_event_work *fib_work;
 	struct fib_notifier_info *info = ptr;
 
-	if (!net_eq(info->net, &init_net))
-		return NOTIFY_DONE;
-
 	if (info->family != AF_INET)
 		return NOTIFY_DONE;
 
@@ -2204,7 +2201,7 @@ static int rocker_router_fib_event(struct notifier_block *nb,
 	fib_work->event = event;
 
 	switch (event) {
-	case FIB_EVENT_ENTRY_ADD: /* fall through */
+	case FIB_EVENT_ENTRY_REPLACE:
 	case FIB_EVENT_ENTRY_DEL:
 		if (info->family == AF_INET) {
 			struct fib_entry_notifier_info *fen_info = ptr;
@@ -2227,7 +2224,7 @@ static int rocker_router_fib_event(struct notifier_block *nb,
 		 */
 		fib_info_hold(fib_work->fen_info.fi);
 		break;
-	case FIB_EVENT_RULE_ADD: /* fall through */
+	case FIB_EVENT_RULE_ADD:
 	case FIB_EVENT_RULE_DEL:
 		memcpy(&fib_work->fr_info, ptr, sizeof(fib_work->fr_info));
 		fib_rule_get(fib_work->fr_info.rule);
@@ -2814,7 +2811,7 @@ static int rocker_switchdev_event(struct notifier_block *unused,
 	switchdev_work->event = event;
 
 	switch (event) {
-	case SWITCHDEV_FDB_ADD_TO_DEVICE: /* fall through */
+	case SWITCHDEV_FDB_ADD_TO_DEVICE:
 	case SWITCHDEV_FDB_DEL_TO_DEVICE:
 		memcpy(&switchdev_work->fdb_info, ptr,
 		       sizeof(switchdev_work->fdb_info));
@@ -2994,7 +2991,7 @@ static int rocker_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	 * the device, so no need to pass a callback.
 	 */
 	rocker->fib_nb.notifier_call = rocker_router_fib_event;
-	err = register_fib_notifier(&rocker->fib_nb, NULL);
+	err = register_fib_notifier(&init_net, &rocker->fib_nb, NULL, NULL);
 	if (err)
 		goto err_register_fib_notifier;
 
@@ -3021,7 +3018,7 @@ static int rocker_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 err_register_switchdev_blocking_notifier:
 	unregister_switchdev_notifier(&rocker_switchdev_notifier);
 err_register_switchdev_notifier:
-	unregister_fib_notifier(&rocker->fib_nb);
+	unregister_fib_notifier(&init_net, &rocker->fib_nb);
 err_register_fib_notifier:
 	rocker_remove_ports(rocker);
 err_probe_ports:
@@ -3057,7 +3054,7 @@ static void rocker_remove(struct pci_dev *pdev)
 	unregister_switchdev_blocking_notifier(nb);
 
 	unregister_switchdev_notifier(&rocker_switchdev_notifier);
-	unregister_fib_notifier(&rocker->fib_nb);
+	unregister_fib_notifier(&init_net, &rocker->fib_nb);
 	rocker_remove_ports(rocker);
 	rocker_write32(rocker, CONTROL, ROCKER_CONTROL_RESET);
 	destroy_workqueue(rocker->rocker_owq);
@@ -3102,9 +3099,10 @@ struct rocker_walk_data {
 	struct rocker_port *port;
 };
 
-static int rocker_lower_dev_walk(struct net_device *lower_dev, void *_data)
+static int rocker_lower_dev_walk(struct net_device *lower_dev,
+				 struct netdev_nested_priv *priv)
 {
-	struct rocker_walk_data *data = _data;
+	struct rocker_walk_data *data = (struct rocker_walk_data *)priv->data;
 	int ret = 0;
 
 	if (rocker_port_dev_check_under(lower_dev, data->rocker)) {
@@ -3118,6 +3116,7 @@ static int rocker_lower_dev_walk(struct net_device *lower_dev, void *_data)
 struct rocker_port *rocker_port_dev_lower_find(struct net_device *dev,
 					       struct rocker *rocker)
 {
+	struct netdev_nested_priv priv;
 	struct rocker_walk_data data;
 
 	if (rocker_port_dev_check_under(dev, rocker))
@@ -3125,7 +3124,8 @@ struct rocker_port *rocker_port_dev_lower_find(struct net_device *dev,
 
 	data.rocker = rocker;
 	data.port = NULL;
-	netdev_walk_all_lower_dev(dev, rocker_lower_dev_walk, &data);
+	priv.data = (void *)&data;
+	netdev_walk_all_lower_dev(dev, rocker_lower_dev_walk, &priv);
 
 	return data.port;
 }

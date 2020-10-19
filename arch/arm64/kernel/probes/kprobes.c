@@ -120,15 +120,9 @@ int __kprobes arch_prepare_kprobe(struct kprobe *p)
 
 void *alloc_insn_page(void)
 {
-	void *page;
-
-	page = vmalloc_exec(PAGE_SIZE);
-	if (page) {
-		set_memory_ro((unsigned long)page, 1);
-		set_vm_flush_reset_perms(page);
-	}
-
-	return page;
+	return __vmalloc_node_range(PAGE_SIZE, 1, VMALLOC_START, VMALLOC_END,
+			GFP_KERNEL, PAGE_KERNEL_ROX, VM_FLUSH_RESET_PERMS,
+			NUMA_NO_NODE, __builtin_return_address(0));
 }
 
 /* arm kprobe: install breakpoint in text */
@@ -453,10 +447,6 @@ int __init arch_populate_kprobe_blacklist(void)
 		return ret;
 	ret = kprobe_add_area_blacklist((unsigned long)__irqentry_text_start,
 					(unsigned long)__irqentry_text_end);
-	if (ret)
-		return ret;
-	ret = kprobe_add_area_blacklist((unsigned long)__exception_text_start,
-					(unsigned long)__exception_text_end);
 	if (ret)
 		return ret;
 	ret = kprobe_add_area_blacklist((unsigned long)__idmap_text_start,

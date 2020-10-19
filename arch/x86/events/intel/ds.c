@@ -7,6 +7,7 @@
 #include <asm/perf_event.h>
 #include <asm/tlbflush.h>
 #include <asm/insn.h>
+#include <asm/io.h>
 
 #include "../perf_event.h"
 
@@ -953,7 +954,7 @@ static void adaptive_pebs_record_size_update(void)
 	if (pebs_data_cfg & PEBS_DATACFG_XMMS)
 		sz += sizeof(struct pebs_xmm);
 	if (pebs_data_cfg & PEBS_DATACFG_LBRS)
-		sz += x86_pmu.lbr_nr * sizeof(struct pebs_lbr_entry);
+		sz += x86_pmu.lbr_nr * sizeof(struct lbr_entry);
 
 	cpuc->pebs_record_size = sz;
 }
@@ -1594,10 +1595,10 @@ static void setup_pebs_adaptive_sample_data(struct perf_event *event,
 	}
 
 	if (format_size & PEBS_DATACFG_LBRS) {
-		struct pebs_lbr *lbr = next_record;
+		struct lbr_entry *lbr = next_record;
 		int num_lbr = ((format_size >> PEBS_DATACFG_LBR_SHIFT)
 					& 0xff) + 1;
-		next_record = next_record + num_lbr*sizeof(struct pebs_lbr_entry);
+		next_record = next_record + num_lbr * sizeof(struct lbr_entry);
 
 		if (has_branch_stack(event)) {
 			intel_pmu_store_pebs_lbrs(lbr);
@@ -1712,6 +1713,8 @@ intel_pmu_save_and_restart_reload(struct perf_event *event, int count)
 	new = ((s64)(new_raw_count << shift) >> shift);
 	old = ((s64)(prev_raw_count << shift) >> shift);
 	local64_add(new - old + count * period, &event->count);
+
+	local64_set(&hwc->period_left, -new);
 
 	perf_event_update_userpage(event);
 

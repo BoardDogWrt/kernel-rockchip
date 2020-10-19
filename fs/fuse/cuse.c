@@ -270,7 +270,7 @@ static int cuse_parse_one(char **pp, char *end, char **keyp, char **valp)
 static int cuse_parse_devinfo(char *p, size_t len, struct cuse_devinfo *devinfo)
 {
 	char *end = p + len;
-	char *uninitialized_var(key), *uninitialized_var(val);
+	char *key, *val;
 	int rc;
 
 	while (true) {
@@ -451,8 +451,8 @@ static int cuse_send_init(struct cuse_conn *cc)
 	ap->args.out_args[0].size = sizeof(ia->out);
 	ap->args.out_args[0].value = &ia->out;
 	ap->args.out_args[1].size = CUSE_INIT_INFO_MAX;
-	ap->args.out_argvar = 1;
-	ap->args.out_pages = 1;
+	ap->args.out_argvar = true;
+	ap->args.out_pages = true;
 	ap->num_pages = 1;
 	ap->pages = &ia->page;
 	ap->descs = &ia->desc;

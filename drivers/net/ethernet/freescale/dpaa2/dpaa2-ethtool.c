@@ -43,9 +43,10 @@ static char dpaa2_ethtool_extras[][ETH_GSTRING_LEN] = {
 	"[drv] tx conf bytes",
 	"[drv] tx sg frames",
 	"[drv] tx sg bytes",
-	"[drv] tx realloc frames",
 	"[drv] rx sg frames",
 	"[drv] rx sg bytes",
+	"[drv] tx converted sg frames",
+	"[drv] tx converted sg bytes",
 	"[drv] enqueue portal busy",
 	/* Channel stats */
 	"[drv] dequeue portal busy",
@@ -79,11 +80,25 @@ static void dpaa2_eth_get_drvinfo(struct net_device *net_dev,
 		sizeof(drvinfo->bus_info));
 }
 
+static int dpaa2_eth_nway_reset(struct net_device *net_dev)
+{
+	struct dpaa2_eth_priv *priv = netdev_priv(net_dev);
+
+	if (priv->mac)
+		return phylink_ethtool_nway_reset(priv->mac->phylink);
+
+	return -EOPNOTSUPP;
+}
+
 static int
 dpaa2_eth_get_link_ksettings(struct net_device *net_dev,
 			     struct ethtool_link_ksettings *link_settings)
 {
 	struct dpaa2_eth_priv *priv = netdev_priv(net_dev);
+
+	if (priv->mac)
+		return phylink_ethtool_ksettings_get(priv->mac->phylink,
+						     link_settings);
 
 	link_settings->base.autoneg = AUTONEG_DISABLE;
 	if (!(priv->link_state.options & DPNI_LINK_OPT_HALF_DUPLEX))
@@ -93,15 +108,31 @@ dpaa2_eth_get_link_ksettings(struct net_device *net_dev,
 	return 0;
 }
 
+static int
+dpaa2_eth_set_link_ksettings(struct net_device *net_dev,
+			     const struct ethtool_link_ksettings *link_settings)
+{
+	struct dpaa2_eth_priv *priv = netdev_priv(net_dev);
+
+	if (!priv->mac)
+		return -ENOTSUPP;
+
+	return phylink_ethtool_ksettings_set(priv->mac->phylink, link_settings);
+}
+
 static void dpaa2_eth_get_pauseparam(struct net_device *net_dev,
 				     struct ethtool_pauseparam *pause)
 {
 	struct dpaa2_eth_priv *priv = netdev_priv(net_dev);
 	u64 link_options = priv->link_state.options;
 
-	pause->rx_pause = !!(link_options & DPNI_LINK_OPT_PAUSE);
-	pause->tx_pause = pause->rx_pause ^
-			  !!(link_options & DPNI_LINK_OPT_ASYM_PAUSE);
+	if (priv->mac) {
+		phylink_ethtool_get_pauseparam(priv->mac->phylink, pause);
+		return;
+	}
+
+	pause->rx_pause = dpaa2_eth_rx_pause_enabled(link_options);
+	pause->tx_pause = dpaa2_eth_tx_pause_enabled(link_options);
 	pause->autoneg = AUTONEG_DISABLE;
 }
 
@@ -118,6 +149,9 @@ static int dpaa2_eth_set_pauseparam(struct net_device *net_dev,
 		return -EOPNOTSUPP;
 	}
 
+	if (priv->mac)
+		return phylink_ethtool_set_pauseparam(priv->mac->phylink,
+						      pause);
 	if (pause->autoneg)
 		return -EOPNOTSUPP;
 
@@ -149,6 +183,7 @@ static int dpaa2_eth_set_pauseparam(struct net_device *net_dev,
 static void dpaa2_eth_get_strings(struct net_device *netdev, u32 stringset,
 				  u8 *data)
 {
+	struct dpaa2_eth_priv *priv = netdev_priv(netdev);
 	u8 *p = data;
 	int i;
 
@@ -162,15 +197,22 @@ static void dpaa2_eth_get_strings(struct net_device *netdev, u32 stringset,
 			strlcpy(p, dpaa2_ethtool_extras[i], ETH_GSTRING_LEN);
 			p += ETH_GSTRING_LEN;
 		}
+		if (priv->mac)
+			dpaa2_mac_get_strings(p);
 		break;
 	}
 }
 
 static int dpaa2_eth_get_sset_count(struct net_device *net_dev, int sset)
 {
+	int num_ss_stats = DPAA2_ETH_NUM_STATS + DPAA2_ETH_NUM_EXTRA_STATS;
+	struct dpaa2_eth_priv *priv = netdev_priv(net_dev);
+
 	switch (sset) {
 	case ETH_SS_STATS: /* ethtool_get_stats(), ethtool_get_drvinfo() */
-		return DPAA2_ETH_NUM_STATS + DPAA2_ETH_NUM_EXTRA_STATS;
+		if (priv->mac)
+			num_ss_stats += dpaa2_mac_get_sset_count();
+		return num_ss_stats;
 	default:
 		return -EOPNOTSUPP;
 	}
@@ -216,7 +258,7 @@ static void dpaa2_eth_get_ethtool_stats(struct net_device *net_dev,
 		if (err == -EINVAL)
 			/* Older firmware versions don't support all pages */
 			memset(&dpni_stats, 0, sizeof(dpni_stats));
-		else
+		else if (err)
 			netdev_warn(net_dev, "dpni_get_stats(%d) failed\n", j);
 
 		num_cnt = dpni_stats_page_size[j] / sizeof(u64);
@@ -235,7 +277,7 @@ static void dpaa2_eth_get_ethtool_stats(struct net_device *net_dev,
 	/* Per-channel stats */
 	for (k = 0; k < priv->num_channels; k++) {
 		ch_stats = &priv->channel[k]->stats;
-		for (j = 0; j < sizeof(*ch_stats) / sizeof(__u64); j++)
+		for (j = 0; j < sizeof(*ch_stats) / sizeof(__u64) - 1; j++)
 			*((__u64 *)data + i + j) += *((__u64 *)ch_stats + j);
 	}
 	i += j;
@@ -269,6 +311,9 @@ static void dpaa2_eth_get_ethtool_stats(struct net_device *net_dev,
 		return;
 	}
 	*(data + i++) = buf_cnt;
+
+	if (priv->mac)
+		dpaa2_mac_get_ethtool_stats(priv->mac, data + i);
 }
 
 static int prep_eth_rule(struct ethhdr *eth_value, struct ethhdr *eth_mask,
@@ -502,7 +547,7 @@ static int do_cls_rule(struct net_device *net_dev,
 	dma_addr_t key_iova;
 	u64 fields = 0;
 	void *key_buf;
-	int err;
+	int i, err;
 
 	if (fs->ring_cookie != RX_CLS_FLOW_DISC &&
 	    fs->ring_cookie >= dpaa2_eth_queue_count(priv))
@@ -562,11 +607,18 @@ static int do_cls_rule(struct net_device *net_dev,
 			fs_act.options |= DPNI_FS_OPT_DISCARD;
 		else
 			fs_act.flow_id = fs->ring_cookie;
-		err = dpni_add_fs_entry(priv->mc_io, 0, priv->mc_token, 0,
-					fs->location, &rule_cfg, &fs_act);
-	} else {
-		err = dpni_remove_fs_entry(priv->mc_io, 0, priv->mc_token, 0,
-					   &rule_cfg);
+	}
+	for (i = 0; i < dpaa2_eth_tc_count(priv); i++) {
+		if (add)
+			err = dpni_add_fs_entry(priv->mc_io, 0, priv->mc_token,
+						i, fs->location, &rule_cfg,
+						&fs_act);
+		else
+			err = dpni_remove_fs_entry(priv->mc_io, 0,
+						   priv->mc_token, i,
+						   &rule_cfg);
+		if (err)
+			break;
 	}
 
 	dma_unmap_single(dev, key_iova, rule_cfg.key_size * 2, DMA_TO_DEVICE);
@@ -590,7 +642,7 @@ static int num_rules(struct dpaa2_eth_priv *priv)
 
 static int update_cls_rule(struct net_device *net_dev,
 			   struct ethtool_rx_flow_spec *new_fs,
-			   int location)
+			   unsigned int location)
 {
 	struct dpaa2_eth_priv *priv = netdev_priv(net_dev);
 	struct dpaa2_eth_cls_rule *rule;
@@ -726,8 +778,10 @@ static int dpaa2_eth_get_ts_info(struct net_device *dev,
 
 const struct ethtool_ops dpaa2_ethtool_ops = {
 	.get_drvinfo = dpaa2_eth_get_drvinfo,
+	.nway_reset = dpaa2_eth_nway_reset,
 	.get_link = ethtool_op_get_link,
 	.get_link_ksettings = dpaa2_eth_get_link_ksettings,
+	.set_link_ksettings = dpaa2_eth_set_link_ksettings,
 	.get_pauseparam = dpaa2_eth_get_pauseparam,
 	.set_pauseparam = dpaa2_eth_set_pauseparam,
 	.get_sset_count = dpaa2_eth_get_sset_count,

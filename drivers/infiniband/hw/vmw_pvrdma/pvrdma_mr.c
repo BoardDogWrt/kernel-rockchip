@@ -126,7 +126,7 @@ struct ib_mr *pvrdma_reg_user_mr(struct ib_pd *pd, u64 start, u64 length,
 		return ERR_PTR(-EINVAL);
 	}
 
-	umem = ib_umem_get(udata, start, length, access_flags, 0);
+	umem = ib_umem_get(pd->device, start, length, access_flags);
 	if (IS_ERR(umem)) {
 		dev_warn(&dev->pdev->dev,
 			 "could not get umem for mem region\n");
@@ -202,7 +202,7 @@ err_umem:
  * @return: ib_mr pointer on success, otherwise returns an errno.
  */
 struct ib_mr *pvrdma_alloc_mr(struct ib_pd *pd, enum ib_mr_type mr_type,
-			      u32 max_num_sg, struct ib_udata *udata)
+			      u32 max_num_sg)
 {
 	struct pvrdma_dev *dev = to_vdev(pd->device);
 	struct pvrdma_user_mr *mr;

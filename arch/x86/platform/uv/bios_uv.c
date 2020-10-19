@@ -11,6 +11,7 @@
 #include <linux/slab.h>
 #include <asm/efi.h>
 #include <linux/io.h>
+#include <asm/pgalloc.h>
 #include <asm/uv/bios.h>
 #include <asm/uv/uv_hub.h>
 
@@ -30,19 +31,13 @@ static s64 __uv_bios_call(enum uv_bios_cmd which, u64 a1, u64 a2, u64 a3,
 		 */
 		return BIOS_STATUS_UNIMPLEMENTED;
 
-	/*
-	 * If EFI_OLD_MEMMAP is set, we need to fall back to using our old EFI
-	 * callback method, which uses efi_call() directly, with the kernel page tables:
-	 */
-	if (unlikely(efi_enabled(EFI_OLD_MEMMAP)))
-		ret = efi_call((void *)__va(tab->function), (u64)which, a1, a2, a3, a4, a5);
-	else
-		ret = efi_call_virt_pointer(tab, function, (u64)which, a1, a2, a3, a4, a5);
+	ret = efi_call_virt_pointer(tab, function, (u64)which, a1, a2, a3, a4, a5);
 
 	return ret;
 }
 
-s64 uv_bios_call(enum uv_bios_cmd which, u64 a1, u64 a2, u64 a3, u64 a4, u64 a5)
+static s64 uv_bios_call(enum uv_bios_cmd which, u64 a1, u64 a2, u64 a3, u64 a4,
+		u64 a5)
 {
 	s64 ret;
 
@@ -54,10 +49,9 @@ s64 uv_bios_call(enum uv_bios_cmd which, u64 a1, u64 a2, u64 a3, u64 a4, u64 a5)
 
 	return ret;
 }
-EXPORT_SYMBOL_GPL(uv_bios_call);
 
-s64 uv_bios_call_irqsave(enum uv_bios_cmd which, u64 a1, u64 a2, u64 a3,
-					u64 a4, u64 a5)
+static s64 uv_bios_call_irqsave(enum uv_bios_cmd which, u64 a1, u64 a2, u64 a3,
+		u64 a4, u64 a5)
 {
 	unsigned long bios_flags;
 	s64 ret;
@@ -74,18 +68,13 @@ s64 uv_bios_call_irqsave(enum uv_bios_cmd which, u64 a1, u64 a2, u64 a3,
 	return ret;
 }
 
-
 long sn_partition_id;
 EXPORT_SYMBOL_GPL(sn_partition_id);
 long sn_coherency_id;
-EXPORT_SYMBOL_GPL(sn_coherency_id);
 long sn_region_size;
 EXPORT_SYMBOL_GPL(sn_region_size);
 long system_serial_number;
-EXPORT_SYMBOL_GPL(system_serial_number);
 int uv_type;
-EXPORT_SYMBOL_GPL(uv_type);
-
 
 s64 uv_bios_get_sn_info(int fc, int *uvtype, long *partid, long *coher,
 		long *region, long *ssn)
@@ -112,7 +101,6 @@ s64 uv_bios_get_sn_info(int fc, int *uvtype, long *partid, long *coher,
 		*ssn = v1;
 	return ret;
 }
-EXPORT_SYMBOL_GPL(uv_bios_get_sn_info);
 
 int
 uv_bios_mq_watchlist_alloc(unsigned long addr, unsigned int mq_size,
@@ -163,7 +151,6 @@ s64 uv_bios_freq_base(u64 clock_type, u64 *ticks_per_second)
 	return uv_bios_call(UV_BIOS_FREQ_BASE, clock_type,
 			   (u64)ticks_per_second, 0, 0, 0);
 }
-EXPORT_SYMBOL_GPL(uv_bios_freq_base);
 
 /*
  * uv_bios_set_legacy_vga_target - Set Legacy VGA I/O Target
@@ -182,22 +169,21 @@ int uv_bios_set_legacy_vga_target(bool decode, int domain, int bus)
 	return uv_bios_call(UV_BIOS_SET_LEGACY_VGA_TARGET,
 				(u64)decode, (u64)domain, (u64)bus, 0, 0);
 }
-EXPORT_SYMBOL_GPL(uv_bios_set_legacy_vga_target);
 
-void uv_bios_init(void)
+int uv_bios_init(void)
 {
 	uv_systab = NULL;
 	if ((uv_systab_phys == EFI_INVALID_TABLE_ADDR) ||
 	    !uv_systab_phys || efi_runtime_disabled()) {
 		pr_crit("UV: UVsystab: missing\n");
-		return;
+		return -EEXIST;
 	}
 
 	uv_systab = ioremap(uv_systab_phys, sizeof(struct uv_systab));
 	if (!uv_systab || strncmp(uv_systab->signature, UV_SYSTAB_SIG, 4)) {
 		pr_err("UV: UVsystab: bad signature!\n");
 		iounmap(uv_systab);
-		return;
+		return -EINVAL;
 	}
 
 	/* Starting with UV4 the UV systab size is variable */
@@ -208,8 +194,9 @@ void uv_bios_init(void)
 		uv_systab = ioremap(uv_systab_phys, size);
 		if (!uv_systab) {
 			pr_err("UV: UVsystab: ioremap(%d) failed!\n", size);
-			return;
+			return -EFAULT;
 		}
 	}
 	pr_info("UV: UVsystab: Revision:%x\n", uv_systab->revision);
+	return 0;
 }

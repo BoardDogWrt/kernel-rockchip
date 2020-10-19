@@ -192,7 +192,7 @@ static const u32 rad_bus_formats[] = {
 };
 
 static const u32 rad_bus_flags = DRM_BUS_FLAG_DE_LOW |
-				 DRM_BUS_FLAG_PIXDATA_NEGEDGE;
+				 DRM_BUS_FLAG_PIXDATA_SAMPLE_POSEDGE;
 
 struct rad_panel {
 	struct drm_panel panel;
@@ -218,7 +218,6 @@ static const struct drm_display_mode default_mode = {
 	.vsync_start = 1920 + 10,
 	.vsync_end = 1920 + 10 + 2,
 	.vtotal = 1920 + 10 + 2 + 4,
-	.vrefresh = 60,
 	.width_mm = 68,
 	.height_mm = 121,
 	.flags = DRM_MODE_FLAG_NHSYNC |
@@ -436,22 +435,22 @@ static int rad_panel_disable(struct drm_panel *panel)
 	return 0;
 }
 
-static int rad_panel_get_modes(struct drm_panel *panel)
+static int rad_panel_get_modes(struct drm_panel *panel,
+			       struct drm_connector *connector)
 {
-	struct drm_connector *connector = panel->connector;
 	struct drm_display_mode *mode;
 
-	mode = drm_mode_duplicate(panel->drm, &default_mode);
+	mode = drm_mode_duplicate(connector->dev, &default_mode);
 	if (!mode) {
 		DRM_DEV_ERROR(panel->dev, "failed to add mode %ux%ux@%u\n",
 			      default_mode.hdisplay, default_mode.vdisplay,
-			      default_mode.vrefresh);
+			      drm_mode_vrefresh(&default_mode));
 		return -ENOMEM;
 	}
 
 	drm_mode_set_name(mode);
 	mode->type = DRM_MODE_TYPE_DRIVER | DRM_MODE_TYPE_PREFERRED;
-	drm_mode_probed_add(panel->connector, mode);
+	drm_mode_probed_add(connector, mode);
 
 	connector->display_info.width_mm = mode->width_mm;
 	connector->display_info.height_mm = mode->height_mm;
@@ -606,9 +605,8 @@ static int rad_panel_probe(struct mipi_dsi_device *dsi)
 	if (ret)
 		return ret;
 
-	drm_panel_init(&panel->panel);
-	panel->panel.funcs = &rad_panel_funcs;
-	panel->panel.dev = dev;
+	drm_panel_init(&panel->panel, dev, &rad_panel_funcs,
+		       DRM_MODE_CONNECTOR_DSI);
 	dev_set_drvdata(dev, panel);
 
 	ret = drm_panel_add(&panel->panel);

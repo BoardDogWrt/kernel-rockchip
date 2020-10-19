@@ -1208,11 +1208,11 @@ static void radeon_pm_enable_dll_m10(struct radeonfb_info *rinfo)
 	case 1:
 		if (mc & 0x4)
 			break;
-		/* fall through */
+		fallthrough;
 	case 2:
 		dll_sleep_mask |= MDLL_R300_RDCK__MRDCKB_SLEEP;
 		dll_reset_mask |= MDLL_R300_RDCK__MRDCKB_RESET;
-		/* fall through */
+		fallthrough;
 	case 0:
 		dll_sleep_mask |= MDLL_R300_RDCK__MRDCKA_SLEEP;
 		dll_reset_mask |= MDLL_R300_RDCK__MRDCKA_RESET;
@@ -1221,7 +1221,7 @@ static void radeon_pm_enable_dll_m10(struct radeonfb_info *rinfo)
 	case 1:
 		if (!(mc & 0x4))
 			break;
-		/* fall through */
+		fallthrough;
 	case 2:
 		dll_sleep_mask |= MDLL_R300_RDCK__MRDCKD_SLEEP;
 		dll_reset_mask |= MDLL_R300_RDCK__MRDCKD_RESET;
@@ -2593,7 +2593,7 @@ static void radeon_set_suspend(struct radeonfb_info *rinfo, int suspend)
 		 * calling pci_set_power_state()
 		 */
 		radeonfb_whack_power_state(rinfo, PCI_D2);
-		__pci_complete_power_transition(rinfo->pdev, PCI_D2);
+		pci_platform_power_transition(rinfo->pdev, PCI_D2);
 	} else {
 		printk(KERN_DEBUG "radeonfb (%s): switching to D0 state...\n",
 		       pci_name(rinfo->pdev));

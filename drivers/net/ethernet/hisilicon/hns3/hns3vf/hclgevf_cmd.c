@@ -11,9 +11,6 @@
 #include "hclgevf_main.h"
 #include "hnae3.h"
 
-#define hclgevf_is_csq(ring) ((ring)->flag & HCLGEVF_TYPE_CSQ)
-#define hclgevf_ring_to_dma_dir(ring) (hclgevf_is_csq(ring) ? \
-					DMA_TO_DEVICE : DMA_FROM_DEVICE)
 #define cmq_ring_to_dev(ring)   (&(ring)->dev->pdev->dev)
 
 static int hclgevf_ring_space(struct hclgevf_cmq_ring *ring)
@@ -50,7 +47,7 @@ static int hclgevf_cmd_csq_clean(struct hclgevf_hw *hw)
 	rmb(); /* Make sure head is ready before touch any data */
 
 	if (!hclgevf_is_valid_csq_clean_head(csq, head)) {
-		dev_warn(&hdev->pdev->dev, "wrong cmd head (%d, %d-%d)\n", head,
+		dev_warn(&hdev->pdev->dev, "wrong cmd head (%u, %d-%d)\n", head,
 			 csq->next_to_use, csq->next_to_clean);
 		dev_warn(&hdev->pdev->dev,
 			 "Disabling any further commands to IMP firmware\n");
@@ -92,9 +89,9 @@ static void hclgevf_cmd_config_regs(struct hclgevf_cmq_ring *ring)
 	u32 reg_val;
 
 	if (ring->flag == HCLGEVF_TYPE_CSQ) {
-		reg_val = (u32)ring->desc_dma_addr;
+		reg_val = lower_32_bits(ring->desc_dma_addr);
 		hclgevf_write_dev(hw, HCLGEVF_NIC_CSQ_BASEADDR_L_REG, reg_val);
-		reg_val = (u32)((ring->desc_dma_addr >> 31) >> 1);
+		reg_val = upper_32_bits(ring->desc_dma_addr);
 		hclgevf_write_dev(hw, HCLGEVF_NIC_CSQ_BASEADDR_H_REG, reg_val);
 
 		reg_val = hclgevf_read_dev(hw, HCLGEVF_NIC_CSQ_DEPTH_REG);
@@ -105,9 +102,9 @@ static void hclgevf_cmd_config_regs(struct hclgevf_cmq_ring *ring)
 		hclgevf_write_dev(hw, HCLGEVF_NIC_CSQ_HEAD_REG, 0);
 		hclgevf_write_dev(hw, HCLGEVF_NIC_CSQ_TAIL_REG, 0);
 	} else {
-		reg_val = (u32)ring->desc_dma_addr;
+		reg_val = lower_32_bits(ring->desc_dma_addr);
 		hclgevf_write_dev(hw, HCLGEVF_NIC_CRQ_BASEADDR_L_REG, reg_val);
-		reg_val = (u32)((ring->desc_dma_addr >> 31) >> 1);
+		reg_val = upper_32_bits(ring->desc_dma_addr);
 		hclgevf_write_dev(hw, HCLGEVF_NIC_CRQ_BASEADDR_H_REG, reg_val);
 
 		reg_val = (ring->desc_num >> HCLGEVF_NIC_CMQ_DESC_NUM_S);
@@ -443,7 +440,7 @@ void hclgevf_cmd_uninit(struct hclgevf_dev *hdev)
 {
 	spin_lock_bh(&hdev->hw.cmq.csq.lock);
 	spin_lock(&hdev->hw.cmq.crq.lock);
-	clear_bit(HCLGEVF_STATE_CMD_DISABLE, &hdev->state);
+	set_bit(HCLGEVF_STATE_CMD_DISABLE, &hdev->state);
 	hclgevf_cmd_uninit_regs(&hdev->hw);
 	spin_unlock(&hdev->hw.cmq.crq.lock);
 	spin_unlock_bh(&hdev->hw.cmq.csq.lock);

@@ -116,9 +116,19 @@ static const struct renesas_soc soc_rz_g2m __initconst __maybe_unused = {
 	.id	= 0x52,
 };
 
+static const struct renesas_soc soc_rz_g2n __initconst __maybe_unused = {
+	.family = &fam_rzg2,
+	.id     = 0x55,
+};
+
 static const struct renesas_soc soc_rz_g2e __initconst __maybe_unused = {
 	.family	= &fam_rzg2,
 	.id	= 0x57,
+};
+
+static const struct renesas_soc soc_rz_g2h __initconst __maybe_unused = {
+	.family	= &fam_rzg2,
+	.id	= 0x4f,
 };
 
 static const struct renesas_soc soc_rcar_m1a __initconst __maybe_unused = {
@@ -227,8 +237,14 @@ static const struct of_device_id renesas_socs[] __initconst = {
 #ifdef CONFIG_ARCH_R8A774A1
 	{ .compatible = "renesas,r8a774a1",	.data = &soc_rz_g2m },
 #endif
+#ifdef CONFIG_ARCH_R8A774B1
+	{ .compatible = "renesas,r8a774b1",	.data = &soc_rz_g2n },
+#endif
 #ifdef CONFIG_ARCH_R8A774C0
 	{ .compatible = "renesas,r8a774c0",	.data = &soc_rz_g2e },
+#endif
+#ifdef CONFIG_ARCH_R8A774E1
+	{ .compatible = "renesas,r8a774e1",	.data = &soc_rz_g2h },
 #endif
 #ifdef CONFIG_ARCH_R8A7778
 	{ .compatible = "renesas,r8a7778",	.data = &soc_rcar_m1a },
@@ -251,11 +267,14 @@ static const struct of_device_id renesas_socs[] __initconst = {
 #ifdef CONFIG_ARCH_R8A7794
 	{ .compatible = "renesas,r8a7794",	.data = &soc_rcar_e2 },
 #endif
-#ifdef CONFIG_ARCH_R8A7795
+#if defined(CONFIG_ARCH_R8A77950) || defined(CONFIG_ARCH_R8A77951)
 	{ .compatible = "renesas,r8a7795",	.data = &soc_rcar_h3 },
 #endif
-#ifdef CONFIG_ARCH_R8A7796
+#ifdef CONFIG_ARCH_R8A77960
 	{ .compatible = "renesas,r8a7796",	.data = &soc_rcar_m3_w },
+#endif
+#ifdef CONFIG_ARCH_R8A77961
+	{ .compatible = "renesas,r8a77961",	.data = &soc_rcar_m3_w },
 #endif
 #ifdef CONFIG_ARCH_R8A77965
 	{ .compatible = "renesas,r8a77965",	.data = &soc_rcar_m3_n },
@@ -326,7 +345,7 @@ static int __init renesas_soc_init(void)
 	if (np) {
 		chipid = of_iomap(np, 0);
 		of_node_put(np);
-	} else if (soc->id) {
+	} else if (soc->id && family->reg) {
 		chipid = ioremap(family->reg, 4);
 	}
 	if (chipid) {

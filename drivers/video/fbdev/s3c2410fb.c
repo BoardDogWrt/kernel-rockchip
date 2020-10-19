@@ -44,11 +44,7 @@
 #include "s3c2410fb.h"
 
 /* Debugging stuff */
-#ifdef CONFIG_FB_S3C2410_DEBUG
-static int debug	= 1;
-#else
-static int debug;
-#endif
+static int debug = IS_BUILTIN(CONFIG_FB_S3C2410_DEBUG);
 
 #define dprintk(msg...) \
 do { \
@@ -618,7 +614,7 @@ static int s3c2410fb_debug_store(struct device *dev,
 
 static DEVICE_ATTR(debug, 0664, s3c2410fb_debug_show, s3c2410fb_debug_store);
 
-static struct fb_ops s3c2410fb_ops = {
+static const struct fb_ops s3c2410fb_ops = {
 	.owner		= THIS_MODULE,
 	.fb_check_var	= s3c2410fb_check_var,
 	.fb_set_par	= s3c2410fb_set_par,

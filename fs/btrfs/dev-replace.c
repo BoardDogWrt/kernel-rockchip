@@ -22,6 +22,46 @@
 #include "dev-replace.h"
 #include "sysfs.h"
 
+/*
+ * Device replace overview
+ *
+ * [Objective]
+ * To copy all extents (both new and on-disk) from source device to target
+ * device, while still keeping the filesystem read-write.
+ *
+ * [Method]
+ * There are two main methods involved:
+ *
+ * - Write duplication
+ *
+ *   All new writes will be written to both target and source devices, so even
+ *   if replace gets canceled, sources device still contans up-to-date data.
+ *
+ *   Location:		handle_ops_on_dev_replace() from __btrfs_map_block()
+ *   Start:		btrfs_dev_replace_start()
+ *   End:		btrfs_dev_replace_finishing()
+ *   Content:		Latest data/metadata
+ *
+ * - Copy existing extents
+ *
+ *   This happens by re-using scrub facility, as scrub also iterates through
+ *   existing extents from commit root.
+ *
+ *   Location:		scrub_write_block_to_dev_replace() from
+ *   			scrub_block_complete()
+ *   Content:		Data/meta from commit root.
+ *
+ * Due to the content difference, we need to avoid nocow write when dev-replace
+ * is happening.  This is done by marking the block group read-only and waiting
+ * for NOCOW writes.
+ *
+ * After replace is done, the finishing part is done by swapping the target and
+ * source devices.
+ *
+ *   Location:		btrfs_dev_replace_update_device_in_mapping_tree() from
+ *   			btrfs_dev_replace_finishing()
+ */
+
 static int btrfs_dev_replace_finishing(struct btrfs_fs_info *fs_info,
 				       int scrub_ret);
 static void btrfs_dev_replace_update_device_in_mapping_tree(
@@ -472,7 +512,7 @@ static int btrfs_dev_replace_start(struct btrfs_fs_info *fs_info,
 	atomic64_set(&dev_replace->num_uncorrectable_read_errors, 0);
 	up_write(&dev_replace->rwsem);
 
-	ret = btrfs_sysfs_add_device_link(tgt_device->fs_devices, tgt_device);
+	ret = btrfs_sysfs_add_devices_dir(tgt_device->fs_devices, tgt_device);
 	if (ret)
 		btrfs_err(fs_info, "kobj add dev failed %d", ret);
 
@@ -500,11 +540,8 @@ static int btrfs_dev_replace_start(struct btrfs_fs_info *fs_info,
 			      &dev_replace->scrub_progress, 0, 1);
 
 	ret = btrfs_dev_replace_finishing(fs_info, ret);
-	if (ret == -EINPROGRESS) {
+	if (ret == -EINPROGRESS)
 		ret = BTRFS_IOCTL_DEV_REPLACE_RESULT_SCRUB_INPROGRESS;
-	} else if (ret != -ECANCELED) {
-		WARN_ON(ret);
-	}
 
 	return ret;
 
@@ -560,6 +597,37 @@ static void btrfs_rm_dev_replace_unblocked(struct btrfs_fs_info *fs_info)
 {
 	clear_bit(BTRFS_FS_STATE_DEV_REPLACING, &fs_info->fs_state);
 	wake_up(&fs_info->dev_replace.replace_wait);
+}
+
+/*
+ * When finishing the device replace, before swapping the source device with the
+ * target device we must update the chunk allocation state in the target device,
+ * as it is empty because replace works by directly copying the chunks and not
+ * through the normal chunk allocation path.
+ */
+static int btrfs_set_target_alloc_state(struct btrfs_device *srcdev,
+					struct btrfs_device *tgtdev)
+{
+	struct extent_state *cached_state = NULL;
+	u64 start = 0;
+	u64 found_start;
+	u64 found_end;
+	int ret = 0;
+
+	lockdep_assert_held(&srcdev->fs_info->chunk_mutex);
+
+	while (!find_first_extent_bit(&srcdev->alloc_state, start,
+				      &found_start, &found_end,
+				      CHUNK_ALLOCATED, &cached_state)) {
+		ret = set_extent_bits(&tgtdev->alloc_state, found_start,
+				      found_end, CHUNK_ALLOCATED);
+		if (ret)
+			break;
+		start = found_end + 1;
+	}
+
+	free_extent_state(cached_state);
+	return ret;
 }
 
 static int btrfs_dev_replace_finishing(struct btrfs_fs_info *fs_info,
@@ -636,8 +704,14 @@ static int btrfs_dev_replace_finishing(struct btrfs_fs_info *fs_info,
 	dev_replace->time_stopped = ktime_get_real_seconds();
 	dev_replace->item_needs_writeback = 1;
 
-	/* replace old device with new one in mapping tree */
+	/*
+	 * Update allocation state in the new device and replace the old device
+	 * with the new one in the mapping tree.
+	 */
 	if (!scrub_ret) {
+		scrub_ret = btrfs_set_target_alloc_state(src_device, tgt_device);
+		if (scrub_ret)
+			goto error;
 		btrfs_dev_replace_update_device_in_mapping_tree(fs_info,
 								src_device,
 								tgt_device);
@@ -648,6 +722,7 @@ static int btrfs_dev_replace_finishing(struct btrfs_fs_info *fs_info,
 				 btrfs_dev_name(src_device),
 				 src_device->devid,
 				 rcu_str_deref(tgt_device->name), scrub_ret);
+error:
 		up_write(&dev_replace->rwsem);
 		mutex_unlock(&fs_info->chunk_mutex);
 		mutex_unlock(&fs_info->fs_devices->device_list_mutex);
@@ -706,8 +781,11 @@ static int btrfs_dev_replace_finishing(struct btrfs_fs_info *fs_info,
 	mutex_unlock(&fs_info->fs_devices->device_list_mutex);
 
 	/* replace the sysfs entry */
-	btrfs_sysfs_rm_device_link(fs_info->fs_devices, src_device);
-	btrfs_rm_dev_replace_free_srcdev(src_device);
+	btrfs_sysfs_remove_devices_dir(fs_info->fs_devices, src_device);
+	btrfs_sysfs_update_devid(tgt_device);
+	if (test_bit(BTRFS_DEV_STATE_WRITEABLE, &src_device->dev_state))
+		btrfs_scratch_superblocks(fs_info, src_device->bdev,
+					  src_device->name->str);
 
 	/* write back the superblocks */
 	trans = btrfs_start_transaction(root, 0);
@@ -715,6 +793,8 @@ static int btrfs_dev_replace_finishing(struct btrfs_fs_info *fs_info,
 		btrfs_commit_transaction(trans);
 
 	mutex_unlock(&dev_replace->lock_finishing_cancel_unmount);
+
+	btrfs_rm_dev_replace_free_srcdev(src_device);
 
 	return 0;
 }
@@ -986,7 +1066,7 @@ static int btrfs_dev_replace_kthread(void *data)
 	return 0;
 }
 
-int btrfs_dev_replace_is_ongoing(struct btrfs_dev_replace *dev_replace)
+int __pure btrfs_dev_replace_is_ongoing(struct btrfs_dev_replace *dev_replace)
 {
 	if (!dev_replace->is_valid)
 		return 0;

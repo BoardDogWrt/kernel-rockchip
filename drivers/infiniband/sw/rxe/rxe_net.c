@@ -117,10 +117,12 @@ static struct dst_entry *rxe_find_route6(struct net_device *ndev,
 	memcpy(&fl6.daddr, daddr, sizeof(*daddr));
 	fl6.flowi6_proto = IPPROTO_UDP;
 
-	if (unlikely(ipv6_stub->ipv6_dst_lookup(sock_net(recv_sockets.sk6->sk),
-						recv_sockets.sk6->sk, &ndst, &fl6))) {
+	ndst = ipv6_stub->ipv6_dst_lookup_flow(sock_net(recv_sockets.sk6->sk),
+					       recv_sockets.sk6->sk, &fl6,
+					       NULL);
+	if (unlikely(IS_ERR(ndst))) {
 		pr_err_ratelimited("no route to %pI6\n", daddr);
-		goto put;
+		return NULL;
 	}
 
 	if (unlikely(ndst->error)) {
@@ -516,11 +518,6 @@ out:
 const char *rxe_parent_name(struct rxe_dev *rxe, unsigned int port_num)
 {
 	return rxe->ndev->name;
-}
-
-enum rdma_link_layer rxe_link_layer(struct rxe_dev *rxe, unsigned int port_num)
-{
-	return IB_LINK_LAYER_ETHERNET;
 }
 
 int rxe_net_add(const char *ibdev_name, struct net_device *ndev)

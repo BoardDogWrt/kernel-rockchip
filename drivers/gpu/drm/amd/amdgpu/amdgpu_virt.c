@@ -26,6 +26,10 @@
 #include <drm/drm_drv.h>
 
 #include "amdgpu.h"
+#include "amdgpu_ras.h"
+#include "vi.h"
+#include "soc15.h"
+#include "nv.h"
 
 bool amdgpu_virt_mmio_blocked(struct amdgpu_device *adev)
 {
@@ -38,103 +42,12 @@ bool amdgpu_virt_mmio_blocked(struct amdgpu_device *adev)
 void amdgpu_virt_init_setting(struct amdgpu_device *adev)
 {
 	/* enable virtual display */
-	adev->mode_info.num_crtc = 1;
+	if (adev->mode_info.num_crtc == 0)
+		adev->mode_info.num_crtc = 1;
 	adev->enable_virtual_display = true;
 	adev->ddev->driver->driver_features &= ~DRIVER_ATOMIC;
 	adev->cg_flags = 0;
 	adev->pg_flags = 0;
-}
-
-uint32_t amdgpu_virt_kiq_rreg(struct amdgpu_device *adev, uint32_t reg)
-{
-	signed long r, cnt = 0;
-	unsigned long flags;
-	uint32_t seq;
-	struct amdgpu_kiq *kiq = &adev->gfx.kiq;
-	struct amdgpu_ring *ring = &kiq->ring;
-
-	BUG_ON(!ring->funcs->emit_rreg);
-
-	spin_lock_irqsave(&kiq->ring_lock, flags);
-	amdgpu_ring_alloc(ring, 32);
-	amdgpu_ring_emit_rreg(ring, reg);
-	amdgpu_fence_emit_polling(ring, &seq);
-	amdgpu_ring_commit(ring);
-	spin_unlock_irqrestore(&kiq->ring_lock, flags);
-
-	r = amdgpu_fence_wait_polling(ring, seq, MAX_KIQ_REG_WAIT);
-
-	/* don't wait anymore for gpu reset case because this way may
-	 * block gpu_recover() routine forever, e.g. this virt_kiq_rreg
-	 * is triggered in TTM and ttm_bo_lock_delayed_workqueue() will
-	 * never return if we keep waiting in virt_kiq_rreg, which cause
-	 * gpu_recover() hang there.
-	 *
-	 * also don't wait anymore for IRQ context
-	 * */
-	if (r < 1 && (adev->in_gpu_reset || in_interrupt()))
-		goto failed_kiq_read;
-
-	might_sleep();
-	while (r < 1 && cnt++ < MAX_KIQ_REG_TRY) {
-		msleep(MAX_KIQ_REG_BAILOUT_INTERVAL);
-		r = amdgpu_fence_wait_polling(ring, seq, MAX_KIQ_REG_WAIT);
-	}
-
-	if (cnt > MAX_KIQ_REG_TRY)
-		goto failed_kiq_read;
-
-	return adev->wb.wb[adev->virt.reg_val_offs];
-
-failed_kiq_read:
-	pr_err("failed to read reg:%x\n", reg);
-	return ~0;
-}
-
-void amdgpu_virt_kiq_wreg(struct amdgpu_device *adev, uint32_t reg, uint32_t v)
-{
-	signed long r, cnt = 0;
-	unsigned long flags;
-	uint32_t seq;
-	struct amdgpu_kiq *kiq = &adev->gfx.kiq;
-	struct amdgpu_ring *ring = &kiq->ring;
-
-	BUG_ON(!ring->funcs->emit_wreg);
-
-	spin_lock_irqsave(&kiq->ring_lock, flags);
-	amdgpu_ring_alloc(ring, 32);
-	amdgpu_ring_emit_wreg(ring, reg, v);
-	amdgpu_fence_emit_polling(ring, &seq);
-	amdgpu_ring_commit(ring);
-	spin_unlock_irqrestore(&kiq->ring_lock, flags);
-
-	r = amdgpu_fence_wait_polling(ring, seq, MAX_KIQ_REG_WAIT);
-
-	/* don't wait anymore for gpu reset case because this way may
-	 * block gpu_recover() routine forever, e.g. this virt_kiq_rreg
-	 * is triggered in TTM and ttm_bo_lock_delayed_workqueue() will
-	 * never return if we keep waiting in virt_kiq_rreg, which cause
-	 * gpu_recover() hang there.
-	 *
-	 * also don't wait anymore for IRQ context
-	 * */
-	if (r < 1 && (adev->in_gpu_reset || in_interrupt()))
-		goto failed_kiq_write;
-
-	might_sleep();
-	while (r < 1 && cnt++ < MAX_KIQ_REG_TRY) {
-
-		msleep(MAX_KIQ_REG_BAILOUT_INTERVAL);
-		r = amdgpu_fence_wait_polling(ring, seq, MAX_KIQ_REG_WAIT);
-	}
-
-	if (cnt > MAX_KIQ_REG_TRY)
-		goto failed_kiq_write;
-
-	return;
-
-failed_kiq_write:
-	pr_err("failed to write reg:%x\n", reg);
 }
 
 void amdgpu_virt_kiq_reg_write_reg_wait(struct amdgpu_device *adev,
@@ -151,7 +64,10 @@ void amdgpu_virt_kiq_reg_write_reg_wait(struct amdgpu_device *adev,
 	amdgpu_ring_alloc(ring, 32);
 	amdgpu_ring_emit_reg_write_reg_wait(ring, reg0, reg1,
 					    ref, mask);
-	amdgpu_fence_emit_polling(ring, &seq);
+	r = amdgpu_fence_emit_polling(ring, &seq, MAX_KIQ_REG_WAIT);
+	if (r)
+		goto failed_undo;
+
 	amdgpu_ring_commit(ring);
 	spin_unlock_irqrestore(&kiq->ring_lock, flags);
 
@@ -173,6 +89,9 @@ void amdgpu_virt_kiq_reg_write_reg_wait(struct amdgpu_device *adev,
 
 	return;
 
+failed_undo:
+	amdgpu_ring_undo(ring);
+	spin_unlock_irqrestore(&kiq->ring_lock, flags);
 failed_kiq:
 	pr_err("failed to write reg %x wait reg %x\n", reg0, reg1);
 }
@@ -242,6 +161,19 @@ int amdgpu_virt_reset_gpu(struct amdgpu_device *adev)
 	}
 
 	return 0;
+}
+
+void amdgpu_virt_request_init_data(struct amdgpu_device *adev)
+{
+	struct amdgpu_virt *virt = &adev->virt;
+
+	if (virt->ops && virt->ops->req_init_data)
+		virt->ops->req_init_data(adev);
+
+	if (adev->virt.req_init_data_ver > 0)
+		DRM_INFO("host supports REQ_INIT_DATA handshake\n");
+	else
+		DRM_WARN("host doesn't support REQ_INIT_DATA handshake\n");
 }
 
 /**
@@ -327,12 +259,171 @@ int amdgpu_virt_fw_reserve_get_checksum(void *obj,
 	return ret;
 }
 
+static int amdgpu_virt_init_ras_err_handler_data(struct amdgpu_device *adev)
+{
+	struct amdgpu_virt *virt = &adev->virt;
+	struct amdgpu_virt_ras_err_handler_data **data = &virt->virt_eh_data;
+	/* GPU will be marked bad on host if bp count more then 10,
+	 * so alloc 512 is enough.
+	 */
+	unsigned int align_space = 512;
+	void *bps = NULL;
+	struct amdgpu_bo **bps_bo = NULL;
+
+	*data = kmalloc(sizeof(struct amdgpu_virt_ras_err_handler_data), GFP_KERNEL);
+	if (!*data)
+		return -ENOMEM;
+
+	bps = kmalloc(align_space * sizeof((*data)->bps), GFP_KERNEL);
+	bps_bo = kmalloc(align_space * sizeof((*data)->bps_bo), GFP_KERNEL);
+
+	if (!bps || !bps_bo) {
+		kfree(bps);
+		kfree(bps_bo);
+		kfree(*data);
+		return -ENOMEM;
+	}
+
+	(*data)->bps = bps;
+	(*data)->bps_bo = bps_bo;
+	(*data)->count = 0;
+	(*data)->last_reserved = 0;
+
+	virt->ras_init_done = true;
+
+	return 0;
+}
+
+static void amdgpu_virt_ras_release_bp(struct amdgpu_device *adev)
+{
+	struct amdgpu_virt *virt = &adev->virt;
+	struct amdgpu_virt_ras_err_handler_data *data = virt->virt_eh_data;
+	struct amdgpu_bo *bo;
+	int i;
+
+	if (!data)
+		return;
+
+	for (i = data->last_reserved - 1; i >= 0; i--) {
+		bo = data->bps_bo[i];
+		amdgpu_bo_free_kernel(&bo, NULL, NULL);
+		data->bps_bo[i] = bo;
+		data->last_reserved = i;
+	}
+}
+
+void amdgpu_virt_release_ras_err_handler_data(struct amdgpu_device *adev)
+{
+	struct amdgpu_virt *virt = &adev->virt;
+	struct amdgpu_virt_ras_err_handler_data *data = virt->virt_eh_data;
+
+	virt->ras_init_done = false;
+
+	if (!data)
+		return;
+
+	amdgpu_virt_ras_release_bp(adev);
+
+	kfree(data->bps);
+	kfree(data->bps_bo);
+	kfree(data);
+	virt->virt_eh_data = NULL;
+}
+
+static void amdgpu_virt_ras_add_bps(struct amdgpu_device *adev,
+		struct eeprom_table_record *bps, int pages)
+{
+	struct amdgpu_virt *virt = &adev->virt;
+	struct amdgpu_virt_ras_err_handler_data *data = virt->virt_eh_data;
+
+	if (!data)
+		return;
+
+	memcpy(&data->bps[data->count], bps, pages * sizeof(*data->bps));
+	data->count += pages;
+}
+
+static void amdgpu_virt_ras_reserve_bps(struct amdgpu_device *adev)
+{
+	struct amdgpu_virt *virt = &adev->virt;
+	struct amdgpu_virt_ras_err_handler_data *data = virt->virt_eh_data;
+	struct amdgpu_bo *bo = NULL;
+	uint64_t bp;
+	int i;
+
+	if (!data)
+		return;
+
+	for (i = data->last_reserved; i < data->count; i++) {
+		bp = data->bps[i].retired_page;
+
+		/* There are two cases of reserve error should be ignored:
+		 * 1) a ras bad page has been allocated (used by someone);
+		 * 2) a ras bad page has been reserved (duplicate error injection
+		 *    for one page);
+		 */
+		if (amdgpu_bo_create_kernel_at(adev, bp << AMDGPU_GPU_PAGE_SHIFT,
+					       AMDGPU_GPU_PAGE_SIZE,
+					       AMDGPU_GEM_DOMAIN_VRAM,
+					       &bo, NULL))
+			DRM_DEBUG("RAS WARN: reserve vram for retired page %llx fail\n", bp);
+
+		data->bps_bo[i] = bo;
+		data->last_reserved = i + 1;
+		bo = NULL;
+	}
+}
+
+static bool amdgpu_virt_ras_check_bad_page(struct amdgpu_device *adev,
+		uint64_t retired_page)
+{
+	struct amdgpu_virt *virt = &adev->virt;
+	struct amdgpu_virt_ras_err_handler_data *data = virt->virt_eh_data;
+	int i;
+
+	if (!data)
+		return true;
+
+	for (i = 0; i < data->count; i++)
+		if (retired_page == data->bps[i].retired_page)
+			return true;
+
+	return false;
+}
+
+static void amdgpu_virt_add_bad_page(struct amdgpu_device *adev,
+		uint64_t bp_block_offset, uint32_t bp_block_size)
+{
+	struct eeprom_table_record bp;
+	uint64_t retired_page;
+	uint32_t bp_idx, bp_cnt;
+
+	if (bp_block_size) {
+		bp_cnt = bp_block_size / sizeof(uint64_t);
+		for (bp_idx = 0; bp_idx < bp_cnt; bp_idx++) {
+			retired_page = *(uint64_t *)(adev->fw_vram_usage.va +
+					bp_block_offset + bp_idx * sizeof(uint64_t));
+			bp.retired_page = retired_page;
+
+			if (amdgpu_virt_ras_check_bad_page(adev, retired_page))
+				continue;
+
+			amdgpu_virt_ras_add_bps(adev, &bp, 1);
+
+			amdgpu_virt_ras_reserve_bps(adev);
+		}
+	}
+}
+
 void amdgpu_virt_init_data_exchange(struct amdgpu_device *adev)
 {
 	uint32_t pf2vf_size = 0;
 	uint32_t checksum = 0;
 	uint32_t checkval;
 	char *str;
+	uint64_t bp_block_offset = 0;
+	uint32_t bp_block_size = 0;
+	struct amdgim_pf2vf_info_v2 *pf2vf_v2 = NULL;
 
 	adev->virt.fw_reserve.p_pf2vf = NULL;
 	adev->virt.fw_reserve.p_vf2pf = NULL;
@@ -347,6 +438,19 @@ void amdgpu_virt_init_data_exchange(struct amdgpu_device *adev)
 
 		/* pf2vf message must be in 4K */
 		if (pf2vf_size > 0 && pf2vf_size < 4096) {
+			if (adev->virt.fw_reserve.p_pf2vf->version == 2) {
+				pf2vf_v2 = (struct amdgim_pf2vf_info_v2 *)adev->virt.fw_reserve.p_pf2vf;
+				bp_block_offset = ((uint64_t)pf2vf_v2->bp_block_offset_L & 0xFFFFFFFF) |
+						((((uint64_t)pf2vf_v2->bp_block_offset_H) << 32) & 0xFFFFFFFF00000000);
+				bp_block_size = pf2vf_v2->bp_block_size;
+
+				if (bp_block_size && !adev->virt.ras_init_done)
+					amdgpu_virt_init_ras_err_handler_data(adev);
+
+				if (adev->virt.ras_init_done)
+					amdgpu_virt_add_bad_page(adev, bp_block_offset, bp_block_size);
+			}
+
 			checkval = amdgpu_virt_fw_reserve_get_checksum(
 				adev->virt.fw_reserve.p_pf2vf, pf2vf_size,
 				adev->virt.fw_reserve.checksum_key, checksum);
@@ -380,53 +484,107 @@ void amdgpu_virt_init_data_exchange(struct amdgpu_device *adev)
 	}
 }
 
-static uint32_t parse_clk(char *buf, bool min)
+void amdgpu_detect_virtualization(struct amdgpu_device *adev)
 {
-        char *ptr = buf;
-        uint32_t clk = 0;
+	uint32_t reg;
 
-        do {
-                ptr = strchr(ptr, ':');
-                if (!ptr)
-                        break;
-                ptr+=2;
-		if (kstrtou32(ptr, 10, &clk))
-			return 0;
-        } while (!min);
+	switch (adev->asic_type) {
+	case CHIP_TONGA:
+	case CHIP_FIJI:
+		reg = RREG32(mmBIF_IOV_FUNC_IDENTIFIER);
+		break;
+	case CHIP_VEGA10:
+	case CHIP_VEGA20:
+	case CHIP_NAVI10:
+	case CHIP_NAVI12:
+	case CHIP_SIENNA_CICHLID:
+	case CHIP_ARCTURUS:
+		reg = RREG32(mmRCC_IOV_FUNC_IDENTIFIER);
+		break;
+	default: /* other chip doesn't support SRIOV */
+		reg = 0;
+		break;
+	}
 
-        return clk * 100;
+	if (reg & 1)
+		adev->virt.caps |= AMDGPU_SRIOV_CAPS_IS_VF;
+
+	if (reg & 0x80000000)
+		adev->virt.caps |= AMDGPU_SRIOV_CAPS_ENABLE_IOV;
+
+	if (!reg) {
+		if (is_virtual_machine())	/* passthrough mode exclus sriov mod */
+			adev->virt.caps |= AMDGPU_PASSTHROUGH_MODE;
+	}
+
+	/* we have the ability to check now */
+	if (amdgpu_sriov_vf(adev)) {
+		switch (adev->asic_type) {
+		case CHIP_TONGA:
+		case CHIP_FIJI:
+			vi_set_virt_ops(adev);
+			break;
+		case CHIP_VEGA10:
+		case CHIP_VEGA20:
+		case CHIP_ARCTURUS:
+			soc15_set_virt_ops(adev);
+			break;
+		case CHIP_NAVI10:
+		case CHIP_NAVI12:
+		case CHIP_SIENNA_CICHLID:
+			nv_set_virt_ops(adev);
+			/* try send GPU_INIT_DATA request to host */
+			amdgpu_virt_request_init_data(adev);
+			break;
+		default: /* other chip doesn't support SRIOV */
+			DRM_ERROR("Unknown asic type: %d!\n", adev->asic_type);
+			break;
+		}
+	}
 }
 
-uint32_t amdgpu_virt_get_sclk(struct amdgpu_device *adev, bool lowest)
+static bool amdgpu_virt_access_debugfs_is_mmio(struct amdgpu_device *adev)
 {
-	char *buf = NULL;
-	uint32_t clk = 0;
-
-	buf = kzalloc(PAGE_SIZE, GFP_KERNEL);
-	if (!buf)
-		return -ENOMEM;
-
-	adev->virt.ops->get_pp_clk(adev, PP_SCLK, buf);
-	clk = parse_clk(buf, lowest);
-
-	kfree(buf);
-
-	return clk;
+	return amdgpu_sriov_is_debug(adev) ? true : false;
 }
 
-uint32_t amdgpu_virt_get_mclk(struct amdgpu_device *adev, bool lowest)
+static bool amdgpu_virt_access_debugfs_is_kiq(struct amdgpu_device *adev)
 {
-	char *buf = NULL;
-	uint32_t clk = 0;
+	return amdgpu_sriov_is_normal(adev) ? true : false;
+}
 
-	buf = kzalloc(PAGE_SIZE, GFP_KERNEL);
-	if (!buf)
-		return -ENOMEM;
+int amdgpu_virt_enable_access_debugfs(struct amdgpu_device *adev)
+{
+	if (!amdgpu_sriov_vf(adev) ||
+	    amdgpu_virt_access_debugfs_is_kiq(adev))
+		return 0;
 
-	adev->virt.ops->get_pp_clk(adev, PP_MCLK, buf);
-	clk = parse_clk(buf, lowest);
+	if (amdgpu_virt_access_debugfs_is_mmio(adev))
+		adev->virt.caps &= ~AMDGPU_SRIOV_CAPS_RUNTIME;
+	else
+		return -EPERM;
 
-	kfree(buf);
+	return 0;
+}
 
-	return clk;
+void amdgpu_virt_disable_access_debugfs(struct amdgpu_device *adev)
+{
+	if (amdgpu_sriov_vf(adev))
+		adev->virt.caps |= AMDGPU_SRIOV_CAPS_RUNTIME;
+}
+
+enum amdgpu_sriov_vf_mode amdgpu_virt_get_sriov_vf_mode(struct amdgpu_device *adev)
+{
+	enum amdgpu_sriov_vf_mode mode;
+
+	if (amdgpu_sriov_vf(adev)) {
+		if (amdgpu_sriov_is_pp_one_vf(adev))
+			mode = SRIOV_VF_MODE_ONE_VF;
+		else
+			mode = SRIOV_VF_MODE_MULTI_VF;
+	} else {
+		mode = SRIOV_VF_MODE_BARE_METAL;
+	}
+
+	return mode;
 }

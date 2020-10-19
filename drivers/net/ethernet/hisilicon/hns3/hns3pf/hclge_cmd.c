@@ -11,8 +11,6 @@
 #include "hnae3.h"
 #include "hclge_main.h"
 
-#define hclge_is_csq(ring) ((ring)->flag & HCLGE_TYPE_CSQ)
-
 #define cmq_ring_to_dev(ring)   (&(ring)->dev->pdev->dev)
 
 static int hclge_ring_space(struct hclge_cmq_ring *ring)
@@ -145,7 +143,7 @@ static int hclge_cmd_csq_clean(struct hclge_hw *hw)
 	rmb(); /* Make sure head is ready before touch any data */
 
 	if (!is_valid_csq_clean_head(csq, head)) {
-		dev_warn(&hdev->pdev->dev, "wrong cmd head (%d, %d-%d)\n", head,
+		dev_warn(&hdev->pdev->dev, "wrong cmd head (%u, %d-%d)\n", head,
 			 csq->next_to_use, csq->next_to_clean);
 		dev_warn(&hdev->pdev->dev,
 			 "Disabling any further commands to IMP firmware\n");
@@ -314,11 +312,10 @@ int hclge_cmd_send(struct hclge_hw *hw, struct hclge_desc *desc, int num)
 		} while (timeout < hw->cmq.tx_timeout);
 	}
 
-	if (!complete) {
+	if (!complete)
 		retval = -EBADE;
-	} else {
+	else
 		retval = hclge_cmd_check_retval(hw, desc, num, ntc);
-	}
 
 	/* Clean the command send queue */
 	handle = hclge_cmd_csq_clean(hw);
@@ -427,6 +424,9 @@ int hclge_cmd_init(struct hclge_dev *hdev)
 	 * reset may happen when lower level reset is being processed.
 	 */
 	if ((hclge_is_reset_pending(hdev))) {
+		dev_err(&hdev->pdev->dev,
+			"failed to init cmd since reset %#lx pending\n",
+			hdev->reset_pending);
 		ret = -EBUSY;
 		goto err_cmd_init;
 	}
@@ -480,19 +480,6 @@ static void hclge_cmd_uninit_regs(struct hclge_hw *hw)
 	hclge_write_dev(hw, HCLGE_NIC_CRQ_TAIL_REG, 0);
 }
 
-static void hclge_destroy_queue(struct hclge_cmq_ring *ring)
-{
-	spin_lock(&ring->lock);
-	hclge_free_cmd_desc(ring);
-	spin_unlock(&ring->lock);
-}
-
-static void hclge_destroy_cmd_queue(struct hclge_hw *hw)
-{
-	hclge_destroy_queue(&hw->cmq.csq);
-	hclge_destroy_queue(&hw->cmq.crq);
-}
-
 void hclge_cmd_uninit(struct hclge_dev *hdev)
 {
 	spin_lock_bh(&hdev->hw.cmq.csq.lock);
@@ -502,5 +489,6 @@ void hclge_cmd_uninit(struct hclge_dev *hdev)
 	spin_unlock(&hdev->hw.cmq.crq.lock);
 	spin_unlock_bh(&hdev->hw.cmq.csq.lock);
 
-	hclge_destroy_cmd_queue(&hdev->hw);
+	hclge_free_cmd_desc(&hdev->hw.cmq.csq);
+	hclge_free_cmd_desc(&hdev->hw.cmq.crq);
 }

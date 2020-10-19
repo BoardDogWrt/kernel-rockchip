@@ -381,7 +381,6 @@ static struct sk_buff *init_req_packet(struct rxe_qp *qp,
 				       struct rxe_pkt_info *pkt)
 {
 	struct rxe_dev		*rxe = to_rdev(qp->ibqp.device);
-	struct rxe_port		*port = &rxe->port;
 	struct sk_buff		*skb;
 	struct rxe_send_wr	*ibwr = &wqe->wr;
 	struct rxe_av		*av;
@@ -419,9 +418,7 @@ static struct sk_buff *init_req_packet(struct rxe_qp *qp,
 			(pkt->mask & (RXE_WRITE_MASK | RXE_IMMDT_MASK)) ==
 			(RXE_WRITE_MASK | RXE_IMMDT_MASK));
 
-	pkey = (qp_type(qp) == IB_QPT_GSI) ?
-		 port->pkey_tbl[ibwr->wr.ud.pkey_index] :
-		 port->pkey_tbl[qp->attr.pkey_index];
+	pkey = IB_DEFAULT_PKEY_FULL;
 
 	qp_num = (pkt->mask & RXE_DETH_MASK) ? ibwr->wr.ud.remote_qpn :
 					 qp->attr.dest_qp_num;
@@ -499,6 +496,12 @@ static int fill_packet(struct rxe_qp *qp, struct rxe_send_wqe *wqe,
 					&crc);
 			if (err)
 				return err;
+		}
+		if (bth_pad(pkt)) {
+			u8 *pad = payload_addr(pkt) + paylen;
+
+			memset(pad, 0, bth_pad(pkt));
+			crc = rxe_crc32(rxe, crc, pad, bth_pad(pkt));
 		}
 	}
 	p = payload_addr(pkt) + paylen + bth_pad(pkt);

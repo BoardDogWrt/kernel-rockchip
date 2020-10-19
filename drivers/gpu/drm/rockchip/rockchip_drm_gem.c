@@ -6,6 +6,7 @@
 
 #include <linux/dma-buf.h>
 #include <linux/iommu.h>
+#include <linux/vmalloc.h>
 
 #include <drm/drm.h>
 #include <drm/drm_gem.h>
@@ -294,7 +295,7 @@ static void rockchip_gem_release_object(struct rockchip_gem_object *rk_obj)
 	kfree(rk_obj);
 }
 
-struct rockchip_gem_object *
+static struct rockchip_gem_object *
 	rockchip_gem_alloc_object(struct drm_device *drm, unsigned int size)
 {
 	struct rockchip_gem_object *rk_obj;
@@ -391,7 +392,7 @@ rockchip_gem_create_with_handle(struct drm_file *file_priv,
 		goto err_handle_create;
 
 	/* drop reference from allocate - handle holds it now. */
-	drm_gem_object_put_unlocked(obj);
+	drm_gem_object_put(obj);
 
 	return rk_obj;
 
