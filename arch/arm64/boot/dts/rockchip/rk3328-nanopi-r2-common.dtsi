@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: (GPL-2.0+ OR MIT)
 /*
- * Copyright (c) 2018 FriendlyElec Computer Tech. Co., Ltd.
+ * Copyright (c) 2020 FriendlyElec Computer Tech. Co., Ltd.
  * (http://www.friendlyarm.com)
  *
  * Copyright (c) 2017 Fuzhou Rockchip Electronics Co., Ltd
  */
 
 /dts-v1/;
+#include <dt-bindings/input/linux-event-codes.h>
 #include "rk3328-dram-default-timing.dtsi"
 #include "rk3328.dtsi"
 
@@ -40,11 +41,30 @@
 		nvmem-cell-names = "id", "cpu-version";
 	};
 
+	gpio_keys: gpio-keys {
+		compatible = "gpio-keys";
+		#address-cells = <1>;
+		#size-cells = <0>;
+		autorepeat;
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&gpio_key1>;
+
+		button@0 {
+			gpios = <&gpio0 RK_PA0 GPIO_ACTIVE_LOW>;
+			label = "K1";
+			linux,code = <BTN_1>;
+			linux,input-type = <1>;
+			gpio-key,wakeup = <1>;
+			debounce-interval = <100>;
+		};
+	};
+
 	leds: gpio-leds {
 		compatible = "gpio-leds";
 		pinctrl-names = "default";
 		pinctrl-0 =<&leds_gpio>;
-		status = "disabled";
+		status = "okay";
 
 		led@1 {
 			gpios = <&gpio0 RK_PA2 GPIO_ACTIVE_HIGH>;
@@ -60,6 +80,7 @@
 		clock-names = "ext_clock";
 		pinctrl-names = "default";
 		pinctrl-0 = <&wifi_enable_h>;
+		status = "disabled";
 
 		/*
 		 * On the module itself this is one of these (depending
@@ -232,7 +253,7 @@
 	pinctrl-0 = <&emmc_clk &emmc_cmd &emmc_bus8>;
 	vmmc-supply = <&vcc_io>;
 	vqmmc-supply = <&vcc18_emmc>;
-	status = "okay";
+	status = "disabled";
 };
 
 &gmac2phy {
@@ -279,17 +300,24 @@
 	};
 };
 
-&i2c1 {
+&i2c0 {
+	clock-frequency = <200000>;
+	i2c-scl-rising-time-ns = <150>;
+	i2c-scl-falling-time-ns = <30>;
 	status = "okay";
+};
+
+&i2c1 {
+	clock-frequency = <400000>;
 	i2c-scl-rising-time-ns = <160>;
 	i2c-scl-falling-time-ns = <30>;
-	clock-frequency = <400000>;
+	status = "okay";
 
 	rk805: pmic@18 {
 		compatible = "rockchip,rk805";
 		reg = <0x18>;
-		interrupt-parent = <&gpio2>;
-		interrupts = <6 IRQ_TYPE_LEVEL_LOW>;
+		interrupt-parent = <&gpio1>;
+		interrupts = <RK_PD0 IRQ_TYPE_LEVEL_LOW>;
 		#clock-cells = <1>;
 		clock-output-names = "xin32k", "rk805-clkout2";
 		gpio-controller;
@@ -410,9 +438,27 @@
 };
 
 &pinctrl {
+	gpio-leds {
+		leds_gpio: leds-gpio {
+			rockchip,pins = <0 RK_PA2 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+	};
+
+	rockchip-key {
+		gpio_key1: gpio-key1 {
+			rockchip,pins = <0 RK_PA0 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+	};
+
 	pmic {
 		pmic_int_l: pmic-int-l {
-			rockchip,pins = <2 RK_PA6 RK_FUNC_GPIO &pcfg_pull_up>;
+			rockchip,pins = <1 RK_PD0 RK_FUNC_GPIO &pcfg_pull_up>;
+		};
+	};
+
+	pwm {
+		pwm2_sleep_pin: pwm2-sleep-pin {
+			rockchip,pins = <2 RK_PA6 RK_FUNC_GPIO &pcfg_output_low>;
 		};
 	};
 
@@ -514,20 +560,20 @@
 	};
 
 	usb {
-		host_vbus_drv: host-vbus-drv {
-			rockchip,pins = <0 RK_PA0 RK_FUNC_GPIO &pcfg_pull_none>;
-		};
-
 		otg_vbus_drv: otg-vbus-drv {
-			rockchip,pins = <3 RK_PA1 RK_FUNC_GPIO &pcfg_pull_none>;
+			rockchip,pins = <1 RK_PD2 RK_FUNC_GPIO &pcfg_pull_none>;
 		};
-	};
 
-	gpio-leds {
-		leds_gpio: leds-gpio {
-			rockchip,pins = <0 RK_PA2 RK_FUNC_GPIO &pcfg_pull_none>;
+		usb30_en_drv: usb30-en-drv {
+			rockchip,pins = <2 RK_PC6 RK_FUNC_GPIO &pcfg_pull_none>;
 		};
 	};
+};
+
+&pwm2 {
+	pinctrl-names = "default", "sleep";
+	pinctrl-1 = <&pwm2_sleep_pin>;
+	status = "okay";
 };
 
 &sdmmc {
@@ -559,13 +605,13 @@
 	sd-uhs-sdr104;
 	#address-cells = <1>;
 	#size-cells = <0>;
-	status = "okay";
+	status = "disabled";
 
 	brcmf: bcrmf@1 {
 		reg = <1>;
 		compatible = "brcm,bcm4329-fmac";
-		interrupt-parent = <&gpio1>;
-		interrupts = <RK_PD2 IRQ_TYPE_LEVEL_HIGH>;
+		interrupt-parent = <&gpio3>;
+		interrupts = <RK_PA1 GPIO_ACTIVE_HIGH>;
 		interrupt-names = "host-wake";
 	};
 };
