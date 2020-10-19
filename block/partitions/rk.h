@@ -45,6 +45,4 @@ struct cmdline_rk_partition {
 	struct rk_partition *parts;
 };
 
-extern int rkpart_partition(struct parsed_partitions *state);
-
 #endif

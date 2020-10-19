@@ -289,6 +289,10 @@ int rkpart_partition(struct parsed_partitions *state)
 	if (!(state->bdev->bd_disk->flags & GENHD_FL_RKPART))
 		return 0;
 
+	/* reserved for backup GPT, align to 4M */
+	n -= 33;
+	n &= ~(0x2000LLU-1);
+
 	/* Fixme: parameter should be coherence with part table */
 	cmdline = strstr(saved_command_line, "mtdparts=");
 	if (!cmdline)
