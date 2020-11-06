@@ -20,8 +20,8 @@
 		ethernet1 = &r8153;
 	};
 
-	chosen {
-		bootargs = "swiotlb=1 coherent_pool=1m consoleblank=0";
+	chosen: chosen {
+		bootargs = "swiotlb=1 coherent_pool=1m";
 		stdout-path = "serial2:1500000n8";
 	};
 
