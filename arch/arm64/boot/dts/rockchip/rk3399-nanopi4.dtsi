@@ -581,6 +581,10 @@
 	status = "okay";
 };
 
+&rng {
+	status = "okay";
+};
+
 &saradc {
 	vref-supply = <&vcca1v8_s3>;
 	status = "okay";
