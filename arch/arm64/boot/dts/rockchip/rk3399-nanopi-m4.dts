@@ -48,6 +48,11 @@
 	};
 };
 
+&mach {
+	hwrev = <0x21>;
+	model = "NanoPi M4";
+};
+
 &vcc3v3_sys {
 	vin-supply = <&vcc5v0_core>;
 };

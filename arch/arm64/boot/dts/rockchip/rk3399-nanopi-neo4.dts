@@ -36,6 +36,11 @@
 	};
 };
 
+&mach {
+	hwrev = <4>;
+	model = "NanoPi NEO4";
+};
+
 &vcc3v3_sys {
 	vin-supply = <&vcc5v0_core>;
 };

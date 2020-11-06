@@ -94,6 +94,11 @@
 	};
 };
 
+&mach {
+	hwrev = <0>;
+	model = "NanoPC-T4";
+};
+
 &pinctrl {
 	ir {
 		ir_rx: ir-rx {
