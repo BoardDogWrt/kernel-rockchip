@@ -506,6 +506,22 @@ static void rk808_device_shutdown(void)
 		dev_err(&rk808_i2c_client->dev, "Failed to shutdown device!\n");
 }
 
+static void rk817_device_shutdown(void)
+{
+	int ret;
+	struct rk808 *rk808 = i2c_get_clientdata(rk808_i2c_client);
+
+	if (!rk808)
+		return;
+
+	ret = regmap_update_bits(rk808->regmap,
+				 RK817_SYS_CFG(3),
+				 RK817_SLPPIN_FUNC_MSK,
+				 SLPPIN_DN_FUN);
+	if (ret)
+		dev_err(&rk808_i2c_client->dev, "Failed to shutdown device!\n");
+}
+
 static void rk818_device_shutdown(void)
 {
 	int ret;
@@ -521,21 +537,44 @@ static void rk818_device_shutdown(void)
 		dev_err(&rk808_i2c_client->dev, "Failed to shutdown device!\n");
 }
 
+/* Called in syscore shutdown */
+static void (*orig_pm_power_off)(void);
+static void (*pm_shutdown)(void);
+
 static void rk8xx_syscore_shutdown(void)
 {
 	struct rk808 *rk808 = i2c_get_clientdata(rk808_i2c_client);
-	int ret;
 
-	if (system_state == SYSTEM_POWER_OFF &&
-	    (rk808->variant == RK809_ID || rk808->variant == RK817_ID)) {
-		ret = regmap_update_bits(rk808->regmap,
-					 RK817_SYS_CFG(3),
-					 RK817_SLPPIN_FUNC_MSK,
-					 SLPPIN_DN_FUN);
-		if (ret) {
-			dev_warn(&rk808_i2c_client->dev,
-				 "Cannot switch to power down function\n");
-		}
+	if (!rk808) {
+		dev_warn(&rk808_i2c_client->dev,
+			 "have no rk808, so do nothing here\n");
+		return;
+	}
+
+	/*
+	 * For PMIC that power off supplies by write register via i2c bus,
+	 * it's better to do power off at syscore shutdown here.
+	 *
+	 * Because when run to kernel's "pm_power_off" call, i2c may has
+	 * been stopped or PMIC may not be able to get i2c transfer while
+	 * there are too many devices are competiting.
+	 */
+	if (system_state == SYSTEM_POWER_OFF && pm_shutdown) {
+		dev_info(&rk808_i2c_client->dev, "System power off\n");
+		pm_shutdown();
+
+		/*
+		 * The above call should not return, if it does fall back to
+		 * the original power off method (typically PSCI poweroff).
+		 */
+		if (orig_pm_power_off)
+			orig_pm_power_off();
+
+		mdelay(10);
+		dev_info(&rk808_i2c_client->dev,
+			 "Power off failed !\n");
+		while (1)
+			;
 	}
 }
 
@@ -635,7 +674,7 @@ static int rk808_probe(struct i2c_client *client,
 		nr_pre_init_regs = ARRAY_SIZE(rk817_pre_init_reg);
 		cells = rk817s;
 		nr_cells = ARRAY_SIZE(rk817s);
-		register_syscore_ops(&rk808_syscore_ops);
+		rk808->pm_pwroff_fn = rk817_device_shutdown;
 		break;
 	default:
 		dev_err(&client->dev, "Unsupported RK8XX ID %lu\n",
@@ -688,15 +727,19 @@ static int rk808_probe(struct i2c_client *client,
 
 	pm_off = of_property_read_bool(np,
 				"rockchip,system-power-controller");
-	if (pm_off && !pm_power_off) {
+	if (pm_off) {
 		rk808_i2c_client = client;
-		pm_power_off = rk808->pm_pwroff_fn;
-	}
 
-	if (pm_off && !pm_power_off_prepare) {
-		if (!rk808_i2c_client)
-			rk808_i2c_client = client;
-		pm_power_off_prepare = rk808->pm_pwroff_prep_fn;
+		if (!pm_power_off_prepare)
+			pm_power_off_prepare = rk808->pm_pwroff_prep_fn;
+
+		if (rk808->pm_pwroff_fn) {
+			orig_pm_power_off = pm_power_off;
+			pm_shutdown = rk808->pm_pwroff_fn;
+
+			/* power off system in the syscore shutdown */
+			register_syscore_ops(&rk808_syscore_ops);
+		}
 	}
 
 	return 0;
@@ -725,6 +768,9 @@ static int rk808_remove(struct i2c_client *client)
 	if (rk808->pm_pwroff_prep_fn &&
 	    pm_power_off_prepare == rk808->pm_pwroff_prep_fn)
 		pm_power_off_prepare = NULL;
+
+	if (pm_shutdown)
+		unregister_syscore_ops(&rk808_syscore_ops);
 
 	return 0;
 }
