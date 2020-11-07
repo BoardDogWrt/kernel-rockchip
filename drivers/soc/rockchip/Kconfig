@@ -26,4 +26,10 @@ config ROCKCHIP_PM_DOMAINS
 
           If unsure, say N.
 
+config ROCKCHIP_PM_CONFIG
+	bool "Rockchip suspend mode config"
+	default y
+	help
+	  Say Y here if you want to set the suspend mode to the ATF.
+
 endif
