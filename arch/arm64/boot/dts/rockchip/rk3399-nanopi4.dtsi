@@ -107,11 +107,11 @@
 		regulator-name = "vbus_typec";
 	};
 
-	gpio-keys {
+	keys: gpio-keys {
 		compatible = "gpio-keys";
 		autorepeat;
 		pinctrl-names = "default";
-		pinctrl-0 = <&power_key>;
+		pinctrl-0 = <&key_pins>;
 
 		power {
 			debounce-interval = <100>;
@@ -125,7 +125,7 @@
 	leds: gpio-leds {
 		compatible = "gpio-leds";
 		pinctrl-names = "default";
-		pinctrl-0 = <&status_led_pin>;
+		pinctrl-0 = <&leds_pin>;
 
 		status_led: led-0 {
 			gpios = <&gpio0 RK_PB5 GPIO_ACTIVE_HIGH>;
@@ -504,6 +504,10 @@
 	status = "okay";
 };
 
+&reboot_mode {
+	status = "okay";
+};
+
 &pcie_phy {
 	assigned-clock-parents = <&cru SCLK_PCIEPHY_REF100M>;
 	assigned-clock-rates = <100000000>;
@@ -528,7 +532,7 @@
 	};
 
 	gpio-leds {
-		status_led_pin: status-led-pin {
+		leds_pin: status-led-pin {
 			rockchip,pins = <0 RK_PB5 RK_FUNC_GPIO &pcfg_pull_none>;
 		};
 	};
@@ -558,7 +562,7 @@
 	};
 
 	rockchip-key {
-		power_key: power-key {
+		key_pins: key-pins {
 			rockchip,pins = <0 RK_PA5 RK_FUNC_GPIO &pcfg_pull_up>;
 		};
 	};
@@ -728,10 +732,14 @@
 };
 
 &usbdrd_dwc3_0 {
+	snps,xhci-slow-suspend-quirk;
+	snps,xhci-trb-ent-quirk;
 	status = "okay";
 };
 
 &usbdrd_dwc3_1 {
+	snps,xhci-slow-suspend-quirk;
+	snps,xhci-trb-ent-quirk;
 	dr_mode = "host";
 	status = "okay";
 };
