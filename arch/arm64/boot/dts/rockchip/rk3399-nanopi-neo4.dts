@@ -10,7 +10,7 @@
 
 / {
 	model = "FriendlyARM NanoPi NEO4";
-	compatible = "friendlyarm,nanopi-neo4", "rockchip,rk3399";
+	compatible = "friendlyelec,nanopi-neo4", "rockchip,rk3399";
 
 	vdd_5v: vdd-5v {
 		compatible = "regulator-fixed";
