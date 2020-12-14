@@ -78,6 +78,9 @@ Optional properties:
 			park mode are disabled.
  - snps,dis_metastability_quirk: when set, disable metastability workaround.
 			CAUTION: use only if you are absolutely sure of it.
+ - snps,dis-split-quirk: when set, change the way URBs are handled by the
+			 driver. Needed to avoid -EPROTO errors with usbhid
+			 on some devices (Hikey 970).
  - snps,xhci-slow-suspend-quirk: when set, need an extraordinary delay to wait
 			for xHC enter the Halted state (i.e. HCH in the USBSTS
 			register is '1').
