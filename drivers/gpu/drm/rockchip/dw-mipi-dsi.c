@@ -530,7 +530,7 @@ static void dw_mipi_dsi_phy_init(struct dw_mipi_dsi *dsi)
 		{1400, 0x1c}, {1450, 0x2c}, {1500, 0x3c}
 	};
 	u8 hsfreqrange, counter;
-	unsigned int index, txbyteclkhs;
+	unsigned int index;
 	u16 n, m;
 
 	for (index = 0; index < ARRAY_SIZE(hsfreqrange_table); index++)
@@ -543,18 +543,31 @@ static void dw_mipi_dsi_phy_init(struct dw_mipi_dsi *dsi)
 	hsfreqrange = hsfreqrange_table[index].hsfreqrange;
 	regmap_write(dphy->regmap, 0x44, HSFREQRANGE(hsfreqrange));
 
-	txbyteclkhs = dsi->lane_mbps >> 3;
-	counter = txbyteclkhs * 60 / NSEC_PER_USEC;
+	/*
+	 * FIXME:
+	 * The small adjustment (+7) makes the `counter' close to fixed 0xf
+	 * in other drivers, and TST101WUIH can work properly.
+	 */
+	counter = DIV_ROUND_UP(dsi->lane_mbps * 60, 1000 << 3) + 7;
 	regmap_write(dphy->regmap, 0x60, 0x80 | counter);
 	regmap_write(dphy->regmap, 0x70, 0x80 | counter);
 
 	n = dphy->input_div - 1;
 	m = dphy->feedback_div - 1;
-	regmap_write(dphy->regmap, 0x19,
-		     FEEDBACK_DIV_DEF_VAL_BYPASS | INPUT_DIV_DEF_VAL_BYPASS);
+
 	regmap_write(dphy->regmap, 0x17, INPUT_DIV(n));
 	regmap_write(dphy->regmap, 0x18, FEEDBACK_DIV_LO(m));
+	/*
+	 * We need set PLL_INPUT_AND_LOOP_DIVIDER_RATIOS_CONTROL immediately
+	 * to make the configured LSB effective according to IP simulation
+	 * and lab test results.
+	 * Only in this way can we get correct mipi phy pll frequency.
+	 */
+	regmap_write(dphy->regmap, 0x19,
+		     FEEDBACK_DIV_DEF_VAL_BYPASS | INPUT_DIV_DEF_VAL_BYPASS);
 	regmap_write(dphy->regmap, 0x18, FEEDBACK_DIV_HI(m >> 5));
+	regmap_write(dphy->regmap, 0x19,
+		     FEEDBACK_DIV_DEF_VAL_BYPASS | INPUT_DIV_DEF_VAL_BYPASS);
 }
 
 static int mipi_dphy_power_on(struct dw_mipi_dsi *dsi)

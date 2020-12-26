@@ -139,6 +139,32 @@ static struct lcd_desc k116e = {
 	},
 };
 
+static struct lcd_desc k101d = {
+	.width = 1200,
+	.height = 1920,
+	.p_width = 135,
+	.p_height = 216,
+	.bpp = 24,
+	.freq = 60,
+
+	.timing = {
+		.h_fp = 60,
+		.h_bp = 80,
+		.h_sw = 24,
+		.v_fp = 14,
+		.v_fpe = 1,
+		.v_bp = 10,
+		.v_bpe = 1,
+		.v_sw = 8,
+	},
+	.polarity = {
+		.rise_vclk = 0,
+		.inv_hsync = 0,
+		.inv_vsync = 0,
+		.inv_vden = 0,
+	},
+};
+
 /* HDMI */
 static struct lcd_desc hdmi_def = {
 	.width = 1920,
@@ -196,6 +222,7 @@ static struct {
 	{ "S701",	&s70,	CTP_GOODIX  },
 
 	{ "LC116LF1L01",&k116e,	CTP_FT5526_KR },
+	{ "TST101WUIH", &k101d,	CTP_FT5X06 },
 
 	{ "EDID",	NULL,	CTP_AUTO    },
 };
