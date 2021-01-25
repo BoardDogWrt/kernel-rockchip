@@ -263,7 +263,7 @@ static int panel_setup_lcd(char *str)
 		/* parse <xres>x<yres> */
 		if (i >=ARRAY_SIZE(panel_hdmi_modes) &&
 			sscanf(str + 4, "%dx%d", &w, &h) == 2) {
-			if (w > 1920 || h > 1080) {
+			if ((w > 1920 && h > 1280) || (w > 1280 && h > 1920)) {
 				lcd->width = w / 2;
 				lcd->height = h / 2;
 			} else if (w > 640 && h > 480) {
