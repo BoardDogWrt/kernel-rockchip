@@ -28,6 +28,8 @@
 		machine = "NANOPI4";
 		hwrev = <255>;
 		model = "NanoPi 4 Series";
+		nvmem-cells = <&cpu_id>;
+		nvmem-cell-names = "id";
 	};
 
 	clkin_gmac: external-gmac-clock {
