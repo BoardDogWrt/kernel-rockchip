@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * From FreeBSD 2.2.7: Fundamental constants relating to ethernet.
  *

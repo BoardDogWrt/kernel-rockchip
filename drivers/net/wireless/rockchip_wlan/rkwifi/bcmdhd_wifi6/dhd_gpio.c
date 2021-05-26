@@ -121,7 +121,7 @@ static int dhd_wlan_set_carddetect(int present)
 #ifdef CUSTOMER_HW_PLATFORM
 		err = sdhci_force_presence_change(&sdmmc_channel, 0);
 #endif /* CUSTOMER_HW_PLATFORM */
-	rockchip_wifi_set_carddetect(0);
+		rockchip_wifi_set_carddetect(0);
 #elif defined(BCMPCIE)
 		printf("======== Card detection to remove PCIE card! ========\n");
 #endif

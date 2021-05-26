@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Linux cfgp2p driver
  *
@@ -39,7 +38,7 @@
 #include <linux/string.h>
 #include <linux/timer.h>
 #include <linux/if_arp.h>
-#include <asm/uaccess.h>
+#include <linux/uaccess.h>
 
 #include <bcmutils.h>
 #include <bcmstdlib_s.h>
@@ -460,7 +459,7 @@ wl_cfgp2p_ifadd(struct bcm_cfg80211 *cfg, struct ether_addr *mac, u8 if_type,
 	err = wldev_iovar_setbuf(ndev, "p2p_ifadd", &ifreq, sizeof(ifreq),
 		cfg->ioctl_buf, WLC_IOCTL_MAXLEN, &cfg->ioctl_buf_sync);
 	if (unlikely(err < 0)) {
-		printk("'cfg p2p_ifadd' error %d\n", err);
+		CFGP2P_ERR(("'cfg p2p_ifadd' error %d\n", err));
 		return err;
 	}
 
@@ -483,7 +482,7 @@ wl_cfgp2p_ifdisable(struct bcm_cfg80211 *cfg, struct ether_addr *mac)
 	ret = wldev_iovar_setbuf(netdev, "p2p_ifdis", mac, sizeof(*mac),
 		cfg->ioctl_buf, WLC_IOCTL_MAXLEN, &cfg->ioctl_buf_sync);
 	if (unlikely(ret < 0)) {
-		printk("'cfg p2p_ifdis' error %d\n", ret);
+		CFGP2P_ERR(("'cfg p2p_ifdis' error %d\n", ret));
 	}
 	return ret;
 }
@@ -507,7 +506,7 @@ wl_cfgp2p_ifdel(struct bcm_cfg80211 *cfg, struct ether_addr *mac)
 	ret = wldev_iovar_setbuf(netdev, "p2p_ifdel", mac, sizeof(*mac),
 		cfg->ioctl_buf, WLC_IOCTL_MAXLEN, &cfg->ioctl_buf_sync);
 	if (unlikely(ret < 0)) {
-		printk("'cfg p2p_ifdel' error %d\n", ret);
+		CFGP2P_ERR(("'cfg p2p_ifdel' error %d\n", ret));
 	}
 #ifdef WL_DISABLE_HE_P2P
 	if ((bssidx = wl_get_bssidx_by_wdev(cfg, netdev->ieee80211_ptr)) < 0) {
@@ -552,7 +551,7 @@ wl_cfgp2p_ifchange(struct bcm_cfg80211 *cfg, struct ether_addr *mac, u8 if_type,
 	err = wldev_iovar_setbuf(netdev, "p2p_ifupd", &ifreq, sizeof(ifreq),
 		cfg->ioctl_buf, WLC_IOCTL_MAXLEN, &cfg->ioctl_buf_sync);
 	if (unlikely(err < 0)) {
-		printk("'cfg p2p_ifupd' error %d\n", err);
+		CFGP2P_ERR(("'cfg p2p_ifupd' error %d\n", err));
 	} else if (if_type == WL_P2P_IF_GO) {
 		cfg->p2p->p2p_go_count++;
 	}
@@ -1115,7 +1114,7 @@ wl_cfgp2p_escan(struct bcm_cfg80211 *cfg, struct net_device *dev, u16 active_sca
 
 	ret = wldev_iovar_setbuf_bsscfg(pri_dev, "p2p_scan",
 		memblk, memsize, cfg->ioctl_buf, WLC_IOCTL_MAXLEN, bssidx, &cfg->ioctl_buf_sync);
-	WL_MSG(dev->name, "P2P_SEARCH sync ID: %d, bssidx: %d\n", sync_id, bssidx);
+	CFGP2P_DBG(("P2P_SEARCH sync ID: %d, bssidx: %d\n", sync_id, bssidx));
 	if (ret == BCME_OK) {
 		wl_set_p2p_status(cfg, SCANNING);
 	}
@@ -2404,7 +2403,7 @@ wl_cfgp2p_register_ndev(struct bcm_cfg80211 *cfg)
 	cfg->p2p_wdev = wdev;
 	cfg->p2p_net = net;
 
-	printk("%s: P2P Interface Registered\n", net->name);
+	WL_MSG(net->name, "P2P Interface Registered\n");
 
 	return ret;
 }
