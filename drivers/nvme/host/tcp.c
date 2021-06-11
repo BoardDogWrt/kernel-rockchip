@@ -287,7 +287,7 @@ static inline void nvme_tcp_queue_request(struct nvme_tcp_request *req,
 	 * directly, otherwise queue io_work. Also, only do that if we
 	 * are on the same cpu, so we don't introduce contention.
 	 */
-	if (queue->io_cpu == __smp_processor_id() &&
+	if (queue->io_cpu == raw_smp_processor_id() &&
 	    sync && empty && mutex_trylock(&queue->send_mutex)) {
 		queue->more_requests = !last;
 		nvme_tcp_send_all(queue);
@@ -567,6 +567,13 @@ static int nvme_tcp_setup_h2c_data_pdu(struct nvme_tcp_request *req,
 
 	req->pdu_len = le32_to_cpu(pdu->r2t_length);
 	req->pdu_sent = 0;
+
+	if (unlikely(!req->pdu_len)) {
+		dev_err(queue->ctrl->ctrl.device,
+			"req %d r2t len is %u, probably a bug...\n",
+			rq->tag, req->pdu_len);
+		return -EPROTO;
+	}
 
 	if (unlikely(req->data_sent + req->pdu_len > req->data_len)) {
 		dev_err(queue->ctrl->ctrl.device,
@@ -867,7 +874,7 @@ static void nvme_tcp_state_change(struct sock *sk)
 {
 	struct nvme_tcp_queue *queue;
 
-	read_lock(&sk->sk_callback_lock);
+	read_lock_bh(&sk->sk_callback_lock);
 	queue = sk->sk_user_data;
 	if (!queue)
 		goto done;
@@ -888,7 +895,7 @@ static void nvme_tcp_state_change(struct sock *sk)
 
 	queue->state_change(sk);
 done:
-	read_unlock(&sk->sk_callback_lock);
+	read_unlock_bh(&sk->sk_callback_lock);
 }
 
 static inline bool nvme_tcp_queue_more(struct nvme_tcp_queue *queue)
@@ -933,7 +940,6 @@ static int nvme_tcp_try_send_data(struct nvme_tcp_request *req)
 		if (ret <= 0)
 			return ret;
 
-		nvme_tcp_advance_req(req, ret);
 		if (queue->data_digest)
 			nvme_tcp_ddgst_update(queue->snd_hash, page,
 					offset, ret);
@@ -950,6 +956,7 @@ static int nvme_tcp_try_send_data(struct nvme_tcp_request *req)
 			}
 			return 1;
 		}
+		nvme_tcp_advance_req(req, ret);
 	}
 	return -EAGAIN;
 }
@@ -1133,7 +1140,8 @@ static void nvme_tcp_io_work(struct work_struct *w)
 				pending = true;
 			else if (unlikely(result < 0))
 				break;
-		}
+		} else
+			pending = !llist_empty(&queue->req_list);
 
 		result = nvme_tcp_try_recv(queue);
 		if (result > 0)
@@ -1748,8 +1756,11 @@ static int nvme_tcp_alloc_io_queues(struct nvme_ctrl *ctrl)
 		return ret;
 
 	ctrl->queue_count = nr_io_queues + 1;
-	if (ctrl->queue_count < 2)
-		return 0;
+	if (ctrl->queue_count < 2) {
+		dev_err(ctrl->device,
+			"unable to set any I/O queues\n");
+		return -ENOMEM;
+	}
 
 	dev_info(ctrl->device,
 		"creating %d I/O queues.\n", nr_io_queues);

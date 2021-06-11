@@ -2525,6 +2525,12 @@ static int ath11k_mac_op_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 	 */
 	spin_lock_bh(&ab->base_lock);
 	peer = ath11k_peer_find(ab, arvif->vdev_id, peer_addr);
+
+	/* flush the fragments cache during key (re)install to
+	 * ensure all frags in the new frag list belong to the same key.
+	 */
+	if (peer && cmd == SET_KEY)
+		ath11k_peer_frags_flush(ar, peer);
 	spin_unlock_bh(&ab->base_lock);
 
 	if (!peer) {
@@ -6317,16 +6323,19 @@ static int __ath11k_mac_register(struct ath11k *ar)
 	ret = ath11k_regd_update(ar, true);
 	if (ret) {
 		ath11k_err(ar->ab, "ath11k regd update failed: %d\n", ret);
-		goto err_free_if_combs;
+		goto err_unregister_hw;
 	}
 
 	ret = ath11k_debugfs_register(ar);
 	if (ret) {
 		ath11k_err(ar->ab, "debugfs registration failed: %d\n", ret);
-		goto err_free_if_combs;
+		goto err_unregister_hw;
 	}
 
 	return 0;
+
+err_unregister_hw:
+	ieee80211_unregister_hw(ar->hw);
 
 err_free_if_combs:
 	kfree(ar->hw->wiphy->iface_combinations[0].limits);
