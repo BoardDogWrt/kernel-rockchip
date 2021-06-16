@@ -4382,6 +4382,8 @@ int stmmac_dvr_probe(struct device *device,
 	netif_set_real_num_rx_queues(ndev, priv->plat->rx_queues_to_use);
 	netif_set_real_num_tx_queues(ndev, priv->plat->tx_queues_to_use);
 
+	ndev->priv_flags |= IFF_LIVE_ADDR_CHANGE;
+
 	ndev->netdev_ops = &stmmac_netdev_ops;
 
 	ndev->hw_features = NETIF_F_SG | NETIF_F_IP_CSUM | NETIF_F_IPV6_CSUM |
