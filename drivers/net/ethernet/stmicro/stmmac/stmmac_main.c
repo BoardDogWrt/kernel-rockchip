@@ -4929,6 +4929,7 @@ int stmmac_dvr_probe(struct device *device,
 		goto error_hw_init;
 
 	stmmac_check_ether_addr(priv);
+	ndev->priv_flags |= IFF_LIVE_ADDR_CHANGE;
 
 	ndev->netdev_ops = &stmmac_netdev_ops;
 
