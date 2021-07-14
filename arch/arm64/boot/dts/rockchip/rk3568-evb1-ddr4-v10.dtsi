@@ -95,6 +95,13 @@
 	};
 };
 
+&pmu_io_domains {
+	status = "okay";
+	// pmuio1-supply = <&vcc3v3_pmu>;
+	vccio4-supply = <&vcc_1v8>;
+	vccio6-supply = <&vcc_1v8>;
+};
+
 &combphy0_us {
 	status = "okay";
 };
