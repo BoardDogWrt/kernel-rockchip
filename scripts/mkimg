@@ -226,7 +226,7 @@ fi
 
 scripts/resource_tool ${DTB_ARGS} ${DTB_PATH} ${LOGO} ${LOGO_KERNEL} >/dev/null
 
-if [ "${ARCH}" == "arm64" ]; then
+if [ "${ARCH}" == "arm64" -a "${IO_DOMAIN}" == "verify" ]; then
 	./scripts/io-domain.sh ${srctree}/arch/arm64/boot/dts/rockchip/.${DTB}
 fi
 
