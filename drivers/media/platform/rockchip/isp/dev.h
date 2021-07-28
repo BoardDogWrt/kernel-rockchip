@@ -44,6 +44,7 @@
 #include "isp_params.h"
 #include "isp_stats.h"
 #include "isp_mipi_luma.h"
+#include "procfs.h"
 
 #define DRIVER_NAME "rkisp"
 #define ISP_VDEV_NAME DRIVER_NAME  "_ispdev"
@@ -80,10 +81,14 @@ enum rkisp_isp_state {
 	ISP_FRAME_END = BIT(0),
 	ISP_FRAME_IN = BIT(1),
 	ISP_FRAME_VS = BIT(2),
+	ISP_FRAME_MP = BIT(3),
+	ISP_FRAME_SP = BIT(4),
+	ISP_FRAME_MPFBC = BIT(5),
 
 	ISP_STOP = BIT(8),
 	ISP_START = BIT(9),
 	ISP_ERROR = BIT(10),
+	ISP_MIPI_ERROR = BIT(11),
 };
 
 enum rkisp_isp_inp {
@@ -95,6 +100,15 @@ enum rkisp_isp_inp {
 	INP_DVP = BIT(5),
 	INP_DMARX_ISP = BIT(6),
 	INP_LVDS = BIT(7),
+	INP_CIF = BIT(8),
+};
+
+enum rkisp_rdbk_filt {
+	RDBK_F_VS,
+	RDBK_F_RD0,
+	RDBK_F_RD1,
+	RDBK_F_RD2,
+	RDBK_F_MAX
 };
 
 /*
@@ -187,6 +201,7 @@ struct rkisp_device {
 	struct rkisp_csi_device csi_dev;
 	struct rkisp_bridge_device br_dev;
 	struct rkisp_luma_vdev luma_vdev;
+	struct proc_dir_entry *procfs;
 	struct rkisp_pipeline pipe;
 	enum rkisp_isp_ver isp_ver;
 	struct rkisp_emd_data emd_data_fifo[RKISP_EMDDATA_FIFO_MAX];
@@ -196,14 +211,31 @@ struct rkisp_device {
 	int vs_irq;
 	struct gpio_desc *vs_irq_gpio;
 	struct rkisp_hdr hdr;
-	enum rkisp_isp_state isp_state;
+	unsigned int isp_state;
 	unsigned int isp_err_cnt;
+	unsigned int isp_isr_cnt;
 	unsigned int isp_inp;
 	struct mutex apilock; /* mutex to serialize the calls of stream */
 	struct mutex iqlock; /* mutex to serialize the calls of iq */
 	wait_queue_head_t sync_onoff;
+	dma_addr_t resmem_addr;
 	phys_addr_t resmem_pa;
 	size_t resmem_size;
 	int dev_id;
+	unsigned int skip_frame;
+	unsigned int irq_ends;
+	unsigned int irq_ends_mask;
+	bool send_fbcgain;
+	struct rkisp_ispp_buf *cur_fbcgain;
+	struct rkisp_buffer *cur_spbuf;
+
+	struct kfifo rdbk_kfifo;
+	spinlock_t rdbk_lock;
+	int rdbk_cnt;
+	int rdbk_cnt_x1;
+	int rdbk_cnt_x2;
+	int rdbk_cnt_x3;
+	u32 rd_mode;
+	u8 filt_state[RDBK_F_MAX];
 };
 #endif

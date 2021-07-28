@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/* SPDX-License-Identifier: ((GPL-2.0+ WITH Linux-syscall-note) OR MIT) */
 /*
  * Rockchip isp1 driver
  * Copyright (C) 2017 Rockchip Electronics Co., Ltd.
@@ -9,7 +9,7 @@
 
 #include <linux/types.h>
 #include <linux/v4l2-controls.h>
-#include "rkisp2-config.h"
+#include "rkisp21-config.h"
 
 #define CIFISP_MODULE_DPCC			(1 << 0)
 #define CIFISP_MODULE_BLS			(1 << 1)

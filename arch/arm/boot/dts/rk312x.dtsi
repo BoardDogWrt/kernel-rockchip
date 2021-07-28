@@ -56,6 +56,7 @@
 	#size-cells = <1>;
 
 	aliases {
+		ethernet0 = &gmac;
 		serial0 = &uart0;
 		serial1 = &uart1;
 		serial2 = &uart2;
@@ -63,6 +64,9 @@
 		i2c1 = &i2c1;
 		i2c2 = &i2c2;
 		i2c3 = &i2c3;
+		mmc0 = &sdmmc;
+		mmc1 = &sdio;
+		mmc2 = &emmc;
 	};
 
 	cpus {
@@ -117,26 +121,26 @@
 
 		opp-216000000 {
 			opp-hz = /bits/ 64 <216000000>;
-			opp-microvolt = <950000 950000 1425000>;
-			opp-microvolt-L0 = <950000 950000 1425000>;
+			opp-microvolt = <1000000 1000000 1425000>;
+			opp-microvolt-L0 = <1000000 1000000 1425000>;
 			opp-microvolt-L1 = <950000 950000 1425000>;
 			opp-microvolt-L2 = <950000 950000 1425000>;
 			clock-latency-ns = <40000>;
 		};
 		opp-408000000 {
 			opp-hz = /bits/ 64 <408000000>;
-			opp-microvolt = <950000 950000 1425000>;
-			opp-microvolt-L0 = <950000 950000 1425000>;
+			opp-microvolt = <1000000 1000000 1425000>;
+			opp-microvolt-L0 = <1000000 1000000 1425000>;
 			opp-microvolt-L1 = <950000 950000 1425000>;
 			opp-microvolt-L2 = <950000 950000 1425000>;
 			clock-latency-ns = <40000>;
 		};
 		opp-600000000 {
 			opp-hz = /bits/ 64 <600000000>;
-			opp-microvolt = <1075000 1075000 1425000>;
-			opp-microvolt-L0 = <1075000 1075000 1425000>;
-			opp-microvolt-L1 = <1025000 1025000 1425000>;
-			opp-microvolt-L2 = <975000 975000 1425000>;
+			opp-microvolt = <1150000 1150000 1425000>;
+			opp-microvolt-L0 = <11500000 1150000 1425000>;
+			opp-microvolt-L1 = <1100000 1100000 1425000>;
+			opp-microvolt-L2 = <1050000 1050000 1425000>;
 			clock-latency-ns = <40000>;
 		};
 		opp-696000000 {
@@ -158,8 +162,8 @@
 		};
 		opp-1008000000 {
 			opp-hz = /bits/ 64 <1008000000>;
-			opp-microvolt = <1325000 1325000 1425000>;
-			opp-microvolt-L0 = <1325000 1325000 1425000>;
+			opp-microvolt = <1350000 1350000 1425000>;
+			opp-microvolt-L0 = <1350000 1350000 1425000>;
 			opp-microvolt-L1 = <1275000 1275000 1425000>;
 			opp-microvolt-L2 = <1225000 1225000 1425000>;
 			clock-latency-ns = <40000>;
@@ -242,11 +246,11 @@
 
 		opp-200000000 {
 			opp-hz = /bits/ 64 <200000000>;
-			opp-microvolt = <950000>;
+			opp-microvolt = <1025000>;
 		};
 		opp-300000000 {
 			opp-hz = /bits/ 64 <300000000>;
-			opp-microvolt = <950000>;
+			opp-microvolt = <10250000>;
 		};
 		opp-396000000 {
 			opp-hz = /bits/ 64 <396000000>;
@@ -1288,6 +1292,10 @@
 			bias-pull-pin-default;
 		};
 
+		pcfg_pull_up: pcfg-pull-up {
+			bias-pull-up;
+		};
+
 		pcfg_output_high: pcfg-output-high {
 			output-high;
 		};
@@ -1389,31 +1397,31 @@
 
 			lcdc_sleep_pins: lcdc-sleep-pins {
 				rockchip,pins =
-					<2 RK_PB0 0 &pcfg_pull_none>,	/* LCDC_DCLK */
-					<2 RK_PB1 0 &pcfg_pull_none>,	/* LCDC_HSYNC */
-					<2 RK_PB2 0 &pcfg_pull_none>,	/* LCDC_VSYNC */
-					<2 RK_PB3 0 &pcfg_pull_none>,	/* LCDC_DEN */
-					<2 RK_PB4 0 &pcfg_pull_none>,	/* LCDC_DATA10 */
-					<2 RK_PB5 0 &pcfg_pull_none>,	/* LCDC_DATA11 */
-					<2 RK_PB6 0 &pcfg_pull_none>,	/* LCDC_DATA12 */
-					<2 RK_PB7 0 &pcfg_pull_none>,	/* LCDC_DATA13 */
-					<2 RK_PC0 0 &pcfg_pull_none>,	/* LCDC_DATA14 */
-					<2 RK_PC1 0 &pcfg_pull_none>,	/* LCDC_DATA15 */
-					<2 RK_PC2 0 &pcfg_pull_none>,	/* LCDC_DATA16 */
-					<2 RK_PC3 0 &pcfg_pull_none>,	/* LCDC_DATA17 */
-					<2 RK_PC4 0 &pcfg_pull_none>,	/* LCDC_DATA18 */
-					<2 RK_PC5 0 &pcfg_pull_none>,	/* LCDC_DATA19 */
-					<2 RK_PC6 0 &pcfg_pull_none>,	/* LCDC_DATA20 */
-					<2 RK_PC7 0 &pcfg_pull_none>,	/* LCDC_DATA21 */
-					<2 RK_PD0 0 &pcfg_pull_none>,	/* LCDC_DATA22 */
-					<2 RK_PD1 0 &pcfg_pull_none>;	/* LCDC_DATA23 */
+					<2 RK_PB0 RK_FUNC_GPIO &pcfg_pull_none>,	/* LCDC_DCLK */
+					<2 RK_PB1 RK_FUNC_GPIO &pcfg_pull_none>,	/* LCDC_HSYNC */
+					<2 RK_PB2 RK_FUNC_GPIO &pcfg_pull_none>,	/* LCDC_VSYNC */
+					<2 RK_PB3 RK_FUNC_GPIO &pcfg_pull_none>,	/* LCDC_DEN */
+					<2 RK_PB4 RK_FUNC_GPIO &pcfg_pull_none>,	/* LCDC_DATA10 */
+					<2 RK_PB5 RK_FUNC_GPIO &pcfg_pull_none>,	/* LCDC_DATA11 */
+					<2 RK_PB6 RK_FUNC_GPIO &pcfg_pull_none>,	/* LCDC_DATA12 */
+					<2 RK_PB7 RK_FUNC_GPIO &pcfg_pull_none>,	/* LCDC_DATA13 */
+					<2 RK_PC0 RK_FUNC_GPIO &pcfg_pull_none>,	/* LCDC_DATA14 */
+					<2 RK_PC1 RK_FUNC_GPIO &pcfg_pull_none>,	/* LCDC_DATA15 */
+					<2 RK_PC2 RK_FUNC_GPIO &pcfg_pull_none>,	/* LCDC_DATA16 */
+					<2 RK_PC3 RK_FUNC_GPIO &pcfg_pull_none>,	/* LCDC_DATA17 */
+					<2 RK_PC4 RK_FUNC_GPIO &pcfg_pull_none>,	/* LCDC_DATA18 */
+					<2 RK_PC5 RK_FUNC_GPIO &pcfg_pull_none>,	/* LCDC_DATA19 */
+					<2 RK_PC6 RK_FUNC_GPIO &pcfg_pull_none>,	/* LCDC_DATA20 */
+					<2 RK_PC7 RK_FUNC_GPIO &pcfg_pull_none>,	/* LCDC_DATA21 */
+					<2 RK_PD0 RK_FUNC_GPIO &pcfg_pull_none>,	/* LCDC_DATA22 */
+					<2 RK_PD1 RK_FUNC_GPIO &pcfg_pull_none>;	/* LCDC_DATA23 */
 			};
 		};
 
 		uart0 {
 			uart0_xfer: uart0-xfer {
-				rockchip,pins = <2 RK_PD2 2 &pcfg_pull_default>,
-						<2 RK_PD3 2 &pcfg_pull_none>;
+				rockchip,pins = <2 RK_PD2 2 &pcfg_pull_up>,
+						<2 RK_PD3 2 &pcfg_pull_up>;
 			};
 
 			uart0_cts: uart0-cts {
@@ -1427,8 +1435,8 @@
 
 		uart1 {
 			uart1_xfer: uart1-xfer {
-				rockchip,pins = <1 RK_PB1 2 &pcfg_pull_default>,
-						<1 RK_PB2 2 &pcfg_pull_default>;
+				rockchip,pins = <1 RK_PB1 2 &pcfg_pull_up>,
+						<1 RK_PB2 2 &pcfg_pull_up>;
 			};
 
 			uart1_cts: uart1-cts {
@@ -1442,8 +1450,8 @@
 
 		uart2 {
 			uart2_xfer: uart2-xfer {
-				rockchip,pins = <1 RK_PC2 2 &pcfg_pull_default>,
-						<1 RK_PC3 2 &pcfg_pull_none>;
+				rockchip,pins = <1 RK_PC2 2 &pcfg_pull_up>,
+						<1 RK_PC3 2 &pcfg_pull_up>;
 			};
 
 			uart2_cts: uart2-cts {

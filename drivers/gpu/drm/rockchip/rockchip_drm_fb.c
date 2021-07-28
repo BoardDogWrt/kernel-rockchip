@@ -226,7 +226,7 @@ static void rockchip_drm_output_poll_changed(struct drm_device *dev)
 	struct rockchip_drm_private *private = dev->dev_private;
 	struct drm_fb_helper *fb_helper = private->fbdev_helper;
 
-	if (fb_helper && !private->loader_protect)
+	if (fb_helper && dev->mode_config.poll_enabled && !private->loader_protect)
 		drm_fb_helper_hotplug_event(fb_helper);
 }
 
@@ -345,9 +345,9 @@ rockchip_drm_atomic_helper_wait_for_vblanks(struct drm_device *dev,
 
 		s = to_rockchip_crtc_state(crtc->state);
 
-		if (!s->mode_update)
-			WARN(!ret, "[CRTC:%d:%s] state:%d, vblank wait timed out\n",
-			     crtc->base.id, crtc->name, old_crtc_state->active);
+		if (!s->mode_update && !ret)
+			DRM_WARN("[CRTC:%d:%s] state:%d, vblank wait timed out\n",
+				 crtc->base.id, crtc->name, old_crtc_state->active);
 
 		drm_crtc_vblank_put(crtc);
 		s->mode_update = false;
@@ -426,7 +426,9 @@ rockchip_atomic_commit_complete(struct rockchip_atomic_commit *commit)
 		rockchip_dmcfreq_vop_bandwidth_update(prv->devfreq, bandwidth,
 						      plane_num);
 
+	mutex_lock(&prv->commit_lock);
 	drm_atomic_helper_commit_planes(dev, state, true);
+	mutex_unlock(&prv->commit_lock);
 
 	rockchip_drm_psr_inhibit_put_state(state);
 

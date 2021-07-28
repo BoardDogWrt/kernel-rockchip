@@ -47,6 +47,7 @@
 #define     IEP2_REG_RO_BUS_ERROR_STS(x)		((x) & BIT(4))
 #define     IEP2_REG_RO_OSD_MAX_STS(x)			((x) & BIT(1))
 #define     IEP2_REG_RO_FRM_DONE_STS(x)			((x) & BIT(0))
+#define     IEP2_REG_RO_VALID_INT_STS(x)		((x) & (BIT(5) | BIT(4) | BIT(0)))
 #define IEP2_REG_INT_RAW_STS			0x002c
 #define IEP2_REG_VIR_SRC_IMG_WIDTH		0x0030
 #define     IEP2_REG_SRC_VIR_UV_STRIDE(x)		(((x) & 0xffff) << 16)
@@ -60,6 +61,8 @@
 #define     IEP2_REG_DIL_MV_HIST_EN			BIT(17)
 #define     IEP2_REG_DIL_ROI_EN				BIT(16)
 #define     IEP2_REG_DIL_COMB_EN			BIT(15)
+#define     IEP2_REG_DIL_BLE_EN				BIT(14)
+#define     IEP2_REG_DIL_EEDI_EN			BIT(13)
 #define     IEP2_REG_DIL_MEMC_EN			BIT(12)
 #define     IEP2_REG_DIL_OSD_EN				BIT(11)
 #define     IEP2_REG_DIL_PD_EN				BIT(10)

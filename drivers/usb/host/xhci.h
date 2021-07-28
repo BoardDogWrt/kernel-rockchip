@@ -716,7 +716,7 @@ struct xhci_ep_ctx {
  * 4 - TRB error
  * 5-7 - reserved
  */
-#define EP_STATE_MASK		(0xf)
+#define EP_STATE_MASK		(0x7)
 #define EP_STATE_DISABLED	0
 #define EP_STATE_RUNNING	1
 #define EP_STATE_HALTED		2
@@ -1745,6 +1745,10 @@ struct xhci_hcd {
 	struct xhci_doorbell_array __iomem *dba;
 	/* Our HCD's current interrupter register set */
 	struct	xhci_intr_reg __iomem *ir_set;
+	/* secondary interrupter */
+	struct	xhci_intr_reg __iomem **sec_ir_set;
+
+	int		core_id;
 
 	/* Cached register copies of read-only HC data */
 	__u32		hcs_params1;
@@ -1788,6 +1792,11 @@ struct xhci_hcd {
 	struct xhci_command	*current_cmd;
 	struct xhci_ring	*event_ring;
 	struct xhci_erst	erst;
+
+	/* secondary event ring and erst */
+	struct xhci_ring	**sec_event_ring;
+	struct xhci_erst	*sec_erst;
+
 	/* Scratchpad */
 	struct xhci_scratchpad  *scratchpad;
 	/* Store LPM test failed devices' information */
@@ -1878,7 +1887,9 @@ struct xhci_hcd {
 #define XHCI_SNPS_BROKEN_SUSPEND    BIT_ULL(35)
 #define XHCI_TRB_ENT_QUIRK	BIT_ULL(36)
 #define XHCI_DIS_AUTOSUSPEND	BIT_ULL(37)
-#define XHCI_WARM_RESET_ON_SUSPEND	BIT_ULL(38)
+#define XHCI_DISABLE_SPARSE	BIT_ULL(38)
+#define XHCI_WARM_RESET_ON_SUSPEND	BIT_ULL(39)
+#define XHCI_U2_BROKEN_SUSPEND	BIT_ULL(40)
 
 	unsigned int		num_active_eps;
 	unsigned int		limit_active_eps;
@@ -2059,6 +2070,8 @@ struct xhci_container_ctx *xhci_alloc_container_ctx(struct xhci_hcd *xhci,
 		int type, gfp_t flags);
 void xhci_free_container_ctx(struct xhci_hcd *xhci,
 		struct xhci_container_ctx *ctx);
+int xhci_sec_event_ring_setup(struct usb_hcd *hcd, unsigned int intr_num);
+int xhci_sec_event_ring_cleanup(struct usb_hcd *hcd, unsigned int intr_num);
 
 /* xHCI host controller glue */
 typedef void (*xhci_get_quirks_t)(struct device *, struct xhci_hcd *);

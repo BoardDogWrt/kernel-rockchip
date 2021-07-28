@@ -1,7 +1,8 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Linux OS Independent Layer
  *
- * Copyright (C) 1999-2017, Broadcom Corporation
+ * Copyright (C) 1999-2019, Broadcom Corporation
  * 
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -389,7 +390,7 @@ extern int osl_error(int bcmerror);
 
 /* map/unmap physical to virtual I/O */
 #if !defined(CONFIG_MMC_MSM7X00A)
-#define	REG_MAP(pa, size)	ioremap_nocache((unsigned long)(pa), (unsigned long)(size))
+#define	REG_MAP(pa, size)	ioremap((unsigned long)(pa), (unsigned long)(size))
 #else
 #define REG_MAP(pa, size)       (void *)(0)
 #endif /* !defined(CONFIG_MMC_MSM7X00A */

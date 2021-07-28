@@ -248,6 +248,7 @@ config FW_CFG_SYSFS_CMDLINE
 config QCOM_SCM
 	bool
 	depends on ARM || ARM64
+	depends on HAVE_ARM_SMCCC
 	select RESET_CONTROLLER
 
 config QCOM_SCM_32
@@ -270,7 +271,7 @@ config QCOM_SCM_DOWNLOAD_MODE_DEFAULT
 	  Say Y here to enable "download mode" by default.
 
 config ROCKCHIP_SIP
-	bool "Rockchip SIP interface"
+	tristate "Rockchip SIP interface"
 	depends on HAVE_ARM_SMCCC && ARCH_ROCKCHIP
 	help
 	  Say Y here if you want to enable SIP callbacks for Rockchip platforms

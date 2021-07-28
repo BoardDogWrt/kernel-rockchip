@@ -8,6 +8,8 @@
  * the Free Software Foundation; either version 2 of the License, or
  * (at your option) any later version.
  * V0.0X01.0X01 add enum_frame_interval function.
+ * V0.0X01.0X02 add quick stream on/off
+ * V0.0X01.0X03 add function g_mbus_config
  */
 
 #include <linux/clk.h>
@@ -27,7 +29,7 @@
 #include <media/v4l2-ctrls.h>
 #include <media/v4l2-subdev.h>
 
-#define DRIVER_VERSION			KERNEL_VERSION(0, 0x01, 0x1)
+#define DRIVER_VERSION			KERNEL_VERSION(0, 0x01, 0x3)
 
 #define CHIP_ID				0x2685
 #define OV2685_REG_CHIP_ID		0x300a
@@ -505,10 +507,22 @@ static long ov2685_ioctl(struct v4l2_subdev *sd, unsigned int cmd, void *arg)
 {
 	struct ov2685 *ov2685 = to_ov2685(sd);
 	long ret = 0;
+	u32 stream = 0;
 
 	switch (cmd) {
 	case RKMODULE_GET_MODULE_INFO:
 		ov2685_get_module_inf(ov2685, (struct rkmodule_inf *)arg);
+		break;
+	case RKMODULE_SET_QUICK_STREAM:
+
+		stream = *((u32 *)arg);
+
+		if (stream)
+			ret = ov2685_write_reg(ov2685->client, REG_SC_CTRL_MODE,
+				OV2685_REG_VALUE_08BIT, SC_CTRL_MODE_STREAMING);
+		else
+			ret = ov2685_write_reg(ov2685->client, REG_SC_CTRL_MODE,
+				OV2685_REG_VALUE_08BIT, SC_CTRL_MODE_STANDBY);
 		break;
 	default:
 		ret = -ENOIOCTLCMD;
@@ -526,6 +540,7 @@ static long ov2685_compat_ioctl32(struct v4l2_subdev *sd,
 	struct rkmodule_inf *inf;
 	struct rkmodule_awb_cfg *cfg;
 	long ret;
+	u32 stream = 0;
 
 	switch (cmd) {
 	case RKMODULE_GET_MODULE_INFO:
@@ -551,6 +566,11 @@ static long ov2685_compat_ioctl32(struct v4l2_subdev *sd,
 		if (!ret)
 			ret = ov2685_ioctl(sd, cmd, cfg);
 		kfree(cfg);
+		break;
+	case RKMODULE_SET_QUICK_STREAM:
+		ret = copy_from_user(&stream, up, sizeof(u32));
+		if (!ret)
+			ret = ov2685_ioctl(sd, cmd, &stream);
 		break;
 	default:
 		ret = -ENOIOCTLCMD;
@@ -672,7 +692,8 @@ static int ov2685_set_ctrl(struct v4l2_ctrl *ctrl)
 		break;
 	}
 
-	pm_runtime_get_sync(&client->dev);
+	if (!pm_runtime_get_if_in_use(&client->dev))
+		return 0;
 	switch (ctrl->id) {
 	case V4L2_CID_EXPOSURE:
 		ov2685_set_exposure(ov2685, ctrl->val);
@@ -712,6 +733,20 @@ static int ov2685_enum_frame_interval(struct v4l2_subdev *sd,
 	return 0;
 }
 
+static int ov2685_g_mbus_config(struct v4l2_subdev *sd,
+				struct v4l2_mbus_config *config)
+{
+	u32 val = 0;
+
+	val = 1 << (OV2685_LANES - 1) |
+	      V4L2_MBUS_CSI2_CHANNEL_0 |
+	      V4L2_MBUS_CSI2_CONTINUOUS_CLOCK;
+	config->type = V4L2_MBUS_CSI2;
+	config->flags = val;
+
+	return 0;
+}
+
 static struct v4l2_subdev_core_ops ov2685_core_ops = {
 	.s_power = ov2685_s_power,
 	.ioctl = ov2685_ioctl,
@@ -722,6 +757,7 @@ static struct v4l2_subdev_core_ops ov2685_core_ops = {
 
 static struct v4l2_subdev_video_ops ov2685_video_ops = {
 	.s_stream = ov2685_s_stream,
+	.g_mbus_config = ov2685_g_mbus_config,
 };
 
 static struct v4l2_subdev_pad_ops ov2685_pad_ops = {

@@ -16,9 +16,11 @@
 #include <linux/types.h>
 #include <linux/of_platform.h>
 #include <linux/slab.h>
+#include <linux/seq_file.h>
 #include <linux/uaccess.h>
 #include <linux/regmap.h>
-#include <linux/debugfs.h>
+#include <linux/proc_fs.h>
+#include <linux/nospec.h>
 #include <soc/rockchip/pm_domains.h>
 
 #include "mpp_debug.h"
@@ -81,15 +83,25 @@ struct vepu_task {
 	struct mpp_request r_reqs[MPP_MAX_MSG_NUM];
 };
 
+struct vepu_session_priv {
+	struct rw_semaphore rw_sem;
+	/* codec info from user */
+	struct {
+		/* show mode */
+		u32 flag;
+		/* item data */
+		u64 val;
+	} codec_info[ENC_INFO_BUTT];
+};
+
 struct vepu_dev {
 	struct mpp_dev mpp;
 
 	struct mpp_clk_info aclk_info;
 	struct mpp_clk_info hclk_info;
-#ifdef CONFIG_DEBUG_FS
-	struct dentry *debugfs;
+#ifdef CONFIG_PROC_FS
+	struct proc_dir_entry *procfs;
 #endif
-
 	struct reset_control *rst_a;
 	struct reset_control *rst_h;
 };
@@ -110,7 +122,7 @@ static const u16 trans_tbl_default[] = {
 };
 
 static const u16 trans_tbl_vp8e[] = {
-	5, 6, 7, 8, 9, 10, 11, 12, 13, 16, 17, 26, 51, 52, 58, 59
+	5, 6, 7, 8, 9, 10, 11, 12, 13, 16, 17, 26, 51, 52, 58, 59, 71
 };
 
 static struct mpp_trans_info trans_rk_vepu1[] = {
@@ -156,7 +168,6 @@ static int vepu_extract_task_msg(struct vepu_task *task,
 	u32 i;
 	int ret;
 	struct mpp_request *req;
-	struct reg_offset_info *off_inf = &task->off_inf;
 	struct mpp_hw_info *hw_info = task->mpp_task.hw_info;
 
 	for (i = 0; i < msgs->req_cnt; i++) {
@@ -193,19 +204,7 @@ static int vepu_extract_task_msg(struct vepu_task *task,
 			       req, sizeof(*req));
 		} break;
 		case MPP_CMD_SET_REG_ADDR_OFFSET: {
-			int off = off_inf->cnt * sizeof(off_inf->elem[0]);
-
-			ret = mpp_check_req(req, off, sizeof(off_inf->elem),
-					    0, sizeof(off_inf->elem));
-			if (ret)
-				continue;
-			if (copy_from_user(&off_inf->elem[off_inf->cnt],
-					   req->data,
-					   req->size)) {
-				mpp_err("copy_from_user failed\n");
-				return -EINVAL;
-			}
-			off_inf->cnt += req->size / sizeof(off_inf->elem[0]);
+			mpp_extract_reg_offset_info(&task->off_inf, req);
 		} break;
 		default:
 			break;
@@ -395,41 +394,189 @@ static int vepu_free_task(struct mpp_session *session,
 	return 0;
 }
 
-#ifdef CONFIG_DEBUG_FS
-static int vepu_debugfs_remove(struct mpp_dev *mpp)
+static int vepu_control(struct mpp_session *session, struct mpp_request *req)
 {
-	struct vepu_dev *enc = to_vepu_dev(mpp);
+	switch (req->cmd) {
+	case MPP_CMD_SEND_CODEC_INFO: {
+		int i;
+		int cnt;
+		struct codec_info_elem elem;
+		struct vepu_session_priv *priv;
 
-	debugfs_remove_recursive(enc->debugfs);
+		if (!session || !session->priv) {
+			mpp_err("session info null\n");
+			return -EINVAL;
+		}
+		priv = session->priv;
+
+		cnt = req->size / sizeof(elem);
+		cnt = (cnt > ENC_INFO_BUTT) ? ENC_INFO_BUTT : cnt;
+		mpp_debug(DEBUG_IOCTL, "codec info count %d\n", cnt);
+		down_write(&priv->rw_sem);
+		for (i = 0; i < cnt; i++) {
+			if (copy_from_user(&elem, req->data + i * sizeof(elem), sizeof(elem))) {
+				mpp_err("copy_from_user failed\n");
+				continue;
+			}
+			if (elem.type > ENC_INFO_BASE && elem.type < ENC_INFO_BUTT &&
+			    elem.flag > CODEC_INFO_FLAG_NULL && elem.flag < CODEC_INFO_FLAG_BUTT) {
+				elem.type = array_index_nospec(elem.type, ENC_INFO_BUTT);
+				priv->codec_info[elem.type].flag = elem.flag;
+				priv->codec_info[elem.type].val = elem.data;
+			} else {
+				mpp_err("codec info invalid, type %d, flag %d\n",
+					elem.type, elem.flag);
+			}
+		}
+		up_write(&priv->rw_sem);
+	} break;
+	default: {
+		mpp_err("unknown mpp ioctl cmd %x\n", req->cmd);
+	} break;
+	}
 
 	return 0;
 }
 
-static int vepu_debugfs_init(struct mpp_dev *mpp)
+static int vepu_free_session(struct mpp_session *session)
+{
+	if (session && session->priv) {
+		kfree(session->priv);
+		session->priv = NULL;
+	}
+
+	return 0;
+}
+
+static int vepu_init_session(struct mpp_session *session)
+{
+	struct vepu_session_priv *priv;
+
+	if (!session) {
+		mpp_err("session is null\n");
+		return -EINVAL;
+	}
+
+	priv = kzalloc(sizeof(*priv), GFP_KERNEL);
+	if (!priv)
+		return -ENOMEM;
+
+	init_rwsem(&priv->rw_sem);
+	session->priv = priv;
+
+	return 0;
+}
+
+#ifdef CONFIG_PROC_FS
+static int vepu_procfs_remove(struct mpp_dev *mpp)
 {
 	struct vepu_dev *enc = to_vepu_dev(mpp);
 
-	enc->debugfs = debugfs_create_dir(mpp->dev->of_node->name,
-					  mpp->srv->debugfs);
-	if (IS_ERR_OR_NULL(enc->debugfs)) {
-		mpp_err("failed on open debugfs\n");
-		enc->debugfs = NULL;
+	if (enc->procfs) {
+		proc_remove(enc->procfs);
+		enc->procfs = NULL;
+	}
+
+	return 0;
+}
+
+static int vepu_dump_session(struct mpp_session *session, struct seq_file *seq)
+{
+	int i;
+	struct vepu_session_priv *priv = session->priv;
+
+	down_read(&priv->rw_sem);
+	/* item name */
+	seq_puts(seq, "------------------------------------------------------");
+	seq_puts(seq, "------------------------------------------------------\n");
+	seq_printf(seq, "|%8s|", (const char *)"session");
+	seq_printf(seq, "%8s|", (const char *)"device");
+	for (i = ENC_INFO_BASE; i < ENC_INFO_BUTT; i++) {
+		bool show = priv->codec_info[i].flag;
+
+		if (show)
+			seq_printf(seq, "%8s|", enc_info_item_name[i]);
+	}
+	seq_puts(seq, "\n");
+	/* item data*/
+	seq_printf(seq, "|%8p|", session);
+	seq_printf(seq, "%8s|", mpp_device_name[session->device_type]);
+	for (i = ENC_INFO_BASE; i < ENC_INFO_BUTT; i++) {
+		u32 flag = priv->codec_info[i].flag;
+
+		if (!flag)
+			continue;
+		if (flag == CODEC_INFO_FLAG_NUMBER) {
+			u32 data = priv->codec_info[i].val;
+
+			seq_printf(seq, "%8d|", data);
+		} else if (flag == CODEC_INFO_FLAG_STRING) {
+			const char *name = (const char *)&priv->codec_info[i].val;
+
+			seq_printf(seq, "%8s|", name);
+		} else {
+			seq_printf(seq, "%8s|", (const char *)"null");
+		}
+	}
+	seq_puts(seq, "\n");
+	up_read(&priv->rw_sem);
+
+	return 0;
+}
+
+static int vepu_show_session_info(struct seq_file *seq, void *offset)
+{
+	struct mpp_session *session = NULL, *n;
+	struct mpp_dev *mpp = seq->private;
+
+	mutex_lock(&mpp->srv->session_lock);
+	list_for_each_entry_safe(session, n,
+				 &mpp->srv->session_list,
+				 session_link) {
+		if (session->device_type != MPP_DEVICE_VEPU1)
+			continue;
+		if (!session->priv)
+			continue;
+		if (mpp->dev_ops->dump_session)
+			mpp->dev_ops->dump_session(session, seq);
+	}
+	mutex_unlock(&mpp->srv->session_lock);
+
+	return 0;
+}
+
+static int vepu_procfs_init(struct mpp_dev *mpp)
+{
+	struct vepu_dev *enc = to_vepu_dev(mpp);
+
+	enc->procfs = proc_mkdir(mpp->dev->of_node->name, mpp->srv->procfs);
+	if (IS_ERR_OR_NULL(enc->procfs)) {
+		mpp_err("failed on open procfs\n");
+		enc->procfs = NULL;
 		return -EIO;
 	}
-	debugfs_create_u32("aclk", 0644,
-			   enc->debugfs, &enc->aclk_info.debug_rate_hz);
-	debugfs_create_u32("session_buffers", 0644,
-			   enc->debugfs, &mpp->session_max_buffers);
+	mpp_procfs_create_u32("aclk", 0644,
+			      enc->procfs, &enc->aclk_info.debug_rate_hz);
+	mpp_procfs_create_u32("session_buffers", 0644,
+			      enc->procfs, &mpp->session_max_buffers);
+	/* for show session info */
+	proc_create_single_data("sessions-info", 0444,
+				enc->procfs, vepu_show_session_info, mpp);
 
 	return 0;
 }
 #else
-static inline int vepu_debugfs_remove(struct mpp_dev *mpp)
+static inline int vepu_procfs_remove(struct mpp_dev *mpp)
 {
 	return 0;
 }
 
-static inline int vepu_debugfs_init(struct mpp_dev *mpp)
+static inline int vepu_procfs_init(struct mpp_dev *mpp)
+{
+	return 0;
+}
+
+static inline int vepu_dump_session(struct mpp_session *session, struct seq_file *seq)
 {
 	return 0;
 }
@@ -539,6 +686,10 @@ static struct mpp_dev_ops vepu_v1_dev_ops = {
 	.finish = vepu_finish,
 	.result = vepu_result,
 	.free_task = vepu_free_task,
+	.ioctl = vepu_control,
+	.init_session = vepu_init_session,
+	.free_session = vepu_free_session,
+	.dump_session = vepu_dump_session,
 };
 
 static const struct mpp_dev_var vepu_v1_data = {
@@ -596,7 +747,7 @@ static int vepu_probe(struct platform_device *pdev)
 	}
 
 	mpp->session_max_buffers = VEPU1_SESSION_MAX_BUFFERS;
-	vepu_debugfs_init(mpp);
+	vepu_procfs_init(mpp);
 	dev_info(dev, "probing finish\n");
 
 	return 0;
@@ -609,7 +760,7 @@ static int vepu_remove(struct platform_device *pdev)
 
 	dev_info(dev, "remove device\n");
 	mpp_dev_remove(&enc->mpp);
-	vepu_debugfs_remove(&enc->mpp);
+	vepu_procfs_remove(&enc->mpp);
 
 	return 0;
 }

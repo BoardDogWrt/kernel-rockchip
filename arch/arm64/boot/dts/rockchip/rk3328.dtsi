@@ -856,6 +856,9 @@
 			<&cru SCLK_VDEC_CABAC>, <&cru SCLK_VDEC_CORE>;
 		clock-names = "aclk_vcodec", "hclk_vcodec", "clk_cabac",
 			"clk_core";
+		rockchip,normal-rates = <300000000>, <0>, <300000000>, <300000000>;
+		rockchip,advanced-rates = <400000000>, <0>, <400000000>, <300000000>;
+		rockchip,default-max-load = <2088960>;
 		resets = <&cru SRST_VDEC_A>, <&cru SRST_VDEC_H>,
 			<&cru SRST_VDEC_NIU_A>, <&cru SRST_VDEC_NIU_H>,
 			<&cru SRST_VDEC_CABAC>, <&cru SRST_VDEC_CORE>;
@@ -1116,7 +1119,8 @@
 			<&cru ACLK_BUS_PRE>, <&cru HCLK_BUS_PRE>,
 			<&cru PCLK_BUS_PRE>, <&cru ACLK_PERI_PRE>,
 			<&cru HCLK_PERI>, <&cru PCLK_PERI>,
-			<&cru SCLK_RTC32K>, <&cru ACLK_VOP>;
+			<&cru SCLK_RTC32K>, <&cru ACLK_VOP>,
+			<&cru ACLK_GMAC>;
 		assigned-clock-parents =
 			<&cru HDMIPHY>, <&cru PLL_APLL>,
 			<&cru PLL_GPLL>, <&xin24m>,
@@ -1136,7 +1140,8 @@
 			<150000000>, <75000000>,
 			<75000000>, <150000000>,
 			<75000000>, <75000000>,
-			<32768>, <400000000>;
+			<32768>, <400000000>,
+			<180000000>;
 	};
 
 	usb2phy_grf: syscon@ff450000 {
@@ -1685,40 +1690,40 @@
 
 		tsp {
 			tsp_d0: tsp-d0 {
-				rockchip,pins = <3 RK_PA4 RK_FUNC_1 &pcfg_pull_none>;
+				rockchip,pins = <3 RK_PA4 1 &pcfg_pull_none>;
 			};
 			tsp_d1: tsp-d1 {
-				rockchip,pins = <3 RK_PA5 RK_FUNC_1 &pcfg_pull_none>;
+				rockchip,pins = <3 RK_PA5 1 &pcfg_pull_none>;
 			};
 			tsp_d2: tsp-d2 {
-				rockchip,pins = <3 RK_PA6 RK_FUNC_1 &pcfg_pull_none>;
+				rockchip,pins = <3 RK_PA6 1 &pcfg_pull_none>;
 			};
 			tsp_d3: tsp-d3 {
-				rockchip,pins = <3 RK_PA7 RK_FUNC_1 &pcfg_pull_none>;
+				rockchip,pins = <3 RK_PA7 1 &pcfg_pull_none>;
 			};
 			tsp_d4: tsp-d4 {
-				rockchip,pins = <3 RK_PB0 RK_FUNC_1 &pcfg_pull_none>;
+				rockchip,pins = <3 RK_PB0 1 &pcfg_pull_none>;
 			};
 			tsp_d5: tsp-d5 {
-				rockchip,pins = <2 RK_PC0 RK_FUNC_3 &pcfg_pull_none>;
+				rockchip,pins = <2 RK_PC0 3 &pcfg_pull_none>;
 			};
 			tsp_d6: tsp-d6 {
-				rockchip,pins = <2 RK_PC1 RK_FUNC_3 &pcfg_pull_none>;
+				rockchip,pins = <2 RK_PC1 3 &pcfg_pull_none>;
 			};
 			tsp_d7: tsp-d7 {
-				rockchip,pins = <2 RK_PC2 RK_FUNC_3 &pcfg_pull_none>;
+				rockchip,pins = <2 RK_PC2 3 &pcfg_pull_none>;
 			};
 			tsp_sync: tsp-sync {
-				rockchip,pins = <2 RK_PB7 RK_FUNC_3 &pcfg_pull_none>;
+				rockchip,pins = <2 RK_PB7 3 &pcfg_pull_none>;
 			};
 			tsp_clk: tsp-clk {
-				rockchip,pins = <3 RK_PA2 RK_FUNC_1 &pcfg_pull_none>;
+				rockchip,pins = <3 RK_PA2 1 &pcfg_pull_none>;
 			};
 			tsp_fail: tsp-fail {
-				rockchip,pins = <3 RK_PA1 RK_FUNC_1 &pcfg_pull_none>;
+				rockchip,pins = <3 RK_PA1 1 &pcfg_pull_none>;
 			};
 			tsp_valid: tsp-valid {
-				rockchip,pins = <3 RK_PA0 RK_FUNC_1 &pcfg_pull_none>;
+				rockchip,pins = <3 RK_PA0 1 &pcfg_pull_none>;
 			};
 		};
 
@@ -1798,7 +1803,7 @@
 		uart0 {
 			uart0_xfer: uart0-xfer {
 				rockchip,pins = <1 RK_PB1 1 &pcfg_pull_up>,
-						<1 RK_PB0 1 &pcfg_pull_none>;
+						<1 RK_PB0 1 &pcfg_pull_up>;
 			};
 
 			uart0_cts: uart0-cts {
@@ -1817,7 +1822,7 @@
 		uart1 {
 			uart1_xfer: uart1-xfer {
 				rockchip,pins = <3 RK_PA4 4 &pcfg_pull_up>,
-						<3 RK_PA6 4 &pcfg_pull_none>;
+						<3 RK_PA6 4 &pcfg_pull_up>;
 			};
 
 			uart1_cts: uart1-cts {
@@ -1836,14 +1841,14 @@
 		uart2-0 {
 			uart2m0_xfer: uart2m0-xfer {
 				rockchip,pins = <1 RK_PA0 2 &pcfg_pull_up>,
-						<1 RK_PA1 2 &pcfg_pull_none>;
+						<1 RK_PA1 2 &pcfg_pull_up>;
 			};
 		};
 
 		uart2-1 {
 			uart2m1_xfer: uart2m1-xfer {
 				rockchip,pins = <2 RK_PA0 1 &pcfg_pull_up>,
-						<2 RK_PA1 1 &pcfg_pull_none>;
+						<2 RK_PA1 1 &pcfg_pull_up>;
 			};
 		};
 
@@ -2247,7 +2252,7 @@
 
 			pwm0_pin_pull_up: pwm0-pin-pull-up {
 				rockchip,pins =
-					<2 RK_PA4 RK_FUNC_1 &pcfg_pull_up>;
+					<2 RK_PA4 1 &pcfg_pull_up>;
 			};
 		};
 
@@ -2258,7 +2263,7 @@
 
 			pwm1_pin_pull_up: pwm1-pin-pull-up {
 				rockchip,pins =
-					<2 RK_PA5 RK_FUNC_1 &pcfg_pull_up>;
+					<2 RK_PA5 1 &pcfg_pull_up>;
 			};
 		};
 

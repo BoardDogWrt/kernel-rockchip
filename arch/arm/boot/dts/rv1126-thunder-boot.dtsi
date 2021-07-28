@@ -39,15 +39,15 @@
 		};
 
 		ramdisk_r: ramdisk@2800000 {
-			reg = <0x02800000 (40 * 0x00100000)>;
+			reg = <0x02800000 (48 * 0x00100000)>;
 		};
 
 		ramdisk_c: ramdisk@5800000 {
 			reg = <0x05800000 (20 * 0x00100000)>;
 		};
 
-		rkisp_thunderboot: rkisp@10000000 {
-			reg = <0x10000000 (144 * 0x00100000)>;
+		rkisp_thunderboot: rkisp@08000000 {
+			reg = <0x08000000 (144 * 0x00100000)>;
 		};
 	};
 
@@ -57,13 +57,14 @@
 			 <&cru CLK_ISP>, <&cru CLK_MIPICSI_OUT>,
 			 <&cru CLK_I2C1>, <&cru PCLK_I2C1>,
 			 <&cru CLK_SCR1>, <&cru CLK_SCR1_CORE>,
-			 <&cru CLK_SCR1_RTC>, <&cru CLK_SCR1_JTAG>;
-		clock-names = "aclk_isp", "hclk_isp", "clk_isp",
-			      "xvclk", "i2c", "pclk",
+			 <&cru CLK_SCR1_RTC>, <&cru CLK_SCR1_JTAG>,
+			 <&cru PCLK_CSIPHY0>;
+		clock-names = "aclk_isp", "hclk_isp",
+			      "clk_isp", "xvclk",
+			      "i2c1", "i2c1_pclk",
 			      "clk_scr1", "clk_scr1_core",
-			      "clk_scr1_rtc", "clk_scr1_jtag";
-		assigned-clocks = <&cru ACLK_ISP>, <&cru HCLK_ISP>, <&cru CLK_MIPICSI_OUT>;
-		assigned-clock-rates = <500000000>, <250000000>, <24000000>;
+			      "clk_scr1_rtc", "clk_scr1_jtag",
+			      "csiphy0_pclk";
 		power-domains = <&power RV1126_PD_VI>;
 
 		pinctrl-names = "default";
@@ -85,6 +86,10 @@
 	/delete-property/ assigned-clock-parents;
 };
 
+&crypto {
+	status = "okay";
+};
+
 &ddr_timing {
 	status = "disabled";
 };
@@ -98,10 +103,22 @@
 	inactive;
 };
 
+&mtl_rx_setup {
+	queue0 {
+		status = "okay";
+	};
+};
+
+&mtl_tx_setup {
+	queue0 {
+		status = "okay";
+	};
+};
+
 &ramoops {
 	status = "disabled";
 };
 
-&rkisp_vir0 {
+&rkisp_vir1 {
 	memory-region-thunderboot = <&rkisp_thunderboot>;
 };

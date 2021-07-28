@@ -1347,10 +1347,12 @@ static int rk618_hdmi_i2c_write(struct rk618_hdmi *hdmi, struct i2c_msg *msgs)
 	    ((msgs->addr != DDC_ADDR) && (msgs->addr != DDC_SEGMENT_ADDR)))
 		return -EINVAL;
 
-	if (msgs->addr == DDC_SEGMENT_ADDR)
-		hdmi->i2c->segment_addr = msgs->buf[0];
 	if (msgs->addr == DDC_ADDR)
 		hdmi->i2c->ddc_addr = msgs->buf[0];
+	if (msgs->addr == DDC_SEGMENT_ADDR) {
+		hdmi->i2c->segment_addr = msgs->buf[0];
+		return 0;
+	}
 
 	/* Set edid fifo first addr */
 	hdmi_writeb(hdmi, HDMI_EDID_FIFO_OFFSET, 0x00);
@@ -1372,6 +1374,9 @@ static int rk618_hdmi_i2c_xfer(struct i2c_adapter *adap,
 	int i, ret = 0;
 
 	mutex_lock(&i2c->lock);
+
+	hdmi->i2c->ddc_addr = 0;
+	hdmi->i2c->segment_addr = 0;
 
 	/* Clear the EDID interrupt flag and unmute the interrupt */
 	hdmi_writeb(hdmi, HDMI_INTERRUPT_MASK1, m_INT_EDID_READY);
@@ -1515,6 +1520,9 @@ static int rk618_hdmi_probe(struct platform_device *pdev)
 		dev_err(dev, "Unable to get HDMI clock\n");
 		return PTR_ERR(hdmi->clock);
 	}
+
+	/* hpd io pull down */
+	regmap_write(rk618->regmap, RK618_IO_CON0, HDMI_IO_PULL_UP_DISABLE);
 
 	rk618_hdmi_pol_init(hdmi, 0);
 	rk618_hdmi_reset(hdmi);

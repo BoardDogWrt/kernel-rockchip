@@ -1,6 +1,6 @@
 /*
  *
- * (C) COPYRIGHT 2014, 2016, 2018 ARM Limited. All rights reserved.
+ * (C) COPYRIGHT 2014, 2016, 2018, 2019-2020 ARM Limited. All rights reserved.
  *
  * This program is free software and is provided to you under the terms of the
  * GNU General Public License version 2 as published by the Free Software
@@ -47,10 +47,16 @@ enum kbase_instr_state {
 struct kbase_instr_backend {
 	wait_queue_head_t wait;
 	int triggered;
+#ifdef CONFIG_MALI_PRFCNT_SET_SECONDARY_VIA_DEBUG_FS
+	bool use_secondary_override;
+#endif
 
 	enum kbase_instr_state state;
 	struct workqueue_struct *cache_clean_wq;
 	struct work_struct  cache_clean_work;
+#if MALI_USE_CSF
+	struct tasklet_struct csf_hwc_irq_poll_tasklet;
+#endif
 };
 
 #endif /* _KBASE_INSTR_DEFS_H_ */

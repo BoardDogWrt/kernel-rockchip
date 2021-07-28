@@ -75,6 +75,7 @@ void (*pm_power_off)(void);
 EXPORT_SYMBOL_GPL(pm_power_off);
 
 void (*arm_pm_restart)(enum reboot_mode reboot_mode, const char *cmd);
+EXPORT_SYMBOL_GPL(arm_pm_restart);
 
 /*
  * This is our default idle handler.
@@ -163,7 +164,7 @@ void machine_restart(char *cmd)
 	local_irq_disable();
 	smp_send_stop();
 
-	do_kernel_i2c_restart(cmd);
+	do_kernel_pre_restart(cmd);
 
 	/*
 	 * UpdateCapsule() depends on the system being reset via

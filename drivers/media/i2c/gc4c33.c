@@ -12,6 +12,7 @@
  * V0.0X01.0X06 add set dpc cfg.
  * V0.0X01.0X07 support enum sensor fmt
  * V0.0X01.0X08 support mirror and flip
+ * V0.0X01.0X09 add quick stream on/off
  */
 
 #include <linux/clk.h>
@@ -33,7 +34,7 @@
 #include <media/v4l2-subdev.h>
 #include <linux/pinctrl/consumer.h>
 
-#define DRIVER_VERSION			KERNEL_VERSION(0, 0x01, 0x08)
+#define DRIVER_VERSION			KERNEL_VERSION(0, 0x01, 0x09)
 
 #ifndef V4L2_CID_DIGITAL_GAIN
 #define V4L2_CID_DIGITAL_GAIN		V4L2_CID_GAIN
@@ -345,21 +346,29 @@ static const u32 gain_Level_Table_720P[32] = {
  * mipi_datarate per lane 630Mbps, 2lane
  */
 static const struct regval gc4c33_linear10bit_2560x1440_regs[] = {
+	{0x03fe, 0xf0},
+	{0x03fe, 0xf0},
+	{0x03fe, 0xf0},
+	{0x03fe, 0xf0},
+	{0x03fe, 0x00},
+	{0x03fe, 0x00},
+	{0x03fe, 0x00},
+	{0x03fe, 0x00},
 	{0x031c, 0x01},
 	{0x0317, 0x24},
 	{0x0320, 0x77},
 	{0x0106, 0x78},
 	{0x0324, 0x84},
-	{0x0327, 0x30},
-	{0x0325, 0x04},
-	{0x0326, 0x22},
+	{0x0327, 0x05},
+	{0x0325, 0x08},
+	{0x0326, 0x2d},
 	{0x031a, 0x00},
 	{0x0314, 0x30},
 	{0x0315, 0x23},
 	{0x0334, 0x00},
-	{0x0337, 0x03},
-	{0x0335, 0x01},
-	{0x0336, 0x46},
+	{0x0337, 0x02},
+	{0x0335, 0x02},
+	{0x0336, 0x1f},
 	{0x0324, 0xc4},
 	{0x0334, 0x40},
 	{0x031c, 0x03},
@@ -381,6 +390,14 @@ static const struct regval gc4c33_linear10bit_2560x1440_regs[] = {
 	{0x00f2, 0x04},
 	{0x00f1, 0x0a},
 	{0x00f0, 0xa0},
+	{0x00c1, 0x05},
+	{0x00c2, 0xa0},
+	{0x00c3, 0x0a},
+	{0x00c4, 0x00},
+	{0x00da, 0x05},
+	{0x00db, 0xa0},//1440
+	{0x00d8, 0x0a},
+	{0x00d9, 0x00},//2560
 	{0x00c5, 0x0a},
 	{0x00c6, 0xa0},
 	{0x00bf, 0x17},
@@ -422,7 +439,7 @@ static const struct regval gc4c33_linear10bit_2560x1440_regs[] = {
 	{0x02e6, 0x30},
 	{0x0512, 0x00},
 	{0x0513, 0x00},
-	{0x0515, 0x02},
+	{0x0515, 0x20},
 	{0x0518, 0x00},
 	{0x0519, 0x00},
 	{0x051d, 0x50},
@@ -463,6 +480,10 @@ static const struct regval gc4c33_linear10bit_2560x1440_regs[] = {
 	{0x0349, 0x10},
 	{0x034a, 0x05},
 	{0x034b, 0xb4},
+	{0x0097, 0x0a},
+	{0x0098, 0x10},
+	{0x0099, 0x05},
+	{0x009a, 0xb0},
 	{0x034c, 0x0a},
 	{0x034d, 0x00},
 	{0x034e, 0x05},
@@ -1546,6 +1567,7 @@ static long gc4c33_ioctl(struct v4l2_subdev *sd, unsigned int cmd, void *arg)
 	struct rkmodule_nr_switch_threshold *nr_switch;
 	u32 i, h, w;
 	long ret = 0;
+	u32 stream = 0;
 
 	switch (cmd) {
 	case RKMODULE_GET_MODULE_INFO:
@@ -1598,6 +1620,15 @@ static long gc4c33_ioctl(struct v4l2_subdev *sd, unsigned int cmd, void *arg)
 		nr_switch->div_coeff = 100;
 		ret = 0;
 		break;
+	case RKMODULE_SET_QUICK_STREAM:
+		stream = *((u32 *)arg);
+		if (stream)
+			ret = gc4c33_write_reg(gc4c33->client, GC4C33_REG_CTRL_MODE,
+				GC4C33_REG_VALUE_08BIT, GC4C33_MODE_STREAMING);
+		else
+			ret = gc4c33_write_reg(gc4c33->client, GC4C33_REG_CTRL_MODE,
+				GC4C33_REG_VALUE_08BIT, GC4C33_MODE_SW_STANDBY);
+		break;
 	default:
 		ret = -ENOIOCTLCMD;
 		break;
@@ -1618,6 +1649,7 @@ static long gc4c33_compat_ioctl32(struct v4l2_subdev *sd,
 	struct preisp_hdrae_exp_s *hdrae;
 	struct rkmodule_nr_switch_threshold *nr_switch;
 	long ret;
+	u32 stream = 0;
 
 	switch (cmd) {
 	case RKMODULE_GET_MODULE_INFO:
@@ -1703,6 +1735,11 @@ static long gc4c33_compat_ioctl32(struct v4l2_subdev *sd,
 		if (!ret)
 			ret = copy_to_user(up, nr_switch, sizeof(*nr_switch));
 		kfree(nr_switch);
+		break;
+	case RKMODULE_SET_QUICK_STREAM:
+		ret = copy_from_user(&stream, up, sizeof(u32));
+		if (!ret)
+			ret = gc4c33_ioctl(sd, cmd, &stream);
 		break;
 	default:
 		ret = -ENOIOCTLCMD;
@@ -2129,7 +2166,7 @@ static int gc4c33_set_ctrl(struct v4l2_ctrl *ctrl)
 		break;
 	}
 
-	if (pm_runtime_get(&client->dev) <= 0)
+	if (!pm_runtime_get_if_in_use(&client->dev))
 		return 0;
 
 	switch (ctrl->id) {

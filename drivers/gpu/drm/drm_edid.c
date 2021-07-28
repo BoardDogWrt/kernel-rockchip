@@ -100,6 +100,14 @@ struct detailed_mode_closure {
 #define LEVEL_GTF2	2
 #define LEVEL_CVT	3
 
+/*Enum storing luminance types for HDR blocks in EDID*/
+enum luminance_value {
+	NO_LUMINANCE_DATA = 3,
+	MAXIMUM_LUMINANCE = 4,
+	FRAME_AVERAGE_LUMINANCE = 5,
+	MINIMUM_LUMINANCE = 6
+};
+
 static const struct edid_quirk {
 	char vendor[4];
 	int product_id;
@@ -203,10 +211,11 @@ static const struct edid_quirk {
 	{ "HVR", 0xaa01, EDID_QUIRK_NON_DESKTOP },
 	{ "HVR", 0xaa02, EDID_QUIRK_NON_DESKTOP },
 
-	/* Oculus Rift DK1, DK2, and CV1 VR Headsets */
+	/* Oculus Rift DK1, DK2, CV1 and Rift S VR Headsets */
 	{ "OVR", 0x0001, EDID_QUIRK_NON_DESKTOP },
 	{ "OVR", 0x0003, EDID_QUIRK_NON_DESKTOP },
 	{ "OVR", 0x0004, EDID_QUIRK_NON_DESKTOP },
+	{ "OVR", 0x0012, EDID_QUIRK_NON_DESKTOP },
 
 	/* Windows Mixed Reality Headsets */
 	{ "ACR", 0x7fce, EDID_QUIRK_NON_DESKTOP },
@@ -722,12 +731,11 @@ static const struct minimode extra_modes[] = {
 };
 
 /*
- * Probably taken from CEA-861 spec.
- * This table is converted from xorg's hw/xfree86/modes/xf86EdidModes.c.
+ * From CEA/CTA-861 spec.
  *
- * Index using the VIC.
+ * Do not access directly, instead always use cea_mode_for_vic().
  */
-static const struct drm_display_mode edid_cea_modes[] = {
+static const struct drm_display_mode edid_cea_modes_0[] = {
 	/* 0 - dummy, VICs start at 1 */
 	{ },
 	/* 1 - 640x480@60Hz 4:3 */
@@ -1290,6 +1298,249 @@ static const struct drm_display_mode edid_cea_modes[] = {
 		   4104, 4400, 0, 2160, 2168, 2178, 2250, 0,
 		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC),
 	  .vrefresh = 60, .picture_aspect_ratio = HDMI_PICTURE_ASPECT_64_27, },
+	/* 108 - 1280x720@48Hz 16:9 */
+	{ DRM_MODE("1280x720", DRM_MODE_TYPE_DRIVER, 90000, 1280, 2240,
+		   2280, 2500, 0, 720, 725, 730, 750, 0,
+		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC),
+	  .vrefresh = 48, .picture_aspect_ratio = HDMI_PICTURE_ASPECT_16_9, },
+	/* 109 - 1280x720@48Hz 64:27 */
+	{ DRM_MODE("1280x720", DRM_MODE_TYPE_DRIVER, 90000, 1280, 2240,
+		   2280, 2500, 0, 720, 725, 730, 750, 0,
+		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC),
+	  .vrefresh = 48, .picture_aspect_ratio = HDMI_PICTURE_ASPECT_64_27, },
+	/* 110 - 1680x720@48Hz 64:27 */
+	{ DRM_MODE("1680x720", DRM_MODE_TYPE_DRIVER, 99000, 1680, 2490,
+		   2530, 2750, 0, 720, 725, 730, 750, 0,
+		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC),
+	  .vrefresh = 48, .picture_aspect_ratio = HDMI_PICTURE_ASPECT_64_27, },
+	/* 111 - 1920x1080@48Hz 16:9 */
+	{ DRM_MODE("1920x1080", DRM_MODE_TYPE_DRIVER, 148500, 1920, 2558,
+		   2602, 2750, 0, 1080, 1084, 1089, 1125, 0,
+		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC),
+	  .vrefresh = 48, .picture_aspect_ratio = HDMI_PICTURE_ASPECT_16_9, },
+	/* 112 - 1920x1080@48Hz 64:27 */
+	{ DRM_MODE("1920x1080", DRM_MODE_TYPE_DRIVER, 148500, 1920, 2558,
+		   2602, 2750, 0, 1080, 1084, 1089, 1125, 0,
+		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC),
+	  .vrefresh = 48, .picture_aspect_ratio = HDMI_PICTURE_ASPECT_64_27, },
+	/* 113 - 2560x1080@48Hz 64:27 */
+	{ DRM_MODE("2560x1080", DRM_MODE_TYPE_DRIVER, 198000, 2560, 3558,
+		   3602, 3750, 0, 1080, 1084, 1089, 1100, 0,
+		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC),
+	  .vrefresh = 48, .picture_aspect_ratio = HDMI_PICTURE_ASPECT_64_27, },
+	/* 114 - 3840x2160@48Hz 16:9 */
+	{ DRM_MODE("3840x2160", DRM_MODE_TYPE_DRIVER, 594000, 3840, 5116,
+		   5204, 5500, 0, 2160, 2168, 2178, 2250, 0,
+		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC),
+	  .vrefresh = 48, .picture_aspect_ratio = HDMI_PICTURE_ASPECT_16_9, },
+	/* 115 - 4096x2160@48Hz 256:135 */
+	{ DRM_MODE("4096x2160", DRM_MODE_TYPE_DRIVER, 594000, 4096, 5116,
+		   5204, 5500, 0, 2160, 2168, 2178, 2250, 0,
+		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC),
+	  .vrefresh = 48, .picture_aspect_ratio = HDMI_PICTURE_ASPECT_256_135, },
+	/* 116 - 3840x2160@48Hz 64:27 */
+	{ DRM_MODE("3840x2160", DRM_MODE_TYPE_DRIVER, 594000, 3840, 5116,
+		   5204, 5500, 0, 2160, 2168, 2178, 2250, 0,
+		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC),
+	  .vrefresh = 48, .picture_aspect_ratio = HDMI_PICTURE_ASPECT_64_27, },
+	/* 117 - 3840x2160@100Hz 16:9 */
+	{ DRM_MODE("3840x2160", DRM_MODE_TYPE_DRIVER, 1188000, 3840, 4896,
+		   4984, 5280, 0, 2160, 2168, 2178, 2250, 0,
+		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC),
+	  .vrefresh = 100, .picture_aspect_ratio = HDMI_PICTURE_ASPECT_16_9, },
+	/* 118 - 3840x2160@120Hz 16:9 */
+	{ DRM_MODE("3840x2160", DRM_MODE_TYPE_DRIVER, 1188000, 3840, 4016,
+		   4104, 4400, 0, 2160, 2168, 2178, 2250, 0,
+		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC),
+	  .vrefresh = 120, .picture_aspect_ratio = HDMI_PICTURE_ASPECT_16_9, },
+	/* 119 - 3840x2160@100Hz 64:27 */
+	{ DRM_MODE("3840x2160", DRM_MODE_TYPE_DRIVER, 1188000, 3840, 4896,
+		   4984, 5280, 0, 2160, 2168, 2178, 2250, 0,
+		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC),
+	  .vrefresh = 100, .picture_aspect_ratio = HDMI_PICTURE_ASPECT_64_27, },
+	/* 120 - 3840x2160@120Hz 64:27 */
+	{ DRM_MODE("3840x2160", DRM_MODE_TYPE_DRIVER, 1188000, 3840, 4016,
+		   4104, 4400, 0, 2160, 2168, 2178, 2250, 0,
+		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC),
+	  .vrefresh = 120, .picture_aspect_ratio = HDMI_PICTURE_ASPECT_64_27, },
+	/* 121 - 5120x2160@24Hz 64:27 */
+	{ DRM_MODE("5120x2160", DRM_MODE_TYPE_DRIVER, 396000, 5120, 7116,
+		   7204, 7500, 0, 2160, 2168, 2178, 2200, 0,
+		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC),
+	  .vrefresh = 24, .picture_aspect_ratio = HDMI_PICTURE_ASPECT_64_27, },
+	/* 122 - 5120x2160@25Hz 64:27 */
+	{ DRM_MODE("5120x2160", DRM_MODE_TYPE_DRIVER, 396000, 5120, 6816,
+		   6904, 7200, 0, 2160, 2168, 2178, 2200, 0,
+		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC),
+	  .vrefresh = 25, .picture_aspect_ratio = HDMI_PICTURE_ASPECT_64_27, },
+	/* 123 - 5120x2160@30Hz 64:27 */
+	{ DRM_MODE("5120x2160", DRM_MODE_TYPE_DRIVER, 396000, 5120, 5784,
+		   5872, 6000, 0, 2160, 2168, 2178, 2200, 0,
+		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC),
+	  .vrefresh = 30, .picture_aspect_ratio = HDMI_PICTURE_ASPECT_64_27, },
+	/* 124 - 5120x2160@48Hz 64:27 */
+	{ DRM_MODE("5120x2160", DRM_MODE_TYPE_DRIVER, 742500, 5120, 5866,
+		   5954, 6250, 0, 2160, 2168, 2178, 2475, 0,
+		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC),
+	  .vrefresh = 48, .picture_aspect_ratio = HDMI_PICTURE_ASPECT_64_27, },
+	/* 125 - 5120x2160@50Hz 64:27 */
+	{ DRM_MODE("5120x2160", DRM_MODE_TYPE_DRIVER, 742500, 5120, 6216,
+		   6304, 6600, 0, 2160, 2168, 2178, 2250, 0,
+		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC),
+	  .vrefresh = 50, .picture_aspect_ratio = HDMI_PICTURE_ASPECT_64_27, },
+	/* 126 - 5120x2160@60Hz 64:27 */
+	{ DRM_MODE("5120x2160", DRM_MODE_TYPE_DRIVER, 742500, 5120, 5284,
+		   5372, 5500, 0, 2160, 2168, 2178, 2250, 0,
+		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC),
+	  .vrefresh = 60, .picture_aspect_ratio = HDMI_PICTURE_ASPECT_64_27, },
+	/* 127 - 5120x2160@100Hz 64:27 */
+	{ DRM_MODE("5120x2160", DRM_MODE_TYPE_DRIVER, 1485000, 5120, 6216,
+		   6304, 6600, 0, 2160, 2168, 2178, 2250, 0,
+		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC),
+	  .vrefresh = 100, .picture_aspect_ratio = HDMI_PICTURE_ASPECT_64_27, },
+};
+
+/*
+ * From CEA/CTA-861 spec.
+ *
+ * Do not access directly, instead always use cea_mode_for_vic().
+ */
+static const struct drm_display_mode edid_cea_modes_193[] = {
+	/* 193 - 5120x2160@120Hz 64:27 */
+	{ DRM_MODE("5120x2160", DRM_MODE_TYPE_DRIVER, 1485000, 5120, 5284,
+		   5372, 5500, 0, 2160, 2168, 2178, 2250, 0,
+		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC),
+	  .vrefresh = 120, .picture_aspect_ratio = HDMI_PICTURE_ASPECT_64_27, },
+	/* 194 - 7680x4320@24Hz 16:9 */
+	{ DRM_MODE("7680x4320", DRM_MODE_TYPE_DRIVER, 1188000, 7680, 10232,
+		   10408, 11000, 0, 4320, 4336, 4356, 4500, 0,
+		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC),
+	  .vrefresh = 24, .picture_aspect_ratio = HDMI_PICTURE_ASPECT_16_9, },
+	/* 195 - 7680x4320@25Hz 16:9 */
+	{ DRM_MODE("7680x4320", DRM_MODE_TYPE_DRIVER, 1188000, 7680, 10032,
+		   10208, 10800, 0, 4320, 4336, 4356, 4400, 0,
+		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC),
+	  .vrefresh = 25, .picture_aspect_ratio = HDMI_PICTURE_ASPECT_16_9, },
+	/* 196 - 7680x4320@30Hz 16:9 */
+	{ DRM_MODE("7680x4320", DRM_MODE_TYPE_DRIVER, 1188000, 7680, 8232,
+		   8408, 9000, 0, 4320, 4336, 4356, 4400, 0,
+		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC),
+	  .vrefresh = 30, .picture_aspect_ratio = HDMI_PICTURE_ASPECT_16_9, },
+	/* 197 - 7680x4320@48Hz 16:9 */
+	{ DRM_MODE("7680x4320", DRM_MODE_TYPE_DRIVER, 2376000, 7680, 10232,
+		   10408, 11000, 0, 4320, 4336, 4356, 4500, 0,
+		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC),
+	  .vrefresh = 48, .picture_aspect_ratio = HDMI_PICTURE_ASPECT_16_9, },
+	/* 198 - 7680x4320@50Hz 16:9 */
+	{ DRM_MODE("7680x4320", DRM_MODE_TYPE_DRIVER, 2376000, 7680, 10032,
+		   10208, 10800, 0, 4320, 4336, 4356, 4400, 0,
+		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC),
+	  .vrefresh = 50, .picture_aspect_ratio = HDMI_PICTURE_ASPECT_16_9, },
+	/* 199 - 7680x4320@60Hz 16:9 */
+	{ DRM_MODE("7680x4320", DRM_MODE_TYPE_DRIVER, 2376000, 7680, 8232,
+		   8408, 9000, 0, 4320, 4336, 4356, 4400, 0,
+		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC),
+	  .vrefresh = 60, .picture_aspect_ratio = HDMI_PICTURE_ASPECT_16_9, },
+	/* 200 - 7680x4320@100Hz 16:9 */
+	{ DRM_MODE("7680x4320", DRM_MODE_TYPE_DRIVER, 4752000, 7680, 9792,
+		   9968, 10560, 0, 4320, 4336, 4356, 4500, 0,
+		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC),
+	  .vrefresh = 100, .picture_aspect_ratio = HDMI_PICTURE_ASPECT_16_9, },
+	/* 201 - 7680x4320@120Hz 16:9 */
+	{ DRM_MODE("7680x4320", DRM_MODE_TYPE_DRIVER, 4752000, 7680, 8032,
+		   8208, 8800, 0, 4320, 4336, 4356, 4500, 0,
+		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC),
+	  .vrefresh = 120, .picture_aspect_ratio = HDMI_PICTURE_ASPECT_16_9, },
+	/* 202 - 7680x4320@24Hz 64:27 */
+	{ DRM_MODE("7680x4320", DRM_MODE_TYPE_DRIVER, 1188000, 7680, 10232,
+		   10408, 11000, 0, 4320, 4336, 4356, 4500, 0,
+		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC),
+	  .vrefresh = 24, .picture_aspect_ratio = HDMI_PICTURE_ASPECT_64_27, },
+	/* 203 - 7680x4320@25Hz 64:27 */
+	{ DRM_MODE("7680x4320", DRM_MODE_TYPE_DRIVER, 1188000, 7680, 10032,
+		   10208, 10800, 0, 4320, 4336, 4356, 4400, 0,
+		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC),
+	  .vrefresh = 25, .picture_aspect_ratio = HDMI_PICTURE_ASPECT_64_27, },
+	/* 204 - 7680x4320@30Hz 64:27 */
+	{ DRM_MODE("7680x4320", DRM_MODE_TYPE_DRIVER, 1188000, 7680, 8232,
+		   8408, 9000, 0, 4320, 4336, 4356, 4400, 0,
+		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC),
+	  .vrefresh = 30, .picture_aspect_ratio = HDMI_PICTURE_ASPECT_64_27, },
+	/* 205 - 7680x4320@48Hz 64:27 */
+	{ DRM_MODE("7680x4320", DRM_MODE_TYPE_DRIVER, 2376000, 7680, 10232,
+		   10408, 11000, 0, 4320, 4336, 4356, 4500, 0,
+		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC),
+	  .vrefresh = 48, .picture_aspect_ratio = HDMI_PICTURE_ASPECT_64_27, },
+	/* 206 - 7680x4320@50Hz 64:27 */
+	{ DRM_MODE("7680x4320", DRM_MODE_TYPE_DRIVER, 2376000, 7680, 10032,
+		   10208, 10800, 0, 4320, 4336, 4356, 4400, 0,
+		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC),
+	  .vrefresh = 50, .picture_aspect_ratio = HDMI_PICTURE_ASPECT_64_27, },
+	/* 207 - 7680x4320@60Hz 64:27 */
+	{ DRM_MODE("7680x4320", DRM_MODE_TYPE_DRIVER, 2376000, 7680, 8232,
+		   8408, 9000, 0, 4320, 4336, 4356, 4400, 0,
+		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC),
+	  .vrefresh = 60, .picture_aspect_ratio = HDMI_PICTURE_ASPECT_64_27, },
+	/* 208 - 7680x4320@100Hz 64:27 */
+	{ DRM_MODE("7680x4320", DRM_MODE_TYPE_DRIVER, 4752000, 7680, 9792,
+		   9968, 10560, 0, 4320, 4336, 4356, 4500, 0,
+		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC),
+	  .vrefresh = 100, .picture_aspect_ratio = HDMI_PICTURE_ASPECT_64_27, },
+	/* 209 - 7680x4320@120Hz 64:27 */
+	{ DRM_MODE("7680x4320", DRM_MODE_TYPE_DRIVER, 4752000, 7680, 8032,
+		   8208, 8800, 0, 4320, 4336, 4356, 4500, 0,
+		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC),
+	  .vrefresh = 120, .picture_aspect_ratio = HDMI_PICTURE_ASPECT_64_27, },
+	/* 210 - 10240x4320@24Hz 64:27 */
+	{ DRM_MODE("10240x4320", DRM_MODE_TYPE_DRIVER, 1485000, 10240, 11732,
+		   11908, 12500, 0, 4320, 4336, 4356, 4950, 0,
+		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC),
+	  .vrefresh = 24, .picture_aspect_ratio = HDMI_PICTURE_ASPECT_64_27, },
+	/* 211 - 10240x4320@25Hz 64:27 */
+	{ DRM_MODE("10240x4320", DRM_MODE_TYPE_DRIVER, 1485000, 10240, 12732,
+		   12908, 13500, 0, 4320, 4336, 4356, 4400, 0,
+		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC),
+	  .vrefresh = 25, .picture_aspect_ratio = HDMI_PICTURE_ASPECT_64_27, },
+	/* 212 - 10240x4320@30Hz 64:27 */
+	{ DRM_MODE("10240x4320", DRM_MODE_TYPE_DRIVER, 1485000, 10240, 10528,
+		   10704, 11000, 0, 4320, 4336, 4356, 4500, 0,
+		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC),
+	  .vrefresh = 30, .picture_aspect_ratio = HDMI_PICTURE_ASPECT_64_27, },
+	/* 213 - 10240x4320@48Hz 64:27 */
+	{ DRM_MODE("10240x4320", DRM_MODE_TYPE_DRIVER, 2970000, 10240, 11732,
+		   11908, 12500, 0, 4320, 4336, 4356, 4950, 0,
+		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC),
+	  .vrefresh = 48, .picture_aspect_ratio = HDMI_PICTURE_ASPECT_64_27, },
+	/* 214 - 10240x4320@50Hz 64:27 */
+	{ DRM_MODE("10240x4320", DRM_MODE_TYPE_DRIVER, 2970000, 10240, 12732,
+		   12908, 13500, 0, 4320, 4336, 4356, 4400, 0,
+		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC),
+	  .vrefresh = 50, .picture_aspect_ratio = HDMI_PICTURE_ASPECT_64_27, },
+	/* 215 - 10240x4320@60Hz 64:27 */
+	{ DRM_MODE("10240x4320", DRM_MODE_TYPE_DRIVER, 2970000, 10240, 10528,
+		   10704, 11000, 0, 4320, 4336, 4356, 4500, 0,
+		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC),
+	  .vrefresh = 60, .picture_aspect_ratio = HDMI_PICTURE_ASPECT_64_27, },
+	/* 216 - 10240x4320@100Hz 64:27 */
+	{ DRM_MODE("10240x4320", DRM_MODE_TYPE_DRIVER, 5940000, 10240, 12432,
+		   12608, 13200, 0, 4320, 4336, 4356, 4500, 0,
+		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC),
+	  .vrefresh = 100, .picture_aspect_ratio = HDMI_PICTURE_ASPECT_64_27, },
+	/* 217 - 10240x4320@120Hz 64:27 */
+	{ DRM_MODE("10240x4320", DRM_MODE_TYPE_DRIVER, 5940000, 10240, 10528,
+		   10704, 11000, 0, 4320, 4336, 4356, 4500, 0,
+		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC),
+	  .vrefresh = 120, .picture_aspect_ratio = HDMI_PICTURE_ASPECT_64_27, },
+	/* 218 - 4096x2160@100Hz 256:135 */
+	{ DRM_MODE("4096x2160", DRM_MODE_TYPE_DRIVER, 1188000, 4096, 4896,
+		   4984, 5280, 0, 2160, 2168, 2178, 2250, 0,
+		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC),
+	  .vrefresh = 100, .picture_aspect_ratio = HDMI_PICTURE_ASPECT_256_135, },
+	/* 219 - 4096x2160@120Hz 256:135 */
+	{ DRM_MODE("4096x2160", DRM_MODE_TYPE_DRIVER, 1188000, 4096, 4184,
+		   4272, 4400, 0, 2160, 2168, 2178, 2250, 0,
+		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC),
+	  .vrefresh = 120, .picture_aspect_ratio = HDMI_PICTURE_ASPECT_256_135, },
 };
 
 /*
@@ -2908,17 +3159,21 @@ add_detailed_modes(struct drm_connector *connector, struct edid *edid,
 
 	return closure.modes;
 }
-
+#define VIDEO_CAPABILITY_EXTENDED_DATA_BLOCK 0x0
 #define AUDIO_BLOCK	0x01
 #define VIDEO_BLOCK     0x02
 #define VENDOR_BLOCK    0x03
 #define SPEAKER_BLOCK	0x04
 #define COLORIMETRY_DATA_BLOCK		0x5
+#define COLORIMETRY_EXTENDED_DATA_BLOCK 0x05
 #define HDR_STATIC_METADATA_BLOCK	0x6
 #define USE_EXTENDED_TAG 0x07
 #define EXT_VIDEO_CAPABILITY_BLOCK 0x00
 #define EXT_VIDEO_DATA_BLOCK_420	0x0E
 #define EXT_VIDEO_CAP_BLOCK_Y420CMDB 0x0F
+#define VENDOR_SPECIFIC_VIDEO_DATA_BLOCK 0x01
+#define VSVDB_HDR10_PLUS_IEEE_CODE 0x90848b
+#define VSVDB_HDR10_PLUS_APP_VER_MASK 0x3
 #define EDID_BASIC_AUDIO	(1 << 6)
 #define EDID_CEA_YCRCB444	(1 << 5)
 #define EDID_CEA_YCRCB422	(1 << 4)
@@ -2989,6 +3244,29 @@ static u8 *drm_find_cea_extension(const struct edid *edid)
 	return cea;
 }
 
+static const struct drm_display_mode *cea_mode_for_vic(u8 vic)
+{
+	if (!vic)
+		return NULL;
+	if (vic < ARRAY_SIZE(edid_cea_modes_0))
+		return &edid_cea_modes_0[vic];
+	if (vic >= 193 && vic < 193 + ARRAY_SIZE(edid_cea_modes_193))
+		return &edid_cea_modes_193[vic - 193];
+	return NULL;
+}
+
+static u8 cea_num_vics(void)
+{
+	return 193 + ARRAY_SIZE(edid_cea_modes_193);
+}
+
+static u8 cea_next_vic(u8 vic)
+{
+	if (++vic == ARRAY_SIZE(edid_cea_modes_0))
+		vic = 193;
+	return vic;
+}
+
 /*
  * Calculate the alternate clock for the CEA mode
  * (60Hz vs. 59.94Hz etc.)
@@ -3026,14 +3304,14 @@ cea_mode_alternate_timings(u8 vic, struct drm_display_mode *mode)
 	 * get the other variants by simply increasing the
 	 * vertical front porch length.
 	 */
-	BUILD_BUG_ON(edid_cea_modes[8].vtotal != 262 ||
-		     edid_cea_modes[9].vtotal != 262 ||
-		     edid_cea_modes[12].vtotal != 262 ||
-		     edid_cea_modes[13].vtotal != 262 ||
-		     edid_cea_modes[23].vtotal != 312 ||
-		     edid_cea_modes[24].vtotal != 312 ||
-		     edid_cea_modes[27].vtotal != 312 ||
-		     edid_cea_modes[28].vtotal != 312);
+	BUILD_BUG_ON(cea_mode_for_vic(8)->vtotal != 262 ||
+		     cea_mode_for_vic(9)->vtotal != 262 ||
+		     cea_mode_for_vic(12)->vtotal != 262 ||
+		     cea_mode_for_vic(13)->vtotal != 262 ||
+		     cea_mode_for_vic(23)->vtotal != 312 ||
+		     cea_mode_for_vic(24)->vtotal != 312 ||
+		     cea_mode_for_vic(27)->vtotal != 312 ||
+		     cea_mode_for_vic(28)->vtotal != 312);
 
 	if (((vic == 8 || vic == 9 ||
 	      vic == 12 || vic == 13) && mode->vtotal < 263) ||
@@ -3061,8 +3339,8 @@ static u8 drm_match_cea_mode_clock_tolerance(const struct drm_display_mode *to_m
 	if (to_match->picture_aspect_ratio)
 		match_flags |= DRM_MODE_MATCH_ASPECT_RATIO;
 
-	for (vic = 1; vic < ARRAY_SIZE(edid_cea_modes); vic++) {
-		struct drm_display_mode cea_mode = edid_cea_modes[vic];
+	for (vic = 1; vic < cea_num_vics(); vic = cea_next_vic(vic)) {
+		struct drm_display_mode cea_mode = *cea_mode_for_vic(vic);
 		unsigned int clock1, clock2;
 
 		/* Check both 60Hz and 59.94Hz */
@@ -3100,8 +3378,8 @@ u8 drm_match_cea_mode(const struct drm_display_mode *to_match)
 	if (to_match->picture_aspect_ratio)
 		match_flags |= DRM_MODE_MATCH_ASPECT_RATIO;
 
-	for (vic = 1; vic < ARRAY_SIZE(edid_cea_modes); vic++) {
-		struct drm_display_mode cea_mode = edid_cea_modes[vic];
+	for (vic = 1; vic < cea_num_vics(); vic = cea_next_vic(vic)) {
+		struct drm_display_mode cea_mode = *cea_mode_for_vic(vic);
 		unsigned int clock1, clock2;
 
 		/* Check both 60Hz and 59.94Hz */
@@ -3124,7 +3402,7 @@ EXPORT_SYMBOL(drm_match_cea_mode);
 
 static bool drm_valid_cea_vic(u8 vic)
 {
-	return vic > 0 && vic < ARRAY_SIZE(edid_cea_modes);
+	return cea_mode_for_vic(vic) != NULL;
 }
 
 /**
@@ -3136,7 +3414,12 @@ static bool drm_valid_cea_vic(u8 vic)
  */
 enum hdmi_picture_aspect drm_get_cea_aspect_ratio(const u8 video_code)
 {
-	return edid_cea_modes[video_code].picture_aspect_ratio;
+	const struct drm_display_mode *mode = cea_mode_for_vic(video_code);
+
+	if (mode)
+		return mode->picture_aspect_ratio;
+
+	return HDMI_PICTURE_ASPECT_NONE;
 }
 EXPORT_SYMBOL(drm_get_cea_aspect_ratio);
 
@@ -3245,7 +3528,7 @@ add_alternate_cea_modes(struct drm_connector *connector, struct edid *edid)
 		unsigned int clock1, clock2;
 
 		if (drm_valid_cea_vic(vic)) {
-			cea_mode = &edid_cea_modes[vic];
+			cea_mode = cea_mode_for_vic(vic);
 			clock2 = cea_mode_alternate_clock(cea_mode);
 		} else {
 			vic = drm_match_hdmi_mode(mode);
@@ -3320,7 +3603,7 @@ drm_display_mode_from_vic_index(struct drm_connector *connector,
 	if (!drm_valid_cea_vic(vic))
 		return NULL;
 
-	newmode = drm_mode_duplicate(dev, &edid_cea_modes[vic]);
+	newmode = drm_mode_duplicate(dev, cea_mode_for_vic(vic));
 	if (!newmode)
 		return NULL;
 
@@ -3357,7 +3640,7 @@ static int do_y420vdb_modes(struct drm_connector *connector,
 		if (!drm_valid_cea_vic(vic))
 			continue;
 
-		newmode = drm_mode_duplicate(dev, &edid_cea_modes[vic]);
+		newmode = drm_mode_duplicate(dev, cea_mode_for_vic(vic));
 		if (!newmode)
 			break;
 		bitmap_set(hdmi->y420_vdb_modes, vic, 1);
@@ -3912,7 +4195,7 @@ static void fixup_detailed_cea_mode_clock(struct drm_display_mode *mode)
 	vic = drm_match_cea_mode_clock_tolerance(mode, 5);
 	if (drm_valid_cea_vic(vic)) {
 		type = "CEA";
-		cea_mode = &edid_cea_modes[vic];
+		cea_mode = cea_mode_for_vic(vic);
 		clock1 = cea_mode->clock;
 		clock2 = cea_mode_alternate_clock(cea_mode);
 	} else {
@@ -4041,6 +4324,391 @@ drm_parse_hdmi_vsdb_audio(struct drm_connector *connector, const u8 *db)
 		      connector->video_latency[1],
 		      connector->audio_latency[0],
 		      connector->audio_latency[1]);
+}
+
+/*
+ * drm_extract_vcdb_info - Parse the HDMI Video Capability Data Block
+ * @connector: connector corresponding to the HDMI sink
+ * @db: start of the CEA vendor specific block
+ *
+ * Parses the HDMI VCDB to extract sink info for @connector.
+ */
+static void
+drm_extract_vcdb_info(struct drm_connector *connector, const u8 *db)
+{
+	/*
+	 * Check if the sink specifies underscan
+	 * support for:
+	 * BIT 5: preferred video format
+	 * BIT 3: IT video format
+	 * BIT 1: CE video format
+	 */
+
+	connector->pt_scan_info =
+		(db[2] & (BIT(4) | BIT(5))) >> 4;
+	connector->it_scan_info =
+		(db[2] & (BIT(3) | BIT(2))) >> 2;
+	connector->ce_scan_info =
+		db[2] & (BIT(1) | BIT(0));
+
+	DRM_DEBUG_KMS("Scan Info (pt|it|ce): (%d|%d|%d)",
+			  (int) connector->pt_scan_info,
+			  (int) connector->it_scan_info,
+			  (int) connector->ce_scan_info);
+}
+
+static void
+drm_parse_vsvdb_hdr_plus(struct drm_connector *connector, const u8 *db)
+{
+	connector->hdr_plus_app_ver = db[5] & VSVDB_HDR10_PLUS_APP_VER_MASK;
+}
+
+static void
+drm_extract_vsvdb_info(struct drm_connector *connector, const u8 *db)
+{
+	u8 db_len = cea_db_payload_len(db);
+	u32 ieee_code = 0;
+
+	if (db_len < 5)
+		return;
+
+	/* Bytes 2-4: IEEE 24-bit code, LSB first */
+	ieee_code = db[2] | (db[3] << 8) | (db[4] << 16);
+	DRM_DEBUG_KMS("found VSVDB with IEEE code 0x%x\n", ieee_code);
+	if (ieee_code == VSVDB_HDR10_PLUS_IEEE_CODE)
+		drm_parse_vsvdb_hdr_plus(connector, db);
+}
+
+static bool drm_edid_is_luminance_value_present(
+u32 block_length, enum luminance_value value)
+{
+	return block_length > NO_LUMINANCE_DATA && value <= block_length;
+}
+
+/*
+ * drm_extract_clrmetry_db - Parse the HDMI colorimetry extended block
+ * @connector: connector corresponding to the HDMI sink
+ * @db: start of the HDMI colorimetry extended block
+ *
+ * Parses the HDMI colorimetry block to extract sink info for @connector.
+ */
+static void
+drm_extract_clrmetry_db(struct drm_connector *connector, const u8 *db)
+{
+
+	if (!db) {
+		DRM_ERROR("invalid db\n");
+		return;
+	}
+
+	/* Byte 3 Bit 0: xvYCC_601 */
+	if (db[2] & BIT(0))
+		connector->color_enc_fmt |= DRM_EDID_CLRMETRY_xvYCC_601;
+	/* Byte 3 Bit 1: xvYCC_709 */
+	if (db[2] & BIT(1))
+		connector->color_enc_fmt |= DRM_EDID_CLRMETRY_xvYCC_709;
+	/* Byte 3 Bit 2: sYCC_601 */
+	if (db[2] & BIT(2))
+		connector->color_enc_fmt |= DRM_EDID_CLRMETRY_sYCC_601;
+	/* Byte 3 Bit 3: ADBYCC_601 */
+	if (db[2] & BIT(3))
+		connector->color_enc_fmt |= DRM_EDID_CLRMETRY_ADBYCC_601;
+	/* Byte 3 Bit 4: ADB_RGB */
+	if (db[2] & BIT(4))
+		connector->color_enc_fmt |= DRM_EDID_CLRMETRY_ADB_RGB;
+	/* Byte 3 Bit 5: BT2020_CYCC */
+	if (db[2] & BIT(5))
+		connector->color_enc_fmt |= DRM_EDID_CLRMETRY_BT2020_CYCC;
+	/* Byte 3 Bit 6: BT2020_YCC */
+	if (db[2] & BIT(6))
+		connector->color_enc_fmt |= DRM_EDID_CLRMETRY_BT2020_YCC;
+	/* Byte 3 Bit 7: BT2020_RGB */
+	if (db[2] & BIT(7))
+		connector->color_enc_fmt |= DRM_EDID_CLRMETRY_BT2020_RGB;
+	/* Byte 4 Bit 7: DCI-P3 */
+	if (db[3] & BIT(7))
+		connector->color_enc_fmt |= DRM_EDID_CLRMETRY_DCI_P3;
+
+	DRM_DEBUG_KMS("colorimetry fmts = 0x%x\n", connector->color_enc_fmt);
+}
+
+/*
+ * drm_extract_hdr_db - Parse the HDMI HDR extended block
+ * @connector: connector corresponding to the HDMI sink
+ * @db: start of the HDMI HDR extended block
+ *
+ * Parses the HDMI HDR extended block to extract sink info for @connector.
+ */
+static void
+drm_extract_hdr_db(struct drm_connector *connector, const u8 *db)
+{
+
+	u8 len = 0;
+
+	if (!db)
+		return;
+
+	len = db[0] & 0x1f;
+	/* Byte 3: Electro-Optical Transfer Functions */
+	connector->hdr_eotf = db[2] & 0x3F;
+
+	/* Byte 4: Static Metadata Descriptor Type 1 */
+	connector->hdr_metadata_type_one = (db[3] & BIT(0));
+
+	/* Byte 5: Desired Content Maximum Luminance */
+	if (drm_edid_is_luminance_value_present(len, MAXIMUM_LUMINANCE))
+		connector->hdr_max_luminance =
+			db[MAXIMUM_LUMINANCE];
+
+	/* Byte 6: Desired Content Max Frame-average Luminance */
+	if (drm_edid_is_luminance_value_present(len, FRAME_AVERAGE_LUMINANCE))
+		connector->hdr_avg_luminance =
+			db[FRAME_AVERAGE_LUMINANCE];
+
+	/* Byte 7: Desired Content Min Luminance */
+	if (drm_edid_is_luminance_value_present(len, MINIMUM_LUMINANCE))
+		connector->hdr_min_luminance =
+			db[MINIMUM_LUMINANCE];
+
+	connector->hdr_supported = true;
+
+	DRM_DEBUG_KMS("HDR electro-optical %d\n", connector->hdr_eotf);
+	DRM_DEBUG_KMS("metadata desc 1 %d\n", connector->hdr_metadata_type_one);
+	DRM_DEBUG_KMS("max luminance %d\n", connector->hdr_max_luminance);
+	DRM_DEBUG_KMS("avg luminance %d\n", connector->hdr_avg_luminance);
+	DRM_DEBUG_KMS("min luminance %d\n", connector->hdr_min_luminance);
+}
+/*
+ * drm_hdmi_extract_extended_blk_info - Parse the HDMI extended tag blocks
+ * @connector: connector corresponding to the HDMI sink
+ * @edid: handle to the EDID structure
+ * Parses the all extended tag blocks extract sink info for @connector.
+ */
+static void
+drm_hdmi_extract_extended_blk_info(struct drm_connector *connector,
+		const struct edid *edid)
+{
+	const u8 *cea = drm_find_cea_extension(edid);
+	const u8 *db = NULL;
+
+	if (cea && cea_revision(cea) >= 3) {
+		int i, start, end;
+
+		if (cea_db_offsets(cea, &start, &end))
+			return;
+
+		for_each_cea_db(cea, i, start, end) {
+			db = &cea[i];
+
+			if (cea_db_tag(db) == USE_EXTENDED_TAG) {
+				DRM_DEBUG_KMS("found extended tag block = %d\n",
+						db[1]);
+				switch (db[1]) {
+				case VIDEO_CAPABILITY_EXTENDED_DATA_BLOCK:
+					drm_extract_vcdb_info(connector, db);
+					break;
+				case VENDOR_SPECIFIC_VIDEO_DATA_BLOCK:
+					drm_extract_vsvdb_info(connector, db);
+					break;
+				case HDR_STATIC_METADATA_BLOCK:
+					drm_extract_hdr_db(connector, db);
+					break;
+				case COLORIMETRY_EXTENDED_DATA_BLOCK:
+					drm_extract_clrmetry_db(connector, db);
+					break;
+				default:
+					break;
+				}
+			}
+		}
+	}
+}
+
+static void
+parse_hdmi_hf_vsdb(struct drm_connector *connector, const u8 *db)
+{
+	u8 len = cea_db_payload_len(db);
+
+	if (len < 7)
+		return;
+
+	if (db[4] != 1)
+		return; /* invalid version */
+
+	connector->max_tmds_char = db[5] * 5;
+	connector->scdc_present = db[6] & (1 << 7);
+	connector->rr_capable = db[6] & (1 << 6);
+	connector->flags_3d = db[6] & 0x7;
+	connector->supports_scramble = connector->scdc_present &&
+			(db[6] & (1 << 3));
+
+	DRM_DEBUG_KMS(
+		"HDMI v2: max TMDS char %d, scdc %s, rr %s,3D flags 0x%x, scramble %s\n",
+		connector->max_tmds_char,
+		connector->scdc_present ? "available" : "not available",
+		connector->rr_capable ? "capable" : "not capable",
+		connector->flags_3d,
+		connector->supports_scramble ? "supported" : "not supported");
+}
+
+static void drm_parse_ycbcr420_deep_color_info(struct drm_connector *connector,
+					       const u8 *db)
+{
+	u8 dc_mask;
+	struct drm_hdmi_info *hdmi = &connector->display_info.hdmi;
+
+	dc_mask = db[7] & DRM_EDID_YCBCR420_DC_MASK;
+	hdmi->y420_dc_modes = dc_mask;
+}
+
+static
+void drm_get_max_frl_rate(int max_frl_rate, u8 *max_lanes, u8 *max_rate_per_lane)
+{
+	switch (max_frl_rate) {
+	case 1:
+		*max_lanes = 3;
+		*max_rate_per_lane = 3;
+		break;
+	case 2:
+		*max_lanes = 3;
+		*max_rate_per_lane = 6;
+		break;
+	case 3:
+		*max_lanes = 4;
+		*max_rate_per_lane = 6;
+		break;
+	case 4:
+		*max_lanes = 4;
+		*max_rate_per_lane = 8;
+		break;
+	case 5:
+		*max_lanes = 4;
+		*max_rate_per_lane = 10;
+		break;
+	case 6:
+		*max_lanes = 4;
+		*max_rate_per_lane = 12;
+		break;
+	case 0:
+	default:
+		*max_lanes = 0;
+		*max_rate_per_lane = 0;
+	}
+}
+
+static void drm_parse_hdmi_forum_vsdb(struct drm_connector *connector,
+				 const u8 *hf_vsdb)
+{
+	struct drm_display_info *display = &connector->display_info;
+	struct drm_hdmi_info *hdmi = &display->hdmi;
+
+	display->has_hdmi_infoframe = true;
+
+	if (hf_vsdb[6] & 0x80) {
+		hdmi->scdc.supported = true;
+		if (hf_vsdb[6] & 0x40)
+			hdmi->scdc.read_request = true;
+	}
+
+	/*
+	 * All HDMI 2.0 monitors must support scrambling at rates > 340 MHz.
+	 * And as per the spec, three factors confirm this:
+	 * * Availability of a HF-VSDB block in EDID (check)
+	 * * Non zero Max_TMDS_Char_Rate filed in HF-VSDB (let's check)
+	 * * SCDC support available (let's check)
+	 * Lets check it out.
+	 */
+
+	if (hf_vsdb[5]) {
+		/* max clock is 5000 KHz times block value */
+		u32 max_tmds_clock = hf_vsdb[5] * 5000;
+		struct drm_scdc *scdc = &hdmi->scdc;
+
+		if (max_tmds_clock > 340000) {
+			display->max_tmds_clock = max_tmds_clock;
+			DRM_DEBUG_KMS("HF-VSDB: max TMDS clock %d kHz\n",
+				display->max_tmds_clock);
+		}
+
+		if (scdc->supported) {
+			scdc->scrambling.supported = true;
+
+			/* Few sinks support scrambling for cloks < 340M */
+			if ((hf_vsdb[6] & 0x8))
+				scdc->scrambling.low_rates = true;
+		}
+	}
+
+	if (hf_vsdb[7]) {
+		u8 max_frl_rate;
+		u8 dsc_max_frl_rate;
+		u8 dsc_max_slices;
+		struct drm_hdmi_dsc_cap *hdmi_dsc = &hdmi->dsc_cap;
+
+		DRM_DEBUG_KMS("hdmi_21 sink detected. parsing edid\n");
+		max_frl_rate = (hf_vsdb[7] & DRM_EDID_MAX_FRL_RATE_MASK) >> 4;
+		drm_get_max_frl_rate(max_frl_rate, &hdmi->max_lanes,
+				&hdmi->max_frl_rate_per_lane);
+		hdmi_dsc->v_1p2 = hf_vsdb[11] & DRM_EDID_DSC_1P2;
+
+		if (hdmi_dsc->v_1p2) {
+			hdmi_dsc->native_420 = hf_vsdb[11] & DRM_EDID_DSC_NATIVE_420;
+			hdmi_dsc->all_bpp = hf_vsdb[11] & DRM_EDID_DSC_ALL_BPP;
+
+			if (hf_vsdb[11] & DRM_EDID_DSC_16BPC)
+				hdmi_dsc->bpc_supported = 16;
+			else if (hf_vsdb[11] & DRM_EDID_DSC_12BPC)
+				hdmi_dsc->bpc_supported = 12;
+			else if (hf_vsdb[11] & DRM_EDID_DSC_10BPC)
+				hdmi_dsc->bpc_supported = 10;
+			else
+				hdmi_dsc->bpc_supported = 0;
+
+			dsc_max_frl_rate = (hf_vsdb[12] & DRM_EDID_DSC_MAX_FRL_RATE_MASK) >> 4;
+			drm_get_max_frl_rate(dsc_max_frl_rate, &hdmi_dsc->max_lanes,
+					&hdmi_dsc->max_frl_rate_per_lane);
+			hdmi_dsc->total_chunk_kbytes = hf_vsdb[13] & DRM_EDID_DSC_TOTAL_CHUNK_KBYTES;
+
+			dsc_max_slices = hf_vsdb[12] & DRM_EDID_DSC_MAX_SLICES;
+			switch (dsc_max_slices) {
+			case 1:
+				hdmi_dsc->max_slices = 1;
+				hdmi_dsc->clk_per_slice = 340;
+				break;
+			case 2:
+				hdmi_dsc->max_slices = 2;
+				hdmi_dsc->clk_per_slice = 340;
+				break;
+			case 3:
+				hdmi_dsc->max_slices = 4;
+				hdmi_dsc->clk_per_slice = 340;
+				break;
+			case 4:
+				hdmi_dsc->max_slices = 8;
+				hdmi_dsc->clk_per_slice = 340;
+				break;
+			case 5:
+				hdmi_dsc->max_slices = 8;
+				hdmi_dsc->clk_per_slice = 400;
+				break;
+			case 6:
+				hdmi_dsc->max_slices = 12;
+				hdmi_dsc->clk_per_slice = 400;
+				break;
+			case 7:
+				hdmi_dsc->max_slices = 16;
+				hdmi_dsc->clk_per_slice = 400;
+				break;
+			case 0:
+			default:
+				hdmi_dsc->max_slices = 0;
+				hdmi_dsc->clk_per_slice = 0;
+			}
+		}
+	}
+
+	drm_parse_ycbcr420_deep_color_info(connector, hf_vsdb);
+	parse_hdmi_hf_vsdb(connector, hf_vsdb);
 }
 
 static void
@@ -4175,6 +4843,10 @@ static void drm_edid_to_eld(struct drm_connector *connector, struct edid *edid)
 				/* HDMI Vendor-Specific Data Block */
 				if (cea_db_is_hdmi_vsdb(db))
 					drm_parse_hdmi_vsdb_audio(connector, db);
+				/* HDMI Forum Vendor-Specific Data Block */
+				else if (cea_db_is_hdmi_forum_vsdb(db))
+					drm_parse_hdmi_forum_vsdb(connector,
+								  db);
 				break;
 			default:
 				break;
@@ -4488,62 +5160,6 @@ drm_default_rgb_quant_range(const struct drm_display_mode *mode)
 }
 EXPORT_SYMBOL(drm_default_rgb_quant_range);
 
-static void drm_parse_ycbcr420_deep_color_info(struct drm_connector *connector,
-					       const u8 *db)
-{
-	u8 dc_mask;
-	struct drm_hdmi_info *hdmi = &connector->display_info.hdmi;
-
-	dc_mask = db[7] & DRM_EDID_YCBCR420_DC_MASK;
-	hdmi->y420_dc_modes = dc_mask;
-}
-
-static void drm_parse_hdmi_forum_vsdb(struct drm_connector *connector,
-				 const u8 *hf_vsdb)
-{
-	struct drm_display_info *display = &connector->display_info;
-	struct drm_hdmi_info *hdmi = &display->hdmi;
-
-	display->has_hdmi_infoframe = true;
-
-	if (hf_vsdb[6] & 0x80) {
-		hdmi->scdc.supported = true;
-		if (hf_vsdb[6] & 0x40)
-			hdmi->scdc.read_request = true;
-	}
-
-	/*
-	 * All HDMI 2.0 monitors must support scrambling at rates > 340 MHz.
-	 * And as per the spec, three factors confirm this:
-	 * * Availability of a HF-VSDB block in EDID (check)
-	 * * Non zero Max_TMDS_Char_Rate filed in HF-VSDB (let's check)
-	 * * SCDC support available (let's check)
-	 * Lets check it out.
-	 */
-
-	if (hf_vsdb[5]) {
-		/* max clock is 5000 KHz times block value */
-		u32 max_tmds_clock = hf_vsdb[5] * 5000;
-		struct drm_scdc *scdc = &hdmi->scdc;
-
-		if (max_tmds_clock > 340000) {
-			display->max_tmds_clock = max_tmds_clock;
-			DRM_DEBUG_KMS("HF-VSDB: max TMDS clock %d kHz\n",
-				display->max_tmds_clock);
-		}
-
-		if (scdc->supported) {
-			scdc->scrambling.supported = true;
-
-			/* Few sinks support scrambling for cloks < 340M */
-			if ((hf_vsdb[6] & 0x8))
-				scdc->scrambling.low_rates = true;
-		}
-	}
-
-	drm_parse_ycbcr420_deep_color_info(connector, hf_vsdb);
-}
-
 static void drm_parse_hdmi_deep_color_info(struct drm_connector *connector,
 					   const u8 *hdmi)
 {
@@ -4685,6 +5301,40 @@ drm_reset_display_info(struct drm_connector *connector)
 	info->non_desktop = 0;
 }
 
+static void
+drm_hdmi_extract_vsdbs_info(struct drm_connector *connector,
+		const struct edid *edid)
+{
+	const u8 *cea = drm_find_cea_extension(edid);
+	const u8 *db = NULL;
+
+	if (cea && cea_revision(cea) >= 3) {
+		int i, start, end;
+
+		if (cea_db_offsets(cea, &start, &end))
+			return;
+
+		for_each_cea_db(cea, i, start, end) {
+			db = &cea[i];
+
+			if (cea_db_tag(db) == VENDOR_BLOCK) {
+				/* HDMI Vendor-Specific Data Block */
+				if (cea_db_is_hdmi_vsdb(db)) {
+					drm_parse_hdmi_vsdb_video(
+						connector, db);
+					drm_parse_hdmi_vsdb_audio(
+						connector, db);
+				}
+				/* HDMI Forum Vendor-Specific Data Block */
+				else if (cea_db_is_hdmi_forum_vsdb(db))
+					drm_parse_hdmi_forum_vsdb(connector,
+								  db);
+			}
+		}
+	}
+}
+
+
 u32 drm_add_display_info(struct drm_connector *connector, const struct edid *edid)
 {
 	struct drm_display_info *info = &connector->display_info;
@@ -4723,6 +5373,11 @@ u32 drm_add_display_info(struct drm_connector *connector, const struct edid *edi
 		DRM_DEBUG("%s: Assigning DFP sink color depth as %d bpc.\n",
 			  connector->name, info->bpc);
 	}
+
+	/* Extract audio and video latency fields for the sink */
+	drm_hdmi_extract_vsdbs_info(connector, edid);
+	/* Extract info from extended tag blocks */
+	drm_hdmi_extract_extended_blk_info(connector, edid);
 
 	/* Only defined for 1.4 with digital displays */
 	if (edid->revision < 4)
@@ -4793,7 +5448,7 @@ static struct drm_display_mode *drm_mode_displayid_detailed(struct drm_device *d
 	struct drm_display_mode *mode;
 	unsigned pixel_clock = (timings->pixel_clock[0] |
 				(timings->pixel_clock[1] << 8) |
-				(timings->pixel_clock[2] << 16));
+				(timings->pixel_clock[2] << 16)) + 1;
 	unsigned hactive = (timings->hactive[0] | timings->hactive[1] << 8) + 1;
 	unsigned hblank = (timings->hblank[0] | timings->hblank[1] << 8) + 1;
 	unsigned hsync = (timings->hsync[0] | (timings->hsync[1] & 0x7f) << 8) + 1;

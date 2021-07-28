@@ -51,6 +51,7 @@
 #include "block.h"
 #include "core.h"
 #include "card.h"
+#include "crypto.h"
 #include "host.h"
 #include "bus.h"
 #include "mmc_ops.h"
@@ -457,16 +458,22 @@ static int card_busy_detect(struct mmc_card *card, unsigned int timeout_ms,
 	do {
 		bool done = time_after(jiffies, timeout);
 
-		err = __mmc_send_status(card, &status, 5);
-		if (err) {
-			dev_err(mmc_dev(card->host),
-				"error %d requesting status\n", err);
-			return err;
-		}
+		if (card->host->ops->card_busy) {
+			status = card->host->ops->card_busy(card->host) ?
+				 0 : R1_READY_FOR_DATA | R1_STATE_TRAN << 9;
+			usleep_range(100, 150);
+		} else {
+			err = __mmc_send_status(card, &status, 5);
+			if (err) {
+				dev_err(mmc_dev(card->host),
+					"error %d requesting status\n", err);
+				return err;
+			}
 
-		/* Accumulate any response error bits seen */
-		if (resp_errs)
-			*resp_errs |= status;
+			/* Accumulate any response error bits seen */
+			if (resp_errs)
+				*resp_errs |= status;
+		}
 
 		/*
 		 * Timeout if the device never becomes ready for data and never
@@ -623,6 +630,18 @@ static int __mmc_blk_ioctl_cmd(struct mmc_card *card, struct mmc_blk_data *md,
 	}
 
 	/*
+	 * Make sure to update CACHE_CTRL in case it was changed. The cache
+	 * will get turned back on if the card is re-initialized, e.g.
+	 * suspend/resume or hw reset in recovery.
+	 */
+	if ((MMC_EXTRACT_INDEX_FROM_ARG(cmd.arg) == EXT_CSD_CACHE_CTRL) &&
+	    (cmd.opcode == MMC_SWITCH)) {
+		u8 value = MMC_EXTRACT_VALUE_FROM_ARG(cmd.arg) & 1;
+
+		card->ext_csd.cache_ctrl = value;
+	}
+
+	/*
 	 * According to the SD specs, some commands require a delay after
 	 * issuing the command.
 	 */
@@ -631,7 +650,7 @@ static int __mmc_blk_ioctl_cmd(struct mmc_card *card, struct mmc_blk_data *md,
 
 	memcpy(&(idata->ic.response), cmd.resp, sizeof(cmd.resp));
 
-	if (idata->rpmb || (cmd.flags & MMC_RSP_R1B)) {
+	if (idata->rpmb || (cmd.flags & MMC_RSP_R1B) == MMC_RSP_R1B) {
 		/*
 		 * Ensure RPMB/R1B command has completed by polling CMD13
 		 * "Send Status".
@@ -1304,6 +1323,8 @@ static void mmc_blk_data_prep(struct mmc_queue *mq, struct mmc_queue_req *mqrq,
 
 	memset(brq, 0, sizeof(struct mmc_blk_request));
 
+	mmc_crypto_prepare_req(mqrq);
+
 	brq->mrq.data = &brq->data;
 	brq->mrq.tag = req->tag;
 
@@ -1424,6 +1445,7 @@ static void mmc_blk_cqe_complete_rq(struct mmc_queue *mq, struct request *req)
 	struct mmc_request *mrq = &mqrq->brq.mrq;
 	struct request_queue *q = req->q;
 	struct mmc_host *host = mq->card->host;
+	enum mmc_issue_type issue_type = mmc_issue_type(mq, req);
 	unsigned long flags;
 	bool put_card;
 	int err;
@@ -1453,7 +1475,7 @@ static void mmc_blk_cqe_complete_rq(struct mmc_queue *mq, struct request *req)
 
 	spin_lock_irqsave(q->queue_lock, flags);
 
-	mq->in_flight[mmc_issue_type(mq, req)] -= 1;
+	mq->in_flight[issue_type] -= 1;
 
 	put_card = (mmc_tot_in_flight(mq) == 0);
 
@@ -2223,6 +2245,10 @@ enum mmc_issued mmc_blk_mq_issue_rq(struct mmc_queue *mq, struct request *req)
 	case MMC_ISSUE_ASYNC:
 		switch (req_op(req)) {
 		case REQ_OP_FLUSH:
+			if (!mmc_cache_enabled(host)) {
+				blk_mq_end_request(req, BLK_STS_OK);
+				return MMC_REQ_FINISHED;
+			}
 			ret = mmc_blk_cqe_issue_flush(mq, req);
 			break;
 		case REQ_OP_READ:
@@ -2484,8 +2510,8 @@ static int mmc_rpmb_chrdev_release(struct inode *inode, struct file *filp)
 	struct mmc_rpmb_data *rpmb = container_of(inode->i_cdev,
 						  struct mmc_rpmb_data, chrdev);
 
-	put_device(&rpmb->dev);
 	mmc_blk_put(rpmb->md);
+	put_device(&rpmb->dev);
 
 	return 0;
 }
@@ -2872,7 +2898,8 @@ static void mmc_blk_remove_debugfs(struct mmc_card *card,
 
 #endif /* CONFIG_DEBUG_FS */
 
-extern struct mmc_card *this_card;
+struct mmc_card *this_card;
+EXPORT_SYMBOL(this_card);
 static int mmc_blk_probe(struct mmc_card *card)
 {
 	struct mmc_blk_data *md, *part_md;
@@ -2908,13 +2935,9 @@ static int mmc_blk_probe(struct mmc_card *card)
 
 	dev_set_drvdata(&card->dev, md);
 
-#if defined(CONFIG_MMC_DW_ROCKCHIP) || defined(CONFIG_MMC_SDHCI_OF_ARASAN)
-	if (card->host->restrict_caps & RESTRICT_CARD_TYPE_EMMC) {
+#if IS_ENABLED(CONFIG_MMC_DW_ROCKCHIP) || IS_ENABLED(CONFIG_MMC_SDHCI_OF_ARASAN)
+	if (card->host->restrict_caps & RESTRICT_CARD_TYPE_EMMC)
 		this_card = card;
-		md->disk->emmc_disk = 1;
-	} else {
-		md->disk->emmc_disk = 0;
-	}
 #endif
 
 	if (mmc_add_disk(md))

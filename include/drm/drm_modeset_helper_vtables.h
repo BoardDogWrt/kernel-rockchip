@@ -984,7 +984,7 @@ struct drm_connector_helper_funcs {
 	 * deadlock.
 	 */
 	int (*atomic_check)(struct drm_connector *connector,
-			    struct drm_connector_state *state);
+			    struct drm_atomic_state *state);
 
 	/**
 	 * @atomic_commit:
@@ -1000,22 +1000,6 @@ struct drm_connector_helper_funcs {
 	 */
 	void (*atomic_commit)(struct drm_connector *connector,
 			      struct drm_connector_state *state);
-
-	/**
-	 * @atomic_begin:
-	 *
-	 * begin atomic update.
-	 */
-	void (*atomic_begin)(struct drm_connector *connector,
-			     struct drm_connector_state *conn_state);
-
-	/**
-	 * @atomic_flush:
-	 *
-	 * flush atomic update.
-	 */
-	void (*atomic_flush)(struct drm_connector *connector,
-			     struct drm_connector_state *conn_state);
 };
 
 /**

@@ -209,26 +209,40 @@ struct sensor_operate light_bh1750_ops = {
 	.report				= sensor_report_value,
 };
 
-static struct sensor_operate *light_get_ops(void)
+/* ------------------------------------------------------------- */
+
+static int light_bh1750_probe(struct i2c_client *client,
+			      const struct i2c_device_id *devid)
 {
-	return &light_bh1750_ops;
+	return sensor_register_device(client, NULL, devid, &light_bh1750_ops);
 }
 
-static int __init light_bh1750_init(void)
+static int light_bh1750_remove(struct i2c_client *client)
 {
-	struct sensor_operate *ops = light_get_ops();
-	int type = ops->type;
-
-	return sensor_register_slave(type, NULL, NULL, light_get_ops);
+	return sensor_unregister_device(client, NULL, &light_bh1750_ops);
 }
 
-static void __exit light_bh1750_exit(void)
-{
-	struct sensor_operate *ops = light_get_ops();
-	int type = ops->type;
+static const struct i2c_device_id light_bh1750_id[] = {
+	{"light_bh1750", LIGHT_ID_AL3006},
+	{}
+};
 
-	sensor_unregister_slave(type, NULL, NULL, light_get_ops);
-}
+static struct i2c_driver light_bh1750_driver = {
+	.probe = light_bh1750_probe,
+	.remove = light_bh1750_remove,
+	.shutdown = sensor_shutdown,
+	.id_table = light_bh1750_id,
+	.driver = {
+		.name = "light_bh1750",
+#ifdef CONFIG_PM
+		.pm = &sensor_pm_ops,
+#endif
+	},
+};
 
-module_init(light_bh1750_init);
-module_exit(light_bh1750_exit);
+module_i2c_driver(light_bh1750_driver);
+
+MODULE_AUTHOR("support@friendlyarm.com");
+MODULE_DESCRIPTION("bh1750 light driver");
+MODULE_LICENSE("GPL");
+

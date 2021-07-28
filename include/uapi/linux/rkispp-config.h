@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/* SPDX-License-Identifier: ((GPL-2.0+ WITH Linux-syscall-note) OR MIT)
  *
  * Copyright (C) 2019 Rockchip Electronics Co., Ltd.
  */
@@ -9,13 +9,20 @@
 #include <linux/types.h>
 #include <linux/v4l2-controls.h>
 
-#define ISPP_API_VERSION		KERNEL_VERSION(0, 1, 0x2)
+#define ISPP_API_VERSION		KERNEL_VERSION(1, 6, 0)
 
-#define ISPP_MODULE_TNR			BIT(0)//2TO1
-#define ISPP_MODULE_NR			BIT(1)
-#define ISPP_MODULE_SHP			BIT(2)
-#define ISPP_MODULE_FEC			BIT(3)//CALIBRATION
-#define ISPP_MODULE_ORB			BIT(4)
+#define ISPP_ID_TNR			(0)
+#define ISPP_ID_NR			(1)
+#define ISPP_ID_SHP			(2)
+#define ISPP_ID_FEC			(3)
+#define ISPP_ID_ORB			(4)
+#define ISPP_ID_MAX			(5)
+
+#define ISPP_MODULE_TNR			BIT(ISPP_ID_TNR)//2TO1
+#define ISPP_MODULE_NR			BIT(ISPP_ID_NR)
+#define ISPP_MODULE_SHP			BIT(ISPP_ID_SHP)
+#define ISPP_MODULE_FEC			BIT(ISPP_ID_FEC)//CALIBRATION
+#define ISPP_MODULE_ORB			BIT(ISPP_ID_ORB)
 //extra function
 #define ISPP_MODULE_TNR_3TO1		(BIT(16) | ISPP_MODULE_TNR)
 #define ISPP_MODULE_FEC_ST		(BIT(17) | ISPP_MODULE_FEC)//STABILIZATION
@@ -72,6 +79,65 @@
 
 #define FEC_MESH_XY_POINT_SIZE		6
 #define FEC_MESH_XY_NUM			131072
+#define FEC_MESH_BUF_NUM		2
+
+#define TNR_BUF_IDXFD_NUM		64
+
+/************VIDIOC_PRIVATE*************/
+#define RKISPP_CMD_GET_FECBUF_INFO	\
+	_IOR('V', BASE_VIDIOC_PRIVATE + 0, struct rkispp_fecbuf_info)
+
+#define RKISPP_CMD_SET_FECBUF_SIZE	\
+	_IOW('V', BASE_VIDIOC_PRIVATE + 1, struct rkispp_fecbuf_size)
+
+#define RKISPP_CMD_FEC_IN_OUT \
+	_IOW('V', BASE_VIDIOC_PRIVATE + 10, struct rkispp_fec_in_out)
+
+#define RKISPP_CMD_TRIGGER_YNRRUN       \
+	_IOW('V', BASE_VIDIOC_PRIVATE + 11, struct rkispp_tnr_inf)
+
+#define RKISPP_CMD_GET_TNRBUF_FD \
+	_IOR('V', BASE_VIDIOC_PRIVATE + 12, struct rkispp_buf_idxfd)
+
+#define RKISPP_CMD_TRIGGER_MODE		\
+	_IOW('V', BASE_VIDIOC_PRIVATE + 13, struct rkispp_trigger_mode)
+
+/************EVENT_PRIVATE**************/
+#define RKISPP_V4L2_EVENT_TNR_COMPLETE  \
+	(V4L2_EVENT_PRIVATE_START + 3)
+
+struct rkispp_fec_in_out {
+	int width;
+	int height;
+	int in_fourcc;
+	int out_fourcc;
+	int in_pic_fd;
+	int out_pic_fd;
+	int mesh_xint_fd;
+	int mesh_xfra_fd;
+	int mesh_yint_fd;
+	int mesh_yfra_fd;
+};
+
+struct rkispp_tnr_inf {
+	u32 dev_id;
+	u32 frame_id;
+	u32 gainkg_idx;
+	u32 gainwr_idx;
+	u32 gainkg_size;
+	u32 gainwr_size;
+} __attribute__ ((packed));
+
+struct rkispp_buf_idxfd {
+	u32 buf_num;
+	u32 index[TNR_BUF_IDXFD_NUM];
+	s32 dmafd[TNR_BUF_IDXFD_NUM];
+} __attribute__ ((packed));
+
+struct rkispp_trigger_mode {
+	u32 module;
+	u32 on;
+} __attribute__ ((packed));
 
 struct rkispp_tnr_config {
 	u8 opty_en;
@@ -124,6 +190,7 @@ struct rkispp_nr_config {
 	u8 uvnr_step1_en;
 	u8 uvnr_step2_en;
 	u8 nr_gain_en;
+	u8 uvnr_sd32_self_en;
 	u8 uvnr_nobig_en;
 	u8 uvnr_big_en;
 	u8 uvnr_gain_1sigma;
@@ -215,18 +282,38 @@ struct rkispp_sharp_config {
 	u16 rfh_ratio;
 } __attribute__ ((packed));
 
+enum rkispp_fecbuf_stat {
+	FEC_BUF_INIT = 0,
+	FEC_BUF_WAIT2CHIP,
+	FEC_BUF_CHIPINUSE,
+};
+
+struct rkispp_fecbuf_info {
+	s32 buf_fd[FEC_MESH_BUF_NUM];
+	u32 buf_size[FEC_MESH_BUF_NUM];
+} __attribute__ ((packed));
+
+struct rkispp_fecbuf_size {
+	u32 meas_width;
+	u32 meas_height;
+	u32 meas_mode;
+} __attribute__ ((packed));
+
+struct rkispp_fec_head {
+	enum rkispp_fecbuf_stat stat;
+	u32 meshxf_oft;
+	u32 meshyf_oft;
+	u32 meshxi_oft;
+	u32 meshyi_oft;
+} __attribute__ ((packed));
+
 struct rkispp_fec_config {
 	u8 mesh_density;
 	u8 crop_en;
-	u8 meshxf[FEC_MESH_XY_NUM];
-	u8 meshyf[FEC_MESH_XY_NUM];
-
 	u16 crop_width __attribute__((aligned(2)));
 	u16 crop_height;
-	u16 meshxi[FEC_MESH_XY_NUM];
-	u16 meshyi[FEC_MESH_XY_NUM];
-
 	u32 mesh_size __attribute__((aligned(4)));
+	s32 buf_fd;
 } __attribute__ ((packed));
 
 struct rkispp_orb_config {
@@ -249,6 +336,7 @@ struct rkispp_params_cfg {
 	u32 module_cfg_update;
 	u32 module_init_ens;
 
+	u32 frame_id;
 	struct rkispp_tnr_config tnr_cfg;
 	struct rkispp_nr_config nr_cfg;
 	struct rkispp_sharp_config shp_cfg;

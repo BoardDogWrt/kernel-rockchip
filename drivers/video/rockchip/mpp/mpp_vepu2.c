@@ -16,9 +16,11 @@
 #include <linux/types.h>
 #include <linux/of_platform.h>
 #include <linux/slab.h>
+#include <linux/seq_file.h>
 #include <linux/uaccess.h>
 #include <linux/regmap.h>
-#include <linux/debugfs.h>
+#include <linux/proc_fs.h>
+#include <linux/nospec.h>
 #include <soc/rockchip/pm_domains.h>
 
 #include "mpp_debug.h"
@@ -40,6 +42,8 @@
 
 #define VEPU2_GET_FORMAT(x)			(((x) >> 4) & 0x3)
 #define VEPU2_FORMAT_MASK			(0x30)
+#define VEPU2_GET_WIDTH(x)			(((x >> 8) & 0x1ff) << 4)
+#define VEPU2_GET_HEIGHT(x)			(((x >> 20) & 0x1ff) << 4)
 
 #define VEPU2_FMT_RESERVED			(0)
 #define VEPU2_FMT_VP8E				(1)
@@ -88,6 +92,21 @@ struct vepu_task {
 	struct mpp_request w_reqs[MPP_MAX_MSG_NUM];
 	u32 r_req_cnt;
 	struct mpp_request r_reqs[MPP_MAX_MSG_NUM];
+	/* image info */
+	u32 width;
+	u32 height;
+	u32 pixels;
+};
+
+struct vepu_session_priv {
+	struct rw_semaphore rw_sem;
+	/* codec info from user */
+	struct {
+		/* show mode */
+		u32 flag;
+		/* item data */
+		u64 val;
+	} codec_info[ENC_INFO_BUTT];
 };
 
 struct vepu_dev {
@@ -95,10 +114,10 @@ struct vepu_dev {
 
 	struct mpp_clk_info aclk_info;
 	struct mpp_clk_info hclk_info;
-#ifdef CONFIG_DEBUG_FS
-	struct dentry *debugfs;
+	u32 default_max_load;
+#ifdef CONFIG_PROC_FS
+	struct proc_dir_entry *procfs;
 #endif
-
 	struct reset_control *rst_a;
 	struct reset_control *rst_h;
 };
@@ -166,7 +185,6 @@ static int vepu_extract_task_msg(struct vepu_task *task,
 	u32 i;
 	int ret;
 	struct mpp_request *req;
-	struct reg_offset_info *off_inf = &task->off_inf;
 	struct mpp_hw_info *hw_info = task->mpp_task.hw_info;
 
 	for (i = 0; i < msgs->req_cnt; i++) {
@@ -203,19 +221,7 @@ static int vepu_extract_task_msg(struct vepu_task *task,
 			       req, sizeof(*req));
 		} break;
 		case MPP_CMD_SET_REG_ADDR_OFFSET: {
-			int off = off_inf->cnt * sizeof(off_inf->elem[0]);
-
-			ret = mpp_check_req(req, off, sizeof(off_inf->elem),
-					    0, sizeof(off_inf->elem));
-			if (ret)
-				continue;
-			if (copy_from_user(&off_inf->elem[off_inf->cnt],
-					   req->data,
-					   req->size)) {
-				mpp_err("copy_from_user failed\n");
-				return -EINVAL;
-			}
-			off_inf->cnt += req->size / sizeof(off_inf->elem[0]);
+			mpp_extract_reg_offset_info(&task->off_inf, req);
 		} break;
 		default:
 			break;
@@ -256,6 +262,11 @@ static void *vepu_alloc_task(struct mpp_session *session,
 			goto fail;
 	}
 	task->clk_mode = CLK_MODE_NORMAL;
+	/* get resolution info */
+	task->width = VEPU2_GET_WIDTH(task->reg[VEPU2_REG_ENC_EN_INDEX]);
+	task->height = VEPU2_GET_HEIGHT(task->reg[VEPU2_REG_ENC_EN_INDEX]);
+	task->pixels = task->width * task->height;
+	mpp_debug(DEBUG_TASK_INFO, "width=%d, height=%d\n", task->width, task->height);
 
 	mpp_debug_leave();
 
@@ -407,41 +418,187 @@ static int vepu_free_task(struct mpp_session *session,
 	return 0;
 }
 
-#ifdef CONFIG_DEBUG_FS
-static int vepu_debugfs_remove(struct mpp_dev *mpp)
+static int vepu_control(struct mpp_session *session, struct mpp_request *req)
 {
-	struct vepu_dev *enc = to_vepu_dev(mpp);
+	switch (req->cmd) {
+	case MPP_CMD_SEND_CODEC_INFO: {
+		int i;
+		int cnt;
+		struct codec_info_elem elem;
+		struct vepu_session_priv *priv;
 
-	debugfs_remove_recursive(enc->debugfs);
+		if (!session || !session->priv) {
+			mpp_err("session info null\n");
+			return -EINVAL;
+		}
+		priv = session->priv;
+
+		cnt = req->size / sizeof(elem);
+		cnt = (cnt > ENC_INFO_BUTT) ? ENC_INFO_BUTT : cnt;
+		mpp_debug(DEBUG_IOCTL, "codec info count %d\n", cnt);
+		for (i = 0; i < cnt; i++) {
+			if (copy_from_user(&elem, req->data + i * sizeof(elem), sizeof(elem))) {
+				mpp_err("copy_from_user failed\n");
+				continue;
+			}
+			if (elem.type > ENC_INFO_BASE && elem.type < ENC_INFO_BUTT &&
+			    elem.flag > CODEC_INFO_FLAG_NULL && elem.flag < CODEC_INFO_FLAG_BUTT) {
+				elem.type = array_index_nospec(elem.type, ENC_INFO_BUTT);
+				priv->codec_info[elem.type].flag = elem.flag;
+				priv->codec_info[elem.type].val = elem.data;
+			} else {
+				mpp_err("codec info invalid, type %d, flag %d\n",
+					elem.type, elem.flag);
+			}
+		}
+	} break;
+	default: {
+		mpp_err("unknown mpp ioctl cmd %x\n", req->cmd);
+	} break;
+	}
 
 	return 0;
 }
 
-static int vepu_debugfs_init(struct mpp_dev *mpp)
+static int vepu_free_session(struct mpp_session *session)
+{
+	if (session && session->priv) {
+		kfree(session->priv);
+		session->priv = NULL;
+	}
+
+	return 0;
+}
+
+static int vepu_init_session(struct mpp_session *session)
+{
+	struct vepu_session_priv *priv;
+
+	if (!session) {
+		mpp_err("session is null\n");
+		return -EINVAL;
+	}
+
+	priv = kzalloc(sizeof(*priv), GFP_KERNEL);
+	if (!priv)
+		return -ENOMEM;
+
+	init_rwsem(&priv->rw_sem);
+	session->priv = priv;
+
+	return 0;
+}
+
+#ifdef CONFIG_PROC_FS
+static int vepu_procfs_remove(struct mpp_dev *mpp)
 {
 	struct vepu_dev *enc = to_vepu_dev(mpp);
 
-	enc->debugfs = debugfs_create_dir(mpp->dev->of_node->name,
-					  mpp->srv->debugfs);
-	if (IS_ERR_OR_NULL(enc->debugfs)) {
-		mpp_err("failed on open debugfs\n");
-		enc->debugfs = NULL;
+	if (enc->procfs) {
+		proc_remove(enc->procfs);
+		enc->procfs = NULL;
+	}
+
+	return 0;
+}
+
+static int vepu_dump_session(struct mpp_session *session, struct seq_file *seq)
+{
+	int i;
+	struct vepu_session_priv *priv = session->priv;
+
+	down_read(&priv->rw_sem);
+	/* item name */
+	seq_puts(seq, "------------------------------------------------------");
+	seq_puts(seq, "------------------------------------------------------\n");
+	seq_printf(seq, "|%8s|", (const char *)"session");
+	seq_printf(seq, "%8s|", (const char *)"device");
+	for (i = ENC_INFO_BASE; i < ENC_INFO_BUTT; i++) {
+		bool show = priv->codec_info[i].flag;
+
+		if (show)
+			seq_printf(seq, "%8s|", enc_info_item_name[i]);
+	}
+	seq_puts(seq, "\n");
+	/* item data*/
+	seq_printf(seq, "|%8p|", session);
+	seq_printf(seq, "%8s|", mpp_device_name[session->device_type]);
+	for (i = ENC_INFO_BASE; i < ENC_INFO_BUTT; i++) {
+		u32 flag = priv->codec_info[i].flag;
+
+		if (!flag)
+			continue;
+		if (flag == CODEC_INFO_FLAG_NUMBER) {
+			u32 data = priv->codec_info[i].val;
+
+			seq_printf(seq, "%8d|", data);
+		} else if (flag == CODEC_INFO_FLAG_STRING) {
+			const char *name = (const char *)&priv->codec_info[i].val;
+
+			seq_printf(seq, "%8s|", name);
+		} else {
+			seq_printf(seq, "%8s|", (const char *)"null");
+		}
+	}
+	seq_puts(seq, "\n");
+	up_read(&priv->rw_sem);
+
+	return 0;
+}
+
+static int vepu_show_session_info(struct seq_file *seq, void *offset)
+{
+	struct mpp_session *session = NULL, *n;
+	struct mpp_dev *mpp = seq->private;
+
+	mutex_lock(&mpp->srv->session_lock);
+	list_for_each_entry_safe(session, n,
+				 &mpp->srv->session_list,
+				 session_link) {
+		if (session->device_type != MPP_DEVICE_VEPU2)
+			continue;
+		if (!session->priv)
+			continue;
+		if (mpp->dev_ops->dump_session)
+			mpp->dev_ops->dump_session(session, seq);
+	}
+	mutex_unlock(&mpp->srv->session_lock);
+
+	return 0;
+}
+
+static int vepu_procfs_init(struct mpp_dev *mpp)
+{
+	struct vepu_dev *enc = to_vepu_dev(mpp);
+
+	enc->procfs = proc_mkdir(mpp->dev->of_node->name, mpp->srv->procfs);
+	if (IS_ERR_OR_NULL(enc->procfs)) {
+		mpp_err("failed on open procfs\n");
+		enc->procfs = NULL;
 		return -EIO;
 	}
-	debugfs_create_u32("aclk", 0644,
-			   enc->debugfs, &enc->aclk_info.debug_rate_hz);
-	debugfs_create_u32("session_buffers", 0644,
-			   enc->debugfs, &mpp->session_max_buffers);
+	mpp_procfs_create_u32("aclk", 0644,
+			      enc->procfs, &enc->aclk_info.debug_rate_hz);
+	mpp_procfs_create_u32("session_buffers", 0644,
+			      enc->procfs, &mpp->session_max_buffers);
+	/* for show session info */
+	proc_create_single_data("sessions-info", 0444,
+				enc->procfs, vepu_show_session_info, mpp);
 
 	return 0;
 }
 #else
-static inline int vepu_debugfs_remove(struct mpp_dev *mpp)
+static inline int vepu_procfs_remove(struct mpp_dev *mpp)
 {
 	return 0;
 }
 
-static inline int vepu_debugfs_init(struct mpp_dev *mpp)
+static inline int vepu_procfs_init(struct mpp_dev *mpp)
+{
+	return 0;
+}
+
+static inline int vepu_dump_session(struct mpp_session *session, struct seq_file *seq)
 {
 	return 0;
 }
@@ -461,6 +618,9 @@ static int vepu_init(struct mpp_dev *mpp)
 	ret = mpp_get_clk_info(mpp, &enc->hclk_info, "hclk_vcodec");
 	if (ret)
 		mpp_err("failed on clk_get hclk_vcodec\n");
+	/* Get normal max workload from dtsi */
+	of_property_read_u32(mpp->dev->of_node,
+			     "rockchip,default-max-load", &enc->default_max_load);
 	/* Set default rates */
 	mpp_set_clk_info_rate_hz(&enc->aclk_info, CLK_MODE_DEFAULT, 300 * MHZ);
 
@@ -497,6 +657,42 @@ static int vepu_clk_off(struct mpp_dev *mpp)
 
 	mpp_clk_safe_disable(enc->aclk_info.clk);
 	mpp_clk_safe_disable(enc->hclk_info.clk);
+
+	return 0;
+}
+
+static int vepu_get_freq(struct mpp_dev *mpp,
+			 struct mpp_task *mpp_task)
+{
+	u32 task_cnt;
+	u32 workload;
+	struct mpp_task *loop = NULL, *n;
+	struct vepu_dev *enc = to_vepu_dev(mpp);
+	struct vepu_task *task = to_vepu_task(mpp_task);
+
+	/* if not set max load, consider not have advanced mode */
+	if (!enc->default_max_load)
+		return 0;
+
+	task_cnt = 1;
+	workload = task->pixels;
+	/* calc workload in pending list */
+	mutex_lock(&mpp->queue->pending_lock);
+	list_for_each_entry_safe(loop, n,
+				 &mpp->queue->pending_list,
+				 queue_link) {
+		struct vepu_task *loop_task = to_vepu_task(loop);
+
+		task_cnt++;
+		workload += loop_task->pixels;
+	}
+	mutex_unlock(&mpp->queue->pending_lock);
+
+	if (workload > enc->default_max_load)
+		task->clk_mode = CLK_MODE_ADVANCED;
+
+	mpp_debug(DEBUG_TASK_INFO, "pending task %d, workload %d, clk_mode=%d\n",
+		  task_cnt, workload, task->clk_mode);
 
 	return 0;
 }
@@ -544,6 +740,7 @@ static struct mpp_hw_ops vepu_v2_hw_ops = {
 	.init = vepu_init,
 	.clk_on = vepu_clk_on,
 	.clk_off = vepu_clk_off,
+	.get_freq = vepu_get_freq,
 	.set_freq = vepu_set_freq,
 	.reduce_freq = vepu_reduce_freq,
 	.reset = vepu_reset,
@@ -567,6 +764,10 @@ static struct mpp_dev_ops vepu_v2_dev_ops = {
 	.finish = vepu_finish,
 	.result = vepu_result,
 	.free_task = vepu_free_task,
+	.ioctl = vepu_control,
+	.init_session = vepu_init_session,
+	.free_session = vepu_free_session,
+	.dump_session = vepu_dump_session,
 };
 
 static const struct mpp_dev_var vepu_v2_data = {
@@ -636,7 +837,7 @@ static int vepu_probe(struct platform_device *pdev)
 	}
 
 	mpp->session_max_buffers = VEPU2_SESSION_MAX_BUFFERS;
-	vepu_debugfs_init(mpp);
+	vepu_procfs_init(mpp);
 	dev_info(dev, "probing finish\n");
 
 	return 0;
@@ -649,7 +850,7 @@ static int vepu_remove(struct platform_device *pdev)
 
 	dev_info(dev, "remove device\n");
 	mpp_dev_remove(&enc->mpp);
-	vepu_debugfs_remove(&enc->mpp);
+	vepu_procfs_remove(&enc->mpp);
 
 	return 0;
 }

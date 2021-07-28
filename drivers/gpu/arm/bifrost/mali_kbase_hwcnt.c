@@ -1,6 +1,6 @@
 /*
  *
- * (C) COPYRIGHT 2018 ARM Limited. All rights reserved.
+ * (C) COPYRIGHT 2018, 2020 ARM Limited. All rights reserved.
  *
  * This program is free software and is provided to you under the terms of the
  * GNU General Public License version 2 as published by the Free Software
@@ -242,6 +242,7 @@ static void kbasep_hwcnt_accumulator_disable(
 	bool backend_enabled = false;
 	struct kbase_hwcnt_accumulator *accum;
 	unsigned long flags;
+	u64 dump_time_ns;
 
 	WARN_ON(!hctx);
 	lockdep_assert_held(&hctx->accum_lock);
@@ -271,7 +272,7 @@ static void kbasep_hwcnt_accumulator_disable(
 		goto disable;
 
 	/* Try and accumulate before disabling */
-	errcode = hctx->iface->dump_request(accum->backend);
+	errcode = hctx->iface->dump_request(accum->backend, &dump_time_ns);
 	if (errcode)
 		goto disable;
 
@@ -419,23 +420,16 @@ static int kbasep_hwcnt_accumulator_dump(
 
 	/* Initiate the dump if the backend is enabled. */
 	if ((state == ACCUM_STATE_ENABLED) && cur_map_any_enabled) {
-		/* Disable pre-emption, to make the timestamp as accurate as
-		 * possible.
-		 */
-		preempt_disable();
-		{
+		if (dump_buf) {
+			errcode = hctx->iface->dump_request(
+					accum->backend, &dump_time_ns);
+			dump_requested = true;
+		} else {
 			dump_time_ns = hctx->iface->timestamp_ns(
-				accum->backend);
-			if (dump_buf) {
-				errcode = hctx->iface->dump_request(
 					accum->backend);
-				dump_requested = true;
-			} else {
-				errcode = hctx->iface->dump_clear(
-					accum->backend);
-			}
+			errcode = hctx->iface->dump_clear(accum->backend);
 		}
-		preempt_enable();
+
 		if (errcode)
 			goto error;
 	} else {
@@ -683,21 +677,14 @@ bool kbase_hwcnt_context_disable_atomic(struct kbase_hwcnt_context *hctx)
 
 	if (!WARN_ON(hctx->disable_count == SIZE_MAX)) {
 		/*
-		 * If disable count is non-zero or no counters are enabled, we
-		 * can just bump the disable count.
+		 * If disable count is non-zero, we can just bump the disable
+		 * count.
 		 *
 		 * Otherwise, we can't disable in an atomic context.
 		 */
 		if (hctx->disable_count != 0) {
 			hctx->disable_count++;
 			atomic_disabled = true;
-		} else {
-			WARN_ON(!hctx->accum_inited);
-			if (!hctx->accum.enable_map_any_enabled) {
-				hctx->disable_count++;
-				hctx->accum.state = ACCUM_STATE_DISABLED;
-				atomic_disabled = true;
-			}
 		}
 	}
 

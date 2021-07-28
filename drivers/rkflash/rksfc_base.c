@@ -7,6 +7,7 @@
 #include <linux/clk.h>
 #include <linux/dma-mapping.h>
 #include <linux/interrupt.h>
+#include <linux/iopoll.h>
 #include <linux/irq.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
@@ -21,8 +22,9 @@
 #include "rkflash_api.h"
 #include "rkflash_blk.h"
 
-#define RKSFC_VERSION_AND_DATE	"rksfc_base v1.1 2016-01-08"
-#define RKSFC_CLK_MAX_RATE	(150 * 1000 * 1000)
+#define RKSFC_VERSION_AND_DATE		"rksfc_base v1.1 2016-01-08"
+#define RKSFC_CLK_MAX_RATE		(150 * 1000 * 1000)
+#define RKSFC_DLL_THRESHOLD_RATE	(100 * 1000 * 1000)
 
 struct rksfc_info {
 	void __iomem	*reg_base;
@@ -30,6 +32,7 @@ struct rksfc_info {
 	int	clk_rate;
 	struct clk	*clk;		/* sfc clk*/
 	struct clk	*ahb_clk;	/* ahb clk gate*/
+	u16	dll_cells;
 };
 
 static struct rksfc_info g_sfc_info;
@@ -101,12 +104,54 @@ static int rksfc_irq_deinit(void)
 	return 0;
 }
 
+static void rksfc_delay_lines_tuning(void)
+{
+	u8 id[3], id_temp[3];
+	int right, left = -1;
+	struct rk_sfc_op op;
+	u16 cell_max = SCLK_SMP_SEL_MAX_V4;
+
+	if (sfc_get_version() >= SFC_VER_5)
+		cell_max = SCLK_SMP_SEL_MAX_V5;
+	op.sfcmd.d32 = 0;
+	op.sfcmd.b.cmd = 0x9F;
+	op.sfctrl.d32 = 0;
+
+	clk_set_rate(g_sfc_info.clk, RKSFC_DLL_THRESHOLD_RATE);
+	sfc_request(&op, 0, id, 3);
+
+	clk_set_rate(g_sfc_info.clk, g_sfc_info.clk_rate);
+	for (right = 10; right <= cell_max; right += 10) {
+		sfc_set_delay_lines((u16)right);
+		sfc_request(&op, 0, id_temp, 3);
+		if (left == -1 && !memcmp(&id, &id_temp, 3))
+			left = right;
+		else if (left >= 0 && memcmp(&id, &id_temp, 3))
+			break;
+	}
+
+	if (left >= 0 && (right - left > 50)) {
+		g_sfc_info.dll_cells = (u16)(right + left) / 2;
+		sfc_set_delay_lines(g_sfc_info.dll_cells);
+	} else {
+		g_sfc_info.dll_cells = 0;
+		sfc_disable_delay_lines();
+		clk_set_rate(g_sfc_info.clk, RKSFC_DLL_THRESHOLD_RATE);
+		g_sfc_info.clk_rate = clk_get_rate(g_sfc_info.clk);
+	}
+
+	pr_info("%s clk rate = %d\n", __func__, g_sfc_info.clk_rate);
+}
+
 static int rksfc_probe(struct platform_device *pdev)
 {
 	int irq;
 	struct resource	*mem;
 	void __iomem	*membase;
 	int dev_result = -1;
+#ifdef CONFIG_ROCKCHIP_THUNDER_BOOT
+	u32 status;
+#endif
 
 	g_sfc_dev = &pdev->dev;
 	mem = platform_get_resource(pdev, IORESOURCE_MEM, 0);
@@ -143,6 +188,20 @@ static int rksfc_probe(struct platform_device *pdev)
 		 __func__,
 		 g_sfc_info.clk_rate);
 	rksfc_irq_init();
+#ifdef CONFIG_ROCKCHIP_THUNDER_BOOT
+	if (readl_poll_timeout(membase + SFC_SR, status,
+			       !(status & SFC_BUSY), 10,
+			       500 * USEC_PER_MSEC))
+		dev_err(g_sfc_dev, "Wait for SFC idle timeout!\n");
+#endif
+
+	sfc_init(g_sfc_info.reg_base);
+	if (sfc_get_version() >= SFC_VER_4 &&
+	    g_sfc_info.clk_rate > RKSFC_DLL_THRESHOLD_RATE)
+		rksfc_delay_lines_tuning();
+	else if (sfc_get_version() >= SFC_VER_4)
+		sfc_disable_delay_lines();
+
 #ifdef CONFIG_RK_SFC_NOR
 	dev_result = rkflash_dev_init(g_sfc_info.reg_base, FLASH_TYPE_SFC_NOR, &sfc_nor_ops);
 #endif
@@ -161,6 +220,8 @@ static int __maybe_unused rksfc_suspend(struct device *dev)
 
 static int __maybe_unused rksfc_resume(struct device *dev)
 {
+	if (g_sfc_info.dll_cells)
+		sfc_set_delay_lines(g_sfc_info.dll_cells);
 	return rkflash_dev_resume(g_sfc_info.reg_base);
 }
 

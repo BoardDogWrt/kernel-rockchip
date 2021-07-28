@@ -67,6 +67,8 @@
 };
 
 &nandc {
+	/delete-property/ pinctrl-names;
+	/delete-property/ pinctrl-0;
 	status = "disabled";
 	#address-cells = <1>;
 	#size-cells = <0>;
@@ -114,13 +116,13 @@
 		/omit-if-no-ref/
 		soc_slppin_slp: soc_slppin_slp {
 			rockchip,pins =
-				<0 RK_PB2 RK_FUNC_1 &pcfg_pull_none>;
+				<0 RK_PB2 1 &pcfg_pull_none>;
 		};
 
 		/omit-if-no-ref/
 		soc_slppin_rst: soc_slppin_rst {
 			rockchip,pins =
-				<0 RK_PB2 RK_FUNC_2 &pcfg_pull_none>;
+				<0 RK_PB2 2 &pcfg_pull_none>;
 		};
 	};
 };
@@ -158,6 +160,7 @@
 };
 
 &rkispp {
+	rockchip,restart-monitor-en;
 	status = "okay";
 };
 
@@ -188,6 +191,12 @@
 
 &rng {
 	status = "okay";
+};
+
+&sfc {
+	/delete-property/ pinctrl-names;
+	/delete-property/ pinctrl-0;
+	status = "disabled";
 };
 
 &u2phy0 {

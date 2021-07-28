@@ -4,11 +4,15 @@
  */
 #include <linux/kernel.h>
 #include <linux/of.h>
+#include <linux/module.h>
 #include <linux/slab.h>
 #include <linux/thermal.h>
 #include <soc/rockchip/rockchip_ipa.h>
 #include <soc/rockchip/rockchip_opp_select.h>
 #include <trace/events/thermal.h>
+
+#define CREATE_TRACE_POINTS
+#include <trace/events/thermal_ipa_power.h>
 
 #define FALLBACK_STATIC_TEMPERATURE 55000
 
@@ -21,9 +25,12 @@ static void calculate_static_coefficient(struct ipa_power_model_data *data)
 	u32 static_coeff = data->static_coefficient;
 	u32 lkg_scaling_factor;
 
-	/* leakage=0, use static_coefficient in devicetree */
-	if (!lkg)
-		return;
+	if (!lkg) {
+		if (ref_lkg)
+			lkg = ref_lkg;
+		else
+			lkg = (min + max) / 2;
+	}
 	if (ref_lkg) {
 		data->static_coefficient = static_coeff * lkg / ref_lkg;
 		return;
@@ -205,14 +212,18 @@ rockchip_ipa_get_static_power(struct ipa_power_model_data *data,
 	power_big = (u64)static_power * (u64)volt_scaling_factor;
 	static_power = div_u64(power_big, 1000000);
 
-	trace_thermal_power_get_static_power(data->leakage,
-					     data->static_coefficient,
-					     temp,
-					     temp_scaling_factor,
-					     (u32)voltage_mv,
-					     volt_scaling_factor,
-					     static_power);
+	trace_thermal_ipa_get_static_power(data->leakage,
+					   data->static_coefficient,
+					   temp,
+					   temp_scaling_factor,
+					   (u32)voltage_mv,
+					   volt_scaling_factor,
+					   static_power);
 
 	return static_power;
 }
 EXPORT_SYMBOL(rockchip_ipa_get_static_power);
+
+MODULE_DESCRIPTION("Rockchip IPA driver");
+MODULE_AUTHOR("Finley Xiao <finley.xiao@rock-chips.com>");
+MODULE_LICENSE("GPL");

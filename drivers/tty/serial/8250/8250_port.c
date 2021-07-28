@@ -1879,6 +1879,7 @@ int serial8250_handle_irq(struct uart_port *port, unsigned int iir)
 	unsigned char status;
 	unsigned long flags;
 	struct uart_8250_port *up = up_to_u8250p(port);
+	bool skip_rx = false;
 
 	if (iir & UART_IIR_NO_INT)
 		return 0;
@@ -1887,8 +1888,21 @@ int serial8250_handle_irq(struct uart_port *port, unsigned int iir)
 
 	status = serial_port_in(port, UART_LSR);
 
+	/*
+	 * If port is stopped and there are no error conditions in the
+	 * FIFO, then don't drain the FIFO, as this may lead to TTY buffer
+	 * overflow. Not servicing, RX FIFO would trigger auto HW flow
+	 * control when FIFO occupancy reaches preset threshold, thus
+	 * halting RX. This only works when auto HW flow control is
+	 * available.
+	 */
+	if (!(status & (UART_LSR_FIFOE | UART_LSR_BRK_ERROR_BITS)) &&
+	    (port->status & (UPSTAT_AUTOCTS | UPSTAT_AUTORTS)) &&
+	    !(port->read_status_mask & UART_LSR_DR))
+		skip_rx = true;
+
+	if (status & (UART_LSR_DR | UART_LSR_BI) && !skip_rx) {
 #ifdef CONFIG_ARCH_ROCKCHIP
-	if (status & (UART_LSR_DR | UART_LSR_BI)) {
 		int dma_err = -1;
 
 		if (up->dma && up->dma->rxchan)
@@ -1896,13 +1910,11 @@ int serial8250_handle_irq(struct uart_port *port, unsigned int iir)
 
 		if (!up->dma || dma_err)
 			status = serial8250_rx_chars(up, status);
-	}
 #else
-	if (status & (UART_LSR_DR | UART_LSR_BI)) {
 		if (!up->dma || handle_rx_dma(up, iir))
 			status = serial8250_rx_chars(up, status);
-	}
 #endif
+	}
 	serial8250_modem_status(up);
 #ifdef CONFIG_ARCH_ROCKCHIP
 	if ((!up->dma || (up->dma && (!up->dma->txchan || up->dma->tx_err))) &&
@@ -2311,6 +2323,10 @@ int serial8250_do_startup(struct uart_port *port)
 
 	if (port->irq && !(up->port.flags & UPF_NO_THRE_TEST)) {
 		unsigned char iir1;
+
+		if (port->irqflags & IRQF_SHARED)
+			disable_irq_nosync(port->irq);
+
 		/*
 		 * Test for UARTs that do not reassert THRE when the
 		 * transmitter is idle and the interrupt has already
@@ -2320,8 +2336,6 @@ int serial8250_do_startup(struct uart_port *port)
 		 * allow register changes to become visible.
 		 */
 		spin_lock_irqsave(&port->lock, flags);
-		if (up->port.irqflags & IRQF_SHARED)
-			disable_irq_nosync(port->irq);
 
 		wait_for_xmitr(up, UART_LSR_THRE);
 		serial_port_out_sync(port, UART_IER, UART_IER_THRI);
@@ -2333,9 +2347,10 @@ int serial8250_do_startup(struct uart_port *port)
 		iir = serial_port_in(port, UART_IIR);
 		serial_port_out(port, UART_IER, 0);
 
+		spin_unlock_irqrestore(&port->lock, flags);
+
 		if (port->irqflags & IRQF_SHARED)
 			enable_irq(port->irq);
-		spin_unlock_irqrestore(&port->lock, flags);
 
 		/*
 		 * If the interrupt is not reasserted, or we otherwise
@@ -2666,6 +2681,8 @@ void serial8250_do_set_divisor(struct uart_port *port, unsigned int baud,
 		serial_port_out(port, UART_LCR, up->lcr | UART_LCR_DLAB);
 
 	serial_dl_write(up, quot);
+	if (port->type != PORT_16750)
+		serial_port_out(port, UART_LCR, up->lcr);	/* reset DLAB */
 
 #ifdef CONFIG_ARCH_ROCKCHIP
 	serial_port_out(port, UART_MCR, up->mcr);
@@ -2696,6 +2713,8 @@ static unsigned int serial8250_get_baud_rate(struct uart_port *port,
 					     struct ktermios *termios,
 					     struct ktermios *old)
 {
+	unsigned int tolerance = port->uartclk / 100;
+
 	/*
 	 * Ask the core to calculate the divisor for us.
 	 * Allow 1% tolerance at the upper limit so uart clks marginally
@@ -2704,7 +2723,7 @@ static unsigned int serial8250_get_baud_rate(struct uart_port *port,
 	 */
 	return uart_get_baud_rate(port, termios, old,
 				  port->uartclk / 16 / UART_DIV_MAX,
-				  port->uartclk);
+				  (port->uartclk + tolerance) / 16);
 }
 
 void
@@ -2835,10 +2854,11 @@ serial8250_do_set_termios(struct uart_port *port, struct ktermios *termios,
 	 * LCR DLAB must be set to enable 64-byte FIFO mode. If the FCR
 	 * is written without DLAB set, this mode will be disabled.
 	 */
-	if (port->type == PORT_16750)
+	if (port->type == PORT_16750) {
 		serial_port_out(port, UART_FCR, up->fcr);
+		serial_port_out(port, UART_LCR, up->lcr);	/* reset DLAB */
+	}
 
-	serial_port_out(port, UART_LCR, up->lcr);	/* reset DLAB */
 	if (port->type != PORT_16750) {
 		/* emulated UARTs (Lucent Venus 167x) need two steps */
 		if (up->fcr & UART_FCR_ENABLE_FIFO)

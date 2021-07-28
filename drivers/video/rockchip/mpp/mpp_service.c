@@ -12,10 +12,12 @@
 
 #include <linux/completion.h>
 #include <linux/delay.h>
-#include <linux/debugfs.h>
 #include <linux/module.h>
 #include <linux/of_platform.h>
+#include <linux/proc_fs.h>
+#include <linux/seq_file.h>
 #include <linux/slab.h>
+#include <linux/nospec.h>
 #include <linux/mfd/syscon.h>
 
 #include "mpp_debug.h"
@@ -33,6 +35,8 @@
 unsigned int mpp_dev_debug;
 module_param(mpp_dev_debug, uint, 0644);
 MODULE_PARM_DESC(mpp_dev_debug, "bit switch for mpp debug information");
+
+static const char mpp_version[] = MPP_VERSION;
 
 static int mpp_init_grf(struct device_node *np,
 			struct mpp_grf_info *grf_info,
@@ -140,31 +144,133 @@ static int mpp_remove_service(struct mpp_service *srv)
 	return 0;
 }
 
-#ifdef CONFIG_DEBUG_FS
-static int mpp_debugfs_remove(struct mpp_service *srv)
+#ifdef CONFIG_PROC_FS
+static int mpp_procfs_remove(struct mpp_service *srv)
 {
-	debugfs_remove_recursive(srv->debugfs);
-
-	return 0;
-}
-
-static int mpp_debugfs_init(struct mpp_service *srv)
-{
-	srv->debugfs = debugfs_create_dir(MPP_SERVICE_NAME, NULL);
-	if (IS_ERR_OR_NULL(srv->debugfs)) {
-		mpp_err("failed on open debugfs\n");
-		srv->debugfs = NULL;
+	if (srv->procfs) {
+		proc_remove(srv->procfs);
+		srv->procfs = NULL;
 	}
 
 	return 0;
 }
+
+static int mpp_show_version(struct seq_file *seq, void *offset)
+{
+	seq_printf(seq, "%s\n", mpp_version);
+
+	return 0;
+}
+
+static int mpp_show_session_summary(struct seq_file *seq, void *offset)
+{
+	struct mpp_session *session = NULL, *n;
+	struct mpp_service *srv = seq->private;
+
+	mutex_lock(&srv->session_lock);
+	list_for_each_entry_safe(session, n,
+				 &srv->session_list,
+				 service_link) {
+		struct  mpp_dev *mpp;
+
+		if (!session->priv)
+			continue;
+
+		if (!session->mpp)
+			continue;
+		mpp = session->mpp;
+
+		if (mpp->dev_ops->dump_session)
+			mpp->dev_ops->dump_session(session, seq);
+	}
+	mutex_unlock(&srv->session_lock);
+
+	return 0;
+}
+
+static int mpp_show_support_cmd(struct seq_file *file, void *v)
+{
+	seq_puts(file, "------------- SUPPORT CMD -------------\n");
+	seq_printf(file, "QUERY_HW_SUPPORT:     0x%08x\n", MPP_CMD_QUERY_HW_SUPPORT);
+	seq_printf(file, "QUERY_HW_ID:          0x%08x\n", MPP_CMD_QUERY_HW_ID);
+	seq_printf(file, "QUERY_CMD_SUPPORT:    0x%08x\n", MPP_CMD_QUERY_CMD_SUPPORT);
+	seq_printf(file, "QUERY_BUTT:           0x%08x\n", MPP_CMD_QUERY_BUTT);
+	seq_puts(file, "----\n");
+	seq_printf(file, "INIT_CLIENT_TYPE:     0x%08x\n", MPP_CMD_INIT_CLIENT_TYPE);
+	seq_printf(file, "INIT_TRANS_TABLE:     0x%08x\n", MPP_CMD_INIT_TRANS_TABLE);
+	seq_printf(file, "INIT_BUTT:            0x%08x\n", MPP_CMD_INIT_BUTT);
+	seq_puts(file, "----\n");
+	seq_printf(file, "SET_REG_WRITE:        0x%08x\n", MPP_CMD_SET_REG_WRITE);
+	seq_printf(file, "SET_REG_READ:         0x%08x\n", MPP_CMD_SET_REG_READ);
+	seq_printf(file, "SET_REG_ADDR_OFFSET:  0x%08x\n", MPP_CMD_SET_REG_ADDR_OFFSET);
+	seq_printf(file, "SEND_BUTT:            0x%08x\n", MPP_CMD_SEND_BUTT);
+	seq_puts(file, "----\n");
+	seq_printf(file, "POLL_HW_FINISH:       0x%08x\n", MPP_CMD_POLL_HW_FINISH);
+	seq_printf(file, "POLL_BUTT:            0x%08x\n", MPP_CMD_POLL_BUTT);
+	seq_puts(file, "----\n");
+	seq_printf(file, "RESET_SESSION:        0x%08x\n", MPP_CMD_RESET_SESSION);
+	seq_printf(file, "TRANS_FD_TO_IOVA:     0x%08x\n", MPP_CMD_TRANS_FD_TO_IOVA);
+	seq_printf(file, "RELEASE_FD:           0x%08x\n", MPP_CMD_RELEASE_FD);
+	seq_printf(file, "SEND_CODEC_INFO:      0x%08x\n", MPP_CMD_SEND_CODEC_INFO);
+	seq_printf(file, "CONTROL_BUTT:         0x%08x\n", MPP_CMD_CONTROL_BUTT);
+
+	return 0;
+}
+
+static int mpp_show_support_device(struct seq_file *file, void *v)
+{
+	u32 i;
+	struct mpp_service *srv = file->private;
+
+	seq_puts(file, "---- SUPPORT DEVICES ----\n");
+	for (i = 0; i < MPP_DEVICE_BUTT; i++) {
+		struct mpp_dev *mpp;
+		struct mpp_hw_info *hw_info;
+
+		if (test_bit(i, &srv->hw_support)) {
+			mpp = srv->sub_devices[array_index_nospec(i, MPP_DEVICE_BUTT)];
+			if (!mpp)
+				continue;
+
+			seq_printf(file, "DEVICE[%2d]:%-10s", i, mpp_device_name[i]);
+			hw_info = mpp->var->hw_info;
+			if (hw_info->hw_id)
+				seq_printf(file, "HW_ID:0x%08x", hw_info->hw_id);
+			seq_puts(file, "\n");
+		}
+	}
+
+	return 0;
+}
+
+static int mpp_procfs_init(struct mpp_service *srv)
+{
+	srv->procfs = proc_mkdir(MPP_SERVICE_NAME, NULL);
+	if (IS_ERR_OR_NULL(srv->procfs)) {
+		mpp_err("failed on mkdir /proc/%s\n", MPP_SERVICE_NAME);
+		srv->procfs = NULL;
+		return -EIO;
+	}
+	/* show version */
+	proc_create_single("version", 0444, srv->procfs, mpp_show_version);
+	/* for show session info */
+	proc_create_single_data("sessions-summary", 0444,
+				srv->procfs, mpp_show_session_summary, srv);
+	/* show support dev cmd */
+	proc_create_single("supports-cmd", 0444, srv->procfs, mpp_show_support_cmd);
+	/* show support devices */
+	proc_create_single_data("supports-device", 0444,
+				srv->procfs, mpp_show_support_device, srv);
+
+	return 0;
+}
 #else
-static inline int mpp_debugfs_remove(struct mpp_service *srv)
+static inline int mpp_procfs_remove(struct mpp_service *srv)
 {
 	return 0;
 }
 
-static inline int mpp_debugfs_init(struct mpp_service *srv)
+static inline int mpp_procfs_init(struct mpp_service *srv)
 {
 	return 0;
 }
@@ -177,6 +283,7 @@ static int mpp_service_probe(struct platform_device *pdev)
 	struct device *dev = &pdev->dev;
 	struct device_node *np = dev->of_node;
 
+	dev_info(dev, "%s\n", mpp_version);
 	dev_info(dev, "probe start\n");
 	srv = devm_kzalloc(dev, sizeof(*srv), GFP_KERNEL);
 	if (!srv)
@@ -203,11 +310,10 @@ static int mpp_service_probe(struct platform_device *pdev)
 		struct mpp_taskqueue *queue;
 
 		for (i = 0; i < srv->taskqueue_cnt; i++) {
-			queue = devm_kzalloc(dev, sizeof(*queue), GFP_KERNEL);
+			queue = mpp_taskqueue_init(dev);
 			if (!queue)
 				continue;
 
-			mpp_taskqueue_init(queue, srv);
 			srv->task_queues[i] = queue;
 		}
 	}
@@ -239,7 +345,9 @@ static int mpp_service_probe(struct platform_device *pdev)
 		dev_err(dev, "register %s device\n", MPP_SERVICE_NAME);
 		goto fail_register;
 	}
-	mpp_debugfs_init(srv);
+	mutex_init(&srv->session_lock);
+	INIT_LIST_HEAD(&srv->session_list);
+	mpp_procfs_init(srv);
 
 	/* register sub drivers */
 	MPP_REGISTER_DRIVER(srv, RKVDEC, rkvdec);
@@ -250,6 +358,8 @@ static int mpp_service_probe(struct platform_device *pdev)
 	MPP_REGISTER_DRIVER(srv, VEPU2, vepu2);
 	MPP_REGISTER_DRIVER(srv, VEPU22, vepu22);
 	MPP_REGISTER_DRIVER(srv, IEP2, iep2);
+	MPP_REGISTER_DRIVER(srv, JPGDEC, jpgdec);
+	MPP_REGISTER_DRIVER(srv, RKVDEC2, rkvdec2);
 
 	dev_info(dev, "probe success\n");
 
@@ -275,7 +385,7 @@ static int mpp_service_remove(struct platform_device *pdev)
 
 	mpp_remove_service(srv);
 	class_destroy(srv->cls);
-	mpp_debugfs_remove(srv);
+	mpp_procfs_remove(srv);
 
 	return 0;
 }
@@ -299,6 +409,6 @@ static struct platform_driver mpp_service_driver = {
 module_platform_driver(mpp_service_driver);
 
 MODULE_LICENSE("Dual MIT/GPL");
-MODULE_VERSION("1.0.build.201911131848");
+MODULE_VERSION(MPP_VERSION);
 MODULE_AUTHOR("Ding Wei leo.ding@rock-chips.com");
 MODULE_DESCRIPTION("Rockchip mpp service driver");

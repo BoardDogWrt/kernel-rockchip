@@ -288,12 +288,14 @@ update_connector_routing(struct drm_atomic_state *state,
 	if (old_connector_state->crtc != new_connector_state->crtc) {
 		if (old_connector_state->crtc) {
 			crtc_state = drm_atomic_get_new_crtc_state(state, old_connector_state->crtc);
-			crtc_state->connectors_changed = true;
+			if (connector->connector_type != DRM_MODE_CONNECTOR_WRITEBACK)
+				crtc_state->connectors_changed = true;
 		}
 
 		if (new_connector_state->crtc) {
 			crtc_state = drm_atomic_get_new_crtc_state(state, new_connector_state->crtc);
-			crtc_state->connectors_changed = true;
+			if (connector->connector_type != DRM_MODE_CONNECTOR_WRITEBACK)
+				crtc_state->connectors_changed = true;
 		}
 	}
 
@@ -371,7 +373,8 @@ update_connector_routing(struct drm_atomic_state *state,
 
 	set_best_encoder(state, new_connector_state, new_encoder);
 
-	crtc_state->connectors_changed = true;
+	if (connector->connector_type != DRM_MODE_CONNECTOR_WRITEBACK)
+		crtc_state->connectors_changed = true;
 
 	DRM_DEBUG_ATOMIC("[CONNECTOR:%d:%s] using [ENCODER:%d:%s] on [CRTC:%d:%s]\n",
 			 connector->base.id,
@@ -660,7 +663,7 @@ drm_atomic_helper_check_modeset(struct drm_device *dev,
 		}
 
 		if (funcs->atomic_check)
-			ret = funcs->atomic_check(connector, new_connector_state);
+			ret = funcs->atomic_check(connector, state);
 		if (ret)
 			return ret;
 
@@ -702,7 +705,7 @@ drm_atomic_helper_check_modeset(struct drm_device *dev,
 			continue;
 
 		if (funcs->atomic_check)
-			ret = funcs->atomic_check(connector, new_connector_state);
+			ret = funcs->atomic_check(connector, state);
 		if (ret)
 			return ret;
 	}
@@ -2355,33 +2358,9 @@ void drm_atomic_helper_commit_planes(struct drm_device *dev,
 	struct drm_crtc_state *old_crtc_state, *new_crtc_state;
 	struct drm_plane *plane;
 	struct drm_plane_state *old_plane_state, *new_plane_state;
-	struct drm_connector *connector;
-	struct drm_connector_state *old_connector_state, *new_connector_state;
 	int i;
 	bool active_only = flags & DRM_PLANE_COMMIT_ACTIVE_ONLY;
 	bool no_disable = flags & DRM_PLANE_COMMIT_NO_DISABLE_AFTER_MODESET;
-
-	for_each_oldnew_connector_in_state(old_state, connector,
-					   old_connector_state,
-					   new_connector_state, i) {
-		const struct drm_connector_helper_funcs *funcs;
-
-		if (!connector->state->crtc)
-			continue;
-
-		if (!connector->state->crtc->state->active)
-			continue;
-
-		funcs = connector->helper_private;
-
-		if (!funcs || !funcs->atomic_begin)
-			continue;
-
-		DRM_DEBUG_ATOMIC("flush beginning [CONNECTOR:%d:%s]\n",
-				 connector->base.id, connector->name);
-
-		funcs->atomic_begin(connector, old_connector_state);
-	}
 
 	for_each_oldnew_crtc_in_state(old_state, crtc, old_crtc_state, new_crtc_state, i) {
 		const struct drm_crtc_helper_funcs *funcs;
@@ -2453,28 +2432,6 @@ void drm_atomic_helper_commit_planes(struct drm_device *dev,
 			continue;
 
 		funcs->atomic_flush(crtc, old_crtc_state);
-	}
-
-	for_each_oldnew_connector_in_state(old_state, connector,
-					   old_connector_state,
-					   new_connector_state, i) {
-		const struct drm_connector_helper_funcs *funcs;
-
-		if (!connector->state->crtc)
-			continue;
-
-		if (!connector->state->crtc->state->active)
-			continue;
-
-		funcs = connector->helper_private;
-
-		if (!funcs || !funcs->atomic_flush)
-			continue;
-
-		DRM_DEBUG_ATOMIC("flushing [CONNECTOR:%d:%s]\n",
-				 connector->base.id, connector->name);
-
-		funcs->atomic_flush(connector, old_connector_state);
 	}
 }
 EXPORT_SYMBOL(drm_atomic_helper_commit_planes);
@@ -3006,7 +2963,7 @@ int drm_atomic_helper_set_config(struct drm_mode_set *set,
 
 	ret = handle_conflicting_encoders(state, true);
 	if (ret)
-		return ret;
+		goto fail;
 
 	ret = drm_atomic_commit(state);
 
@@ -3090,6 +3047,7 @@ commit:
 
 	return 0;
 }
+EXPORT_SYMBOL_GPL(__drm_atomic_helper_set_config);
 
 static int __drm_atomic_helper_disable_all(struct drm_device *dev,
 					   struct drm_modeset_acquire_ctx *ctx,
@@ -3585,6 +3543,8 @@ void __drm_atomic_helper_crtc_duplicate_state(struct drm_crtc *crtc,
 		drm_property_blob_get(state->ctm);
 	if (state->gamma_lut)
 		drm_property_blob_get(state->gamma_lut);
+	if (state->cubic_lut)
+		drm_property_blob_get(state->cubic_lut);
 	state->mode_changed = false;
 	state->active_changed = false;
 	state->planes_changed = false;
@@ -3653,6 +3613,7 @@ void __drm_atomic_helper_crtc_destroy_state(struct drm_crtc_state *state)
 	drm_property_blob_put(state->degamma_lut);
 	drm_property_blob_put(state->ctm);
 	drm_property_blob_put(state->gamma_lut);
+	drm_property_blob_put(state->cubic_lut);
 }
 EXPORT_SYMBOL(__drm_atomic_helper_crtc_destroy_state);
 
@@ -3843,7 +3804,6 @@ __drm_atomic_helper_connector_duplicate_state(struct drm_connector *connector,
 	if (state->hdr_output_metadata)
 		drm_property_blob_get(state->hdr_output_metadata);
 
-	state->hdr_metadata_changed = false;
 	/* Don't copy over a writeback job, they are used only once */
 	state->writeback_job = NULL;
 }
@@ -4055,6 +4015,7 @@ int drm_atomic_helper_legacy_gamma_set(struct drm_crtc *crtc,
 	replaced  = drm_property_replace_blob(&crtc_state->degamma_lut, NULL);
 	replaced |= drm_property_replace_blob(&crtc_state->ctm, NULL);
 	replaced |= drm_property_replace_blob(&crtc_state->gamma_lut, blob);
+	replaced |= drm_property_replace_blob(&crtc_state->cubic_lut, NULL);
 	crtc_state->color_mgmt_changed |= replaced;
 
 	ret = drm_atomic_commit(state);

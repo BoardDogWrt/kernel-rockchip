@@ -7,6 +7,9 @@
  * V0.0X01.0X01 add poweron function.
  * V0.0X01.0X02 fix mclk issue when probe multiple camera.
  * V0.0X01.0X03 add enum_frame_interval function.
+ * V0.0X01.0X04 add quick stream on/off
+ * V0.0X01.0X05 add function g_mbus_config
+ * V0.0X01.0X06 set max framerate to strictly 30FPS for cts
  */
 
 #include <linux/clk.h>
@@ -26,7 +29,7 @@
 #include <media/v4l2-subdev.h>
 #include <linux/pinctrl/consumer.h>
 
-#define DRIVER_VERSION			KERNEL_VERSION(0, 0x01, 0x03)
+#define DRIVER_VERSION			KERNEL_VERSION(0, 0x01, 0x05)
 
 #ifndef V4L2_CID_DIGITAL_GAIN
 #define V4L2_CID_DIGITAL_GAIN		V4L2_CID_GAIN
@@ -233,11 +236,11 @@ static const struct gc2385_mode supported_modes[] = {
 		.height = 1200,
 		.max_fps = {
 			.numerator = 10000,
-			.denominator = 304472,
+			.denominator = 300000,
 		},
 		.exp_def = 0x0480,
 		.hts_def = 0x10DC,
-		.vts_def = 0x04E0,
+		.vts_def = 0x04F0,
 		.reg_list = gc2385_1600x1200_regs,
 	},
 };
@@ -461,10 +464,29 @@ static long gc2385_ioctl(struct v4l2_subdev *sd, unsigned int cmd, void *arg)
 {
 	struct gc2385 *gc2385 = to_gc2385(sd);
 	long ret = 0;
+	u32 stream = 0;
 
 	switch (cmd) {
 	case RKMODULE_GET_MODULE_INFO:
 		gc2385_get_module_inf(gc2385, (struct rkmodule_inf *)arg);
+		break;
+	case RKMODULE_SET_QUICK_STREAM:
+
+		stream = *((u32 *)arg);
+
+		if (stream) {
+			ret = gc2385_write_reg(gc2385->client,
+				 GC2385_REG_SET_PAGE,
+				 GC2385_SET_PAGE_ONE);
+			ret |= gc2385_write_reg(gc2385->client,
+				 GC2385_REG_CTRL_MODE,
+				 GC2385_MODE_STREAMING);
+		} else {
+			ret = gc2385_write_reg(gc2385->client,
+				 GC2385_REG_SET_PAGE, GC2385_SET_PAGE_ONE);
+			ret |= gc2385_write_reg(gc2385->client,
+				 GC2385_REG_CTRL_MODE, GC2385_MODE_SW_STANDBY);
+		}
 		break;
 	default:
 		ret = -ENOTTY;
@@ -482,6 +504,7 @@ static long gc2385_compat_ioctl32(struct v4l2_subdev *sd,
 	struct rkmodule_inf *inf;
 	struct rkmodule_awb_cfg *cfg;
 	long ret;
+	u32 stream = 0;
 
 	switch (cmd) {
 	case RKMODULE_GET_MODULE_INFO:
@@ -507,6 +530,11 @@ static long gc2385_compat_ioctl32(struct v4l2_subdev *sd,
 		if (!ret)
 			ret = gc2385_ioctl(sd, cmd, cfg);
 		kfree(cfg);
+		break;
+	case RKMODULE_SET_QUICK_STREAM:
+		ret = copy_from_user(&stream, up, sizeof(u32));
+		if (!ret)
+			ret = gc2385_ioctl(sd, cmd, &stream);
 		break;
 	default:
 		ret = -ENOIOCTLCMD;
@@ -759,6 +787,20 @@ static int gc2385_enum_frame_interval(struct v4l2_subdev *sd,
 	return 0;
 }
 
+static int gc2385_g_mbus_config(struct v4l2_subdev *sd,
+				struct v4l2_mbus_config *config)
+{
+	u32 val = 0;
+
+	val = 1 << (GC2385_LANES - 1) |
+	      V4L2_MBUS_CSI2_CHANNEL_0 |
+	      V4L2_MBUS_CSI2_CONTINUOUS_CLOCK;
+	config->type = V4L2_MBUS_CSI2;
+	config->flags = val;
+
+	return 0;
+}
+
 static const struct dev_pm_ops gc2385_pm_ops = {
 	SET_RUNTIME_PM_OPS(gc2385_runtime_suspend,
 			   gc2385_runtime_resume, NULL)
@@ -781,6 +823,7 @@ static const struct v4l2_subdev_core_ops gc2385_core_ops = {
 static const struct v4l2_subdev_video_ops gc2385_video_ops = {
 	.s_stream = gc2385_s_stream,
 	.g_frame_interval = gc2385_g_frame_interval,
+	.g_mbus_config = gc2385_g_mbus_config,
 };
 
 static const struct v4l2_subdev_pad_ops gc2385_pad_ops = {
@@ -936,7 +979,7 @@ static int gc2385_set_ctrl(struct v4l2_ctrl *ctrl)
 		break;
 	}
 
-	if (pm_runtime_get(&client->dev) <= 0)
+	if (!pm_runtime_get_if_in_use(&client->dev))
 		return 0;
 
 	switch (ctrl->id) {

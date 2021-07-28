@@ -104,14 +104,14 @@ repack_boot_img()
 		--second resource.img \
 		--dtb ${DTB_PATH} \
 		-o boot.img &&
-	echo "  Image:  boot.img (${BOOT_IMG} + Image + resource.img) is ready";
+	echo "  Image:  boot.img (${BOOT_IMG} + Image) is ready";
 	${srctree}/scripts/repack-bootimg \
 		--boot_img ${BOOT_IMG} --out ${OUT} \
 		${KERNEL_ZIMAGE_ARG} \
 		--second resource.img \
 		--dtb ${DTB_PATH} \
 		-o zboot.img && \
-	echo "  Image:  zboot.img (${BOOT_IMG} + ${ZIMAGE} + resource.img) is ready"
+	echo "  Image:  zboot.img (${BOOT_IMG} + ${ZIMAGE}) is ready"
 }
 
 check_mkimage()
@@ -223,7 +223,13 @@ if [ "${srctree}" != "${objtree}" ]; then
 		cp -a ${LOGO_KERNEL_PATH} ${objtree}/;
 	fi
 fi
+
 scripts/resource_tool ${DTB_ARGS} ${DTB_PATH} ${LOGO} ${LOGO_KERNEL} >/dev/null
+
+if [ "${ARCH}" == "arm64" ]; then
+	./scripts/io-domain.sh ${srctree}/arch/arm64/boot/dts/rockchip/.${DTB}
+fi
+
 echo "  Image:  resource.img (with ${DTB} ${LOGO} ${LOGO_KERNEL}) is ready"
 
 if [ -f "${BOOT_IMG}" ]; then

@@ -49,6 +49,18 @@ enum cif_reg_index {
 	CIF_REG_DVP_CUR_DST,
 	CIF_REG_DVP_LAST_LINE,
 	CIF_REG_DVP_LAST_PIX,
+	CIF_REG_DVP_FRM0_ADDR_Y_ID1,
+	CIF_REG_DVP_FRM0_ADDR_UV_ID1,
+	CIF_REG_DVP_FRM1_ADDR_Y_ID1,
+	CIF_REG_DVP_FRM1_ADDR_UV_ID1,
+	CIF_REG_DVP_FRM0_ADDR_Y_ID2,
+	CIF_REG_DVP_FRM0_ADDR_UV_ID2,
+	CIF_REG_DVP_FRM1_ADDR_Y_ID2,
+	CIF_REG_DVP_FRM1_ADDR_UV_ID2,
+	CIF_REG_DVP_FRM0_ADDR_Y_ID3,
+	CIF_REG_DVP_FRM0_ADDR_UV_ID3,
+	CIF_REG_DVP_FRM1_ADDR_Y_ID3,
+	CIF_REG_DVP_FRM1_ADDR_UV_ID3,
 	/* mipi & lvds registers index */
 	CIF_REG_MIPI_LVDS_ID0_CTRL0,
 	CIF_REG_MIPI_LVDS_ID0_CTRL1,
@@ -102,6 +114,10 @@ enum cif_reg_index {
 	CIF_REG_MIPI_LVDS_ID1_CROP_START,
 	CIF_REG_MIPI_LVDS_ID2_CROP_START,
 	CIF_REG_MIPI_LVDS_ID3_CROP_START,
+	CIF_REG_MIPI_FRAME_NUM_VC0,
+	CIF_REG_MIPI_FRAME_NUM_VC1,
+	CIF_REG_MIPI_FRAME_NUM_VC2,
+	CIF_REG_MIPI_FRAME_NUM_VC3,
 	CIF_REG_LVDS_SAV_EAV_ACT0_ID0,
 	CIF_REG_LVDS_SAV_EAV_BLK0_ID0,
 	CIF_REG_LVDS_SAV_EAV_ACT1_ID0,
@@ -130,6 +146,9 @@ enum cif_reg_index {
 	CIF_REG_MMU_INT_MASK,
 	CIF_REG_MMU_INT_STATUS,
 	CIF_REG_MMU_AUTO_GATING,
+	/* reg belowed is in grf */
+	CIF_REG_GRF_CIFIO_CON,
+	CIF_REG_GRF_CIFIO_CON1,
 	CIF_REG_INDEX_MAX
 };
 
@@ -156,6 +175,7 @@ enum cif_reg_index {
 #define CIF_WBC_CNT			0x40
 #define CIF_CROP			0x44
 #define RV1126_CIF_CROP			0x34
+#define RK3568_CIF_FIFO_ENTRY		0x38
 #define CIF_SCL_CTRL			0x48
 #define CIF_PATH_SEL			0x48
 #define CIF_SCL_DST			0x4c
@@ -172,10 +192,22 @@ enum cif_reg_index {
 #define CIF_LAST_PIX			0x6c
 #define RV1126_CIF_LAST_PIX		0x48
 #define CIF_MULTI_ID			0x10
+#define CIF_FRM0_ADDR_Y_ID1		0x50
+#define CIF_FRM0_ADDR_UV_ID1		0x54
+#define CIF_FRM1_ADDR_Y_ID1		0x58
+#define CIF_FRM1_ADDR_UV_ID1		0x5c
+#define CIF_FRM0_ADDR_Y_ID2		0x60
+#define CIF_FRM0_ADDR_UV_ID2		0x64
+#define CIF_FRM1_ADDR_Y_ID2		0x68
+#define CIF_FRM1_ADDR_UV_ID2		0x6c
+#define CIF_FRM0_ADDR_Y_ID3		0x70
+#define CIF_FRM0_ADDR_UV_ID3		0x74
+#define CIF_FRM1_ADDR_Y_ID3		0x78
+#define CIF_FRM1_ADDR_UV_ID3		0x7c
 
 #define CIF_FETCH_Y_LAST_LINE(val)	((val) & 0x1fff)
 /* Check if swap y and c in bt1120 mode */
-#define CIF_FETCH_IS_Y_FIRST(val)	((val) & 0xf)
+#define CIF_FETCH_IS_Y_FIRST(val)	((val >> 5) & 0x3)
 #define CIF_RAW_STORED_BIT_WIDTH	(16U)
 #define CIF_YUV_STORED_BIT_WIDTH	(8U)
 
@@ -232,6 +264,10 @@ enum cif_reg_index {
 #define CIF_CSI_ID1_CROP_START		0x140
 #define CIF_CSI_ID2_CROP_START		0x144
 #define CIF_CSI_ID3_CROP_START		0x148
+#define CIF_CSI_FRAME_NUM_VC0		0x14c
+#define CIF_CSI_FRAME_NUM_VC1		0x150
+#define CIF_CSI_FRAME_NUM_VC2		0x154
+#define CIF_CSI_FRAME_NUM_VC3		0x158
 #define CIF_LVDS_SAV_EAV_ACT0_ID0	0x150
 #define CIF_LVDS_SAV_EAV_BLK0_ID0	0x154
 #define CIF_LVDS_SAV_EAV_ACT1_ID0	0x158
@@ -276,15 +312,62 @@ enum cif_reg_index {
 #define FRAME_END_EN			(0x1 << 0)
 #define BUS_ERR_EN			(0x1 << 6)
 #define SCL_ERR_EN			(0x1 << 7)
+#define PRE_INF_FRAME_END_EN		(0x1 << 8)
 #define PST_INF_FRAME_END_EN		(0x1 << 9)
+#define LINE_INT_EN			(0x1 << 10)
+#define DVP_CHANNEL1_FRM_END_EN		(0x1 << 11)
+#define DVP_CHANNEL2_FRM_END_EN		(0x1 << 12)
+#define DVP_CHANNEL3_FRM_END_EN		(0x1 << 13)
 
 /* CIF INTSTAT */
 #define INTSTAT_CLS			(0x3FF)
 #define FRAME_END			(0x01 << 0)
+#define LINE_ERR			(0x01 << 2)
+#define PIX_ERR				(0x01 << 3)
+#define IFIFO_OVERFLOW			(0x01 << 4)
+#define DFIFO_OVERFLOW			(0x01 << 5)
+#define BUS_ERR				(0x01 << 6)
+#define PRE_INF_FRAME_END		(0x01 << 8)
 #define PST_INF_FRAME_END		(0x01 << 9)
+#define LINE_INT_END			(0x01 << 10)
 #define FRAME_END_CLR			(0x01 << 0)
+#define PRE_INF_FRAME_END_CLR		(0x01 << 8)
 #define PST_INF_FRAME_END_CLR		(0x01 << 9)
 #define INTSTAT_ERR			(0xFC)
+#define DVP_ALL_OVERFLOW		(IFIFO_OVERFLOW | DFIFO_OVERFLOW)
+
+#define DVP_DMA_END_INTEN(id)	\
+	({ \
+	unsigned int mask; \
+	switch (id) { \
+	case 0: \
+		mask = 0x1 << 0; \
+		break; \
+	default: \
+		mask = 0x1 << (id  + 10); \
+		break; \
+	} \
+	mask; \
+	})
+
+#define DVP_LINE_INTEN		(0x01 << 10)
+
+#define DVP_DMA_END_INTSTAT(id)		\
+	({ \
+	unsigned int mask; \
+	switch (id) { \
+	case 0: \
+		mask = 0x1 << 0; \
+		break; \
+	default: \
+		mask = 0x1 << (id  + 10); \
+		break; \
+	} \
+	mask; \
+	})
+
+#define DVP_PST_INTSTAT		PST_INF_FRAME_END
+#define DVP_LINE_INTSTAT	(0x01 << 10)
 
 /* FRAME STATUS */
 #define FRAME_STAT_CLS			0x00
@@ -301,10 +384,12 @@ enum cif_reg_index {
 #define HSY_HIGH_ACTIVE			(0x00 << 1)
 #define INPUT_MODE_YUV			(0x00 << 2)
 #define INPUT_MODE_PAL			(0x02 << 2)
+#define INPUT_MODE_BT656_YUV422		(0x02 << 2)
 #define INPUT_MODE_NTSC			(0x03 << 2)
 #define INPUT_MODE_BT1120		(0x07 << 2)
 #define INPUT_MODE_RAW			(0x04 << 2)
 #define INPUT_MODE_JPEG			(0x05 << 2)
+#define INPUT_MODE_SONY_RAW		(0x05 << 2)
 #define INPUT_MODE_MIPI			(0x06 << 2)
 #define YUV_INPUT_ORDER_UYVY		(0x00 << 5)
 #define YUV_INPUT_ORDER_YVYU		(0x01 << 5)
@@ -335,6 +420,17 @@ enum cif_reg_index {
 #define BT1120_TRANSMIT_INTERFACE	(0x00 << 25)
 #define BT1120_TRANSMIT_PROGRESS	(0x01 << 25)
 #define BT1120_YC_SWAP			(0x01 << 26)
+#define BT656_1120_MULTI_ID_DISABLE	(0x00 << 28)
+#define BT656_1120_MULTI_ID_ENABLE	(0x01 << 28)
+#define BT656_1120_MULTI_ID_SEL_MSB	(0x00 << 29)
+#define BT656_1120_MULTI_ID_SEL_LSB	(0x01 << 29)
+#define BT656_1120_MULTI_ID_MODE_1	(0x00 << 30)
+#define BT656_1120_MULTI_ID_MODE_2	(0x01 << 30)
+#define BT656_1120_MULTI_ID_MODE_4	(0x02 << 30)
+#define BT656_1120_MULTI_ID_0_MASK	~(0x03 << 4)
+#define BT656_1120_MULTI_ID_1_MASK	~(0x03 << 12)
+#define BT656_1120_MULTI_ID_2_MASK	~(0x03 << 20)
+#define BT656_1120_MULTI_ID_3_MASK	~(0x03 << 28)
 
 /* CIF_SCL_CTRL */
 #define ENABLE_SCL_DOWN			(0x01 << 0)
@@ -348,9 +444,52 @@ enum cif_reg_index {
 #define ENABLE_32BIT_BYPASS		(0x01 << 6)
 #define DISABLE_32BIT_BYPASS		(0x00 << 6)
 
-/* CIF_INTSTAT */
+/* CIF_FRAME_INTSTAT */
 #define CIF_F0_READY			(0x01 << 0)
 #define CIF_F1_READY			(0x01 << 1)
+#define DVP_CHANNEL0_FRM_READ		(CIF_F0_READY | CIF_F1_READY)
+#define DVP_CHANNEL1_F0_READY		(0x01 << 4)
+#define DVP_CHANNEL1_F1_READY		(0x01 << 5)
+#define DVP_CHANNEL1_FRM_READ		(DVP_CHANNEL1_F0_READY | DVP_CHANNEL1_F1_READY)
+#define DVP_CHANNEL2_F0_READY		(0x01 << 8)
+#define DVP_CHANNEL2_F1_READY		(0x01 << 9)
+#define DVP_CHANNEL2_FRM_READ		(DVP_CHANNEL2_F0_READY | DVP_CHANNEL2_F1_READY)
+#define DVP_CHANNEL3_F0_READY		(0x01 << 12)
+#define DVP_CHANNEL3_F1_READY		(0x01 << 13)
+#define DVP_CHANNEL3_FRM_READ		(DVP_CHANNEL3_F0_READY | DVP_CHANNEL3_F1_READY)
+
+#define DVP_FRAME_END_ID0		(0x1 << 0)
+#define DVP_FRAME_END_ID1		(0x1 << 11)
+#define DVP_FRAME_END_ID2		(0x1 << 12)
+#define DVP_FRAME_END_ID3		(0x1 << 13)
+
+#define DVP_FRM_STS_ID0(x)		(((x) & (0x3 << 0)) >> 0)
+#define DVP_FRM_STS_ID1(x)		(((x) & (0x3 << 4)) >> 4)
+#define DVP_FRM_STS_ID2(x)		(((x) & (0x3 << 8)) >> 8)
+#define DVP_FRM_STS_ID3(x)		(((x) & (0x3 << 12)) >> 12)
+
+#define DVP_SW_MULTI_ID(channel, id, bits)	\
+	({ \
+		unsigned int mask; \
+		switch (channel) { \
+		case 0: \
+			mask = ((bits) << 4) | ((id) << 0); \
+			break; \
+		case 1: \
+			mask = ((bits) << 12) | ((id) << 8); \
+			break; \
+		case 2: \
+			mask = ((bits) << 20) | ((id) << 16); \
+			break; \
+		case 3: \
+			mask = ((bits) << 28) | ((id) << 24); \
+			break; \
+		default: \
+			mask = ((bits) << 4) | ((id) << 0); \
+			break; \
+		} \
+		mask; \
+	})
 
 /* CIF CROP */
 #define CIF_CROP_Y_SHIFT		16
@@ -371,6 +510,10 @@ enum cif_reg_index {
 #define CSI_DISABLE_CROP		(0x0 << 5)
 #define CSI_ENABLE_CROP			(0x1 << 5)
 #define CSI_ENABLE_MIPI_COMPACT		(0x1 << 6)
+#define CSI_YUV_INPUT_ORDER_UYVY	(0x0 << 16)
+#define CSI_YUV_INPUT_ORDER_VYUY	(0x1 << 16)
+#define CSI_YUV_INPUT_ORDER_YUYV	(0x2 << 16)
+#define CSI_YUV_INPUT_ORDER_YVYU	(0x3 << 16)
 
 #define LVDS_ENABLE_CAPTURE		(0x1 << 16)
 #define LVDS_MODE(mode)			(((mode) & 0x7) << 17)
@@ -453,6 +596,14 @@ enum cif_reg_index {
 #define CSI_DMA_LVDS_ID2_FIFO_OVERFLOW	(0x1 << 25)
 #define CSI_DMA_LVDS_ID3_FIFO_OVERFLOW	(0x1 << 26)
 
+#define CSI_FRAME_START_ID0	(CSI_FRAME0_START_ID0 |\
+				 CSI_FRAME1_START_ID0)
+#define CSI_FRAME_START_ID1	(CSI_FRAME0_START_ID1 |\
+				 CSI_FRAME1_START_ID1)
+#define CSI_FRAME_START_ID2	(CSI_FRAME0_START_ID2 |\
+				 CSI_FRAME1_START_ID2)
+#define CSI_FRAME_START_ID3	(CSI_FRAME0_START_ID3 |\
+				 CSI_FRAME1_START_ID3)
 #define CSI_FRAME_END_ID0	(CSI_FRAME0_END_ID0 |\
 				 CSI_FRAME1_END_ID0)
 #define CSI_FRAME_END_ID1	(CSI_FRAME0_END_ID1 |\
@@ -464,7 +615,9 @@ enum cif_reg_index {
 #define CSI_FIFO_OVERFLOW	(CSI_DMA_Y_FIFO_OVERFLOW |	\
 				 CSI_DMA_UV_FIFO_OVERFLOW |	\
 				 CSI_CONFIG_FIFO_OVERFLOW |	\
-				 CSI_RX_FIFO_OVERFLOW)
+				 CSI_RX_FIFO_OVERFLOW |	\
+				 CSI_DMA_LVDS_ID2_FIFO_OVERFLOW |	\
+				 CSI_DMA_LVDS_ID3_FIFO_OVERFLOW)
 /* CIF_MIPI_LVDS_CTRL */
 #define CIF_MIPI_LVDS_SW_DMA_IDLE		(0x1 << 16)
 #define CIF_MIPI_LVDS_SW_PRESS_VALUE(val)	(((val) & 0x3) << 13)
@@ -480,6 +633,14 @@ enum cif_reg_index {
 #define CIF_MIPI_LVDS_SW_WATER_LINE_25		(0x2 << 1)
 #define CIF_MIPI_LVDS_SW_WATER_LINE_00		(0x3 << 1)
 #define CIF_MIPI_LVDS_SW_WATER_LINE_ENABLE	(0x1 << 0)
+#define CIF_MIPI_LVDS_SW_DMA_IDLE_RK1808	(0x1 << 24)
+#define CIF_MIPI_LVDS_SW_HURRY_VALUE_RK1808(val)	(((val) & 0x3) << 17)
+#define CIF_MIPI_LVDS_SW_HURRY_ENABLE_RK1808	(0x1 << 16)
+#define CIF_MIPI_LVDS_SW_WATER_LINE_75_RK1808	(0x0 << 0)
+#define CIF_MIPI_LVDS_SW_WATER_LINE_50_RK1808	(0x1 << 0)
+#define CIF_MIPI_LVDS_SW_WATER_LINE_25_RK1808	(0x2 << 0)
+#define CIF_MIPI_LVDS_SW_WATER_LINE_00_RK1808	(0x3 << 0)
+#define CIF_MIPI_LVDS_SW_WATER_LINE_ENABLE_RK1808	(0x1 << 4)
 
 /* CSI Host Registers Define */
 #define CSIHOST_N_LANES		0x04
@@ -508,5 +669,21 @@ enum cif_reg_index {
 #define SW_LVDS_SAV_ACT(code)	(((code) & 0xfff) << 0)
 #define SW_LVDS_EAV_BLK(code)	(((code) & 0xfff) << 16)
 #define SW_LVDS_SAV_BLK(code)	(((code) & 0xfff) << 0)
+
+/* GRF related with CIF */
+#define CIF_GRF_CIFIO_CON		(0x10250)
+#define CIF_PCLK_SAMPLING_EDGE_RISING	(0x04000400)
+#define CIF_PCLK_SAMPLING_EDGE_FALLING	(0x04000000)
+#define CIF_PCLK_DELAY_ENABLE		(0x02000200)
+#define CIF_PCLK_DELAY_DISABLE		(0x02000000)
+#define CIF_SAMPLING_EDGE_DOUBLE	(0x01000100)
+#define CIF_SAMPLING_EDGE_SINGLE	(0x01000000)
+#define CIF_PCLK_DELAY_NUM(num)		(0x00ff0000 | ((num) & 0xff))
+#define CIF_GRF_VI_CON0			(0x340)
+#define CIF_GRF_VI_CON1			(0x344)
+#define RK3568_CIF_PCLK_SAMPLING_EDGE_RISING	(0x10000000)
+#define RK3568_CIF_PCLK_SAMPLING_EDGE_FALLING	(0x10001000)
+#define RK3568_CIF_PCLK_SINGLE_EDGE		(0x02000000)
+#define RK3568_CIF_PCLK_DUAL_EDGE		(0x02000200)
 
 #endif

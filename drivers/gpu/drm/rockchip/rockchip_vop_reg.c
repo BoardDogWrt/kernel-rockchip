@@ -520,7 +520,7 @@ static const uint32_t vop_csc_r2y_bt601[] = {
 };
 
 static const uint32_t vop_csc_r2y_bt601_12_235[] = {
-	0x02040107, 0xff680064, 0x01c2fed6, 0xffb7fe87,
+	0x02040107, 0xff680064, 0x01c2fed6, 0xfe8701c2,
 	0x0000ffb7, 0x00010200, 0x00080200, 0x00080200,
 };
 
@@ -1610,11 +1610,11 @@ static const struct vop_ctrl rk3308_ctrl_data = {
 	.bcsh_y2r_en = VOP_REG(RK3366_LIT_BCSH_CTRL, 0x1, 6),
 	.bcsh_r2y_en = VOP_REG(RK3366_LIT_BCSH_CTRL, 0x1, 7),
 	.bcsh_color_bar = VOP_REG(RK3366_LIT_BCSH_COL_BAR, 0xffffff, 0),
-	.bcsh_brightness = VOP_REG(RK3366_LIT_BCSH_BCS, 0xff, 0),
-	.bcsh_contrast = VOP_REG(RK3366_LIT_BCSH_BCS, 0x1ff, 8),
-	.bcsh_sat_con = VOP_REG(RK3366_LIT_BCSH_BCS, 0x3ff, 20),
-	.bcsh_sin_hue = VOP_REG(RK3366_LIT_BCSH_H, 0x1ff, 0),
-	.bcsh_cos_hue = VOP_REG(RK3366_LIT_BCSH_H, 0x1ff, 16),
+	.bcsh_brightness = VOP_REG(RK3366_LIT_BCSH_BCS, 0x3f, 0),
+	.bcsh_contrast = VOP_REG(RK3366_LIT_BCSH_BCS, 0xff, 8),
+	.bcsh_sat_con = VOP_REG(RK3366_LIT_BCSH_BCS, 0x1ff, 16),
+	.bcsh_sin_hue = VOP_REG(RK3366_LIT_BCSH_H, 0xff, 0),
+	.bcsh_cos_hue = VOP_REG(RK3366_LIT_BCSH_H, 0xff, 8),
 
 	.mcu_pix_total = VOP_REG(RK3366_LIT_MCU_CTRL, 0x3f, 0),
 	.mcu_cs_pst = VOP_REG(RK3366_LIT_MCU_CTRL, 0xf, 6),
@@ -1700,6 +1700,7 @@ static const struct vop_ctrl rv1126_ctrl_data = {
 	.dither_down_mode = VOP_REG(RK3366_LIT_DSP_CTRL2, 0x1, 6),
 	.dither_up_en = VOP_REG(RK3366_LIT_DSP_CTRL2, 0x1, 2),
 	.dsp_data_swap = VOP_REG(RK3366_LIT_DSP_CTRL2, 0x1f, 9),
+	.yuv_clip = VOP_REG(RK3366_LIT_SYS_CTRL2, 0x1, 4),
 	.dsp_ccir656_avg = VOP_REG(RK3366_LIT_SYS_CTRL2, 0x1, 5),
 	.dsp_black = VOP_REG(RK3366_LIT_DSP_CTRL2, 0x1, 15),
 	.dsp_blank = VOP_REG(RK3366_LIT_DSP_CTRL2, 0x1, 14),

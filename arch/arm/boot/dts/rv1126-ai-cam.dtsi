@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: (GPL-2.0+ OR MIT)
 /*
- * Copyright (c) 2019 Fuzhou Rockchip Electronics Co., Ltd.
+ * Copyright (c) 2020 Rockchip Electronics Co., Ltd.
  */
 
 #include <dt-bindings/display/drm_mipi_dsi.h>
@@ -94,9 +94,28 @@
 	rockchip,hw-tshut-mode = <0>; /* tshut mode 0:CRU 1:GPIO */
 	rockchip,hw-tshut-polarity = <0>; /* tshut polarity 0:LOW 1:HIGH */
 	pinctrl-names = "gpio", "otpout";
-	pinctrl-0 = <&tsadcm0_pins>;
+	pinctrl-0 = <&tsadcm0_shut>;
 	pinctrl-1 = <&tsadc_shutorg>;
 	status = "okay";
+};
+
+&cru {
+	assigned-clocks =
+		<&pmucru CLK_RTC32K>, <&pmucru PLL_GPLL>,
+		<&pmucru PCLK_PDPMU>, <&cru PLL_CPLL>,
+		<&cru PLL_HPLL>, <&cru ARMCLK>,
+		<&cru ACLK_PDBUS>, <&cru HCLK_PDBUS>,
+		<&cru PCLK_PDBUS>, <&cru ACLK_PDPHP>,
+		<&cru HCLK_PDPHP>, <&cru HCLK_PDAUDIO>,
+		<&cru HCLK_PDCORE_NIU>;
+	assigned-clock-rates =
+		<32768>, <1188000000>,
+		<100000000>, <491520000>,
+		<1400000000>, <600000000>,
+		<500000000>, <200000000>,
+		<100000000>, <300000000>,
+		<200000000>, <150000000>,
+		<200000000>;
 };
 
 &csi_dphy0 {
@@ -113,7 +132,8 @@
 
 			csidphy0_out: endpoint@0 {
 				reg = <0>;
-				remote-endpoint = <&isp_in>;
+				remote-endpoint = <&mipi_csi2_input>;
+				data-lanes = <1 2>;
 			};
 		};
 	};
@@ -139,11 +159,46 @@
 	status = "okay";
 };
 
+&mipi_csi2 {
+	status = "okay";
+
+	ports {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		port@0 {
+			reg = <0>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			mipi_csi2_input: endpoint@1 {
+				reg = <1>;
+				remote-endpoint = <&csidphy0_out>;
+				data-lanes = <1 2>;
+			};
+		};
+
+		port@1 {
+			reg = <1>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			mipi_csi2_output: endpoint@0 {
+				reg = <0>;
+				remote-endpoint = <&cif_mipi_in>;
+				data-lanes = <1 2>;
+			};
+		};
+	};
+};
+
 &mpp_srv {
 	status = "okay";
 };
 
 &nandc {
+	/delete-property/ pinctrl-names;
+	/delete-property/ pinctrl-0;
 	#address-cells = <1>;
 	#size-cells = <0>;
 
@@ -165,7 +220,7 @@
 	rockchip,hw-tshut-mode = <0>; /* tshut mode 0:CRU 1:GPIO */
 	rockchip,hw-tshut-polarity = <0>; /* tshut polarity 0:LOW 1:HIGH */
 	pinctrl-names = "gpio", "otpout";
-	pinctrl-0 = <&tsadcm0_pins>;
+	pinctrl-0 = <&tsadcm0_shut>;
 	pinctrl-1 = <&tsadc_shutorg>;
 	status = "okay";
 };
@@ -195,13 +250,13 @@
 		/omit-if-no-ref/
 		soc_slppin_slp: soc_slppin_slp {
 			rockchip,pins =
-				<0 RK_PB2 RK_FUNC_1 &pcfg_pull_none>;
+				<0 RK_PB2 1 &pcfg_pull_none>;
 		};
 
 		/omit-if-no-ref/
 		soc_slppin_rst: soc_slppin_rst {
 			rockchip,pins =
-				<0 RK_PB2 RK_FUNC_2 &pcfg_pull_none>;
+				<0 RK_PB2 2 &pcfg_pull_none>;
 		};
 	};
 };
@@ -211,12 +266,11 @@
 
 	pmuio0-supply = <&vcc_3v3>;
 	pmuio1-supply = <&vcc_3v3>;
-	vccio1-supply = <&vcc_1v8>;
 	vccio2-supply = <&vcc_3v3>;
-	vccio3-supply = <&vcc_1v8>;
+	vccio3-supply = <&vcc_3v3>;
 	vccio4-supply = <&vcc_1v8>;
 	vccio5-supply = <&vcc_3v3>;
-	vccio6-supply = <&vcc_1v8>;
+	vccio6-supply = <&vcc_3v3>;
 	vccio7-supply = <&vcc_1v8>;
 };
 
@@ -246,42 +300,73 @@
 	status = "okay";
 };
 
-&rkisp {
+&rkcif {
 	status = "okay";
 };
 
-&rkisp_vir0 {
+&rkcif_mipi_lvds {
 	status = "okay";
 
-	ports {
-		port@0 {
-			reg = <0>;
-			#address-cells = <1>;
-			#size-cells = <0>;
-
-			isp_in: endpoint@0 {
-				reg = <0>;
-				remote-endpoint = <&csidphy0_out>;
-			};
+	port {
+		/* MIPI CSI-2 endpoint */
+		cif_mipi_in: endpoint {
+			remote-endpoint = <&mipi_csi2_output>;
+			data-lanes = <1 2>;
 		};
 	};
+};
+
+&rkcif_mipi_lvds_sditf {
+	status = "okay";
+
+	port {
+		cif_sditf: endpoint {
+			remote-endpoint = <&isp_virt1_in>;
+			data-lanes = <1 2>;
+		};
+	};
+};
+
+&rkcif_mmu {
+	status = "disabled";
+};
+
+&rkisp {
+	status = "okay";
 };
 
 &rkisp_mmu {
 	status = "disabled";
 };
 
-&rkispp {
+&rkisp_vir0 {
 	status = "okay";
-	/* the max input w h and fps of mulit sensor */
-	//max-input = <2688 1520 30>;
+	ports {
+		port@0 {
+			reg = <0>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			isp_virt1_in: endpoint@0 {
+				reg = <0>;
+				remote-endpoint = <&cif_sditf>;
+			};
+		};
+	};
 };
 
-&rkispp_vir0 {
+&rkispp {
+	rockchip,restart-monitor-en;
 	status = "okay";
+	/* the max input w h and fps of mulit sensor */
+	//max-input = <3840 2160 30>;
 };
 
 &rkispp_mmu {
+	status = "okay";
+};
+
+&rkispp_vir0 {
 	status = "okay";
 };
 
@@ -309,6 +394,12 @@
 &saradc {
 	status = "okay";
 	vref-supply = <&vcc_1v8>;
+};
+
+&sfc {
+	/delete-property/ pinctrl-names;
+	/delete-property/ pinctrl-0;
+	status = "disabled";
 };
 
 &u2phy0 {

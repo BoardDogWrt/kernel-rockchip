@@ -392,6 +392,7 @@
 #define CIF_MIPI_DATA_SEL_VC(a)			(((a) & 0x3) << 6)
 #define CIF_MIPI_DATA_SEL_DT(a)			(((a) & 0x3F) << 0)
 /* MIPI DATA_TYPE */
+#define CIF_CSI2_DT_EBD				0x12
 #define CIF_CSI2_DT_YUV420_8b			0x18
 #define CIF_CSI2_DT_YUV420_10b			0x19
 #define CIF_CSI2_DT_YUV422_8b			0x1E
@@ -402,6 +403,7 @@
 #define CIF_CSI2_DT_RAW8			0x2A
 #define CIF_CSI2_DT_RAW10			0x2B
 #define CIF_CSI2_DT_RAW12			0x2C
+#define CIF_CSI2_DT_SPD				0x2F
 
 /* MIPI_IMSC, MIPI_RIS, MIPI_MIS, MIPI_ICR, MIPI_ISR */
 #define CIF_MIPI_SYNC_FIFO_OVFLW(a)		(((a) & 0xF) << 0)
@@ -1617,25 +1619,41 @@
 #define CIF_ISP_CSI0_TX_IBUF_STATUS_RO	(CIF_ISP_CSI0_BASE + 0x00000078)
 #define CIF_ISP_CSI0_VERSION		(CIF_ISP_CSI0_BASE + 0x0000007c)
 
-void disable_dcrop(struct rkisp_stream *stream, bool async);
-void config_dcrop(struct rkisp_stream *stream, struct v4l2_rect *rect,
-		  bool async);
+void rkisp_disable_dcrop(struct rkisp_stream *stream, bool async);
+void rkisp_config_dcrop(struct rkisp_stream *stream, struct v4l2_rect *rect, bool async);
 
-void dump_rsz_regs(struct rkisp_stream *stream);
-void disable_rsz(struct rkisp_stream *stream, bool async);
-void config_rsz(struct rkisp_stream *stream, struct v4l2_rect *in_y,
-		struct v4l2_rect *in_c, struct v4l2_rect *out_y,
-		struct v4l2_rect *out_c, bool async);
+void rkisp_dump_rsz_regs(struct rkisp_stream *stream);
+void rkisp_disable_rsz(struct rkisp_stream *stream, bool async);
+void rkisp_config_rsz(struct rkisp_stream *stream, struct v4l2_rect *in_y,
+		      struct v4l2_rect *in_c, struct v4l2_rect *out_y,
+		      struct v4l2_rect *out_c, bool async);
 
-void config_mi_ctrl(struct rkisp_stream *stream, u32 burst);
+static inline void config_mi_ctrl(struct rkisp_stream *stream, u32 burst)
+{
+	void __iomem *base = stream->ispdev->base_addr;
+	void __iomem *addr = base + CIF_MI_CTRL;
+	u32 reg;
 
-void mp_clr_frame_end_int(void __iomem *base);
-void sp_clr_frame_end_int(void __iomem *base);
+	reg = readl(addr) & ~GENMASK(19, 16);
+	writel(reg | burst, addr);
+	reg = readl(addr);
+	writel(reg | CIF_MI_CTRL_INIT_BASE_EN, addr);
+	reg = readl(addr);
+	writel(reg | CIF_MI_CTRL_INIT_OFFSET_EN, addr);
+}
 
-bool mp_is_frame_end_int_masked(void __iomem *base);
-bool sp_is_frame_end_int_masked(void __iomem *base);
-bool mp_is_stream_stopped(void __iomem *base);
-bool sp_is_stream_stopped(void __iomem *base);
+static inline bool mp_is_stream_stopped(void __iomem *base)
+{
+	int en;
+
+	en = CIF_MI_CTRL_SHD_MP_IN_ENABLED | CIF_MI_CTRL_SHD_RAW_OUT_ENABLED;
+	return !(readl(base + CIF_MI_CTRL_SHD) & en);
+}
+
+static inline bool sp_is_stream_stopped(void __iomem *base)
+{
+	return !(readl(base + CIF_MI_CTRL_SHD) & CIF_MI_CTRL_SHD_SP_IN_ENABLED);
+}
 
 static inline void isp_set_bits(void __iomem *addr, u32 bit_mask, u32 val)
 {
@@ -1889,8 +1907,11 @@ static inline void sp_mi_ctrl_autoupdate_en(void __iomem *base)
 static inline void force_cfg_update(struct rkisp_device *dev)
 {
 	void __iomem *base = dev->base_addr;
+	u32 val = readl(base + CIF_MI_CTRL);
 
 	dev->hw_dev->is_mi_update = true;
+	val |= CIF_MI_CTRL_INIT_OFFSET_EN | CIF_MI_CTRL_INIT_BASE_EN;
+	writel(val, base + CIF_MI_CTRL);
 	writel(CIF_MI_INIT_SOFT_UPD, base + CIF_MI_INIT);
 }
 

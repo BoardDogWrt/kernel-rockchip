@@ -25,8 +25,6 @@
 #include <linux/input.h>
 #include <linux/workqueue.h>
 #include <linux/freezer.h>
-#include <mach/gpio.h>
-#include <mach/board.h>
 #ifdef CONFIG_HAS_EARLYSUSPEND
 #include <linux/earlysuspend.h>
 #endif
@@ -379,31 +377,39 @@ struct sensor_operate light_ap321xx_ops = {
 
 /****************operate according to sensor chip:end************/
 
-//function name should not be changed
-static struct sensor_operate *light_get_ops(void)
+static int light_ap321xx_probe(struct i2c_client *client,
+			       const struct i2c_device_id *devid)
 {
-	return &light_ap321xx_ops;
+	return sensor_register_device(client, NULL, devid, &light_ap321xx_ops);
 }
 
-
-static int __init light_ap321xx_init(void)
+static int light_ap321xx_remove(struct i2c_client *client)
 {
-	struct sensor_operate *ops = light_get_ops();
-	int result = 0;
-	int type = ops->type;
-	result = sensor_register_slave(type, NULL, NULL, light_get_ops);
-	return result;
+	return sensor_unregister_device(client, NULL, &light_ap321xx_ops);
 }
 
-static void __exit light_ap321xx_exit(void)
-{
-	struct sensor_operate *ops = light_get_ops();
-	int type = ops->type;
-	sensor_unregister_slave(type, NULL, NULL, light_get_ops);
-}
+static const struct i2c_device_id light_ap321xx_id[] = {
+	{"ls_ap321xx", LIGHT_ID_AP321XX},
+	{}
+};
 
+static struct i2c_driver light_ap321xx_driver = {
+	.probe = light_ap321xx_probe,
+	.remove = light_ap321xx_remove,
+	.shutdown = sensor_shutdown,
+	.id_table = light_ap321xx_id,
+	.driver = {
+		.name = "light_ap321xx",
+	#ifdef CONFIG_PM
+		.pm = &sensor_pm_ops,
+	#endif
+	},
+};
 
-module_init(light_ap321xx_init);
-module_exit(light_ap321xx_exit);
+module_i2c_driver(light_ap321xx_driver);
+
+MODULE_AUTHOR("luowei <lw@rock-chips.com>");
+MODULE_DESCRIPTION("ap321xx light driver");
+MODULE_LICENSE("GPL");
 
 

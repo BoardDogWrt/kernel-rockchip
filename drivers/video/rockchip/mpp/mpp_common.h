@@ -18,6 +18,7 @@
 #include <linux/types.h>
 #include <linux/time.h>
 #include <linux/workqueue.h>
+#include <linux/kthread.h>
 #include <linux/reset.h>
 #include <linux/irqreturn.h>
 #include <linux/poll.h>
@@ -26,11 +27,13 @@
 
 #define MPP_MAX_MSG_NUM			(16)
 #define MPP_MAX_REG_TRANS_NUM		(60)
+#define MPP_MAX_TASK_CAPACITY		(16)
 /* define flags for mpp_request */
 #define MPP_FLAGS_MULTI_MSG		(0x00000001)
 #define MPP_FLAGS_LAST_MSG		(0x00000002)
 #define MPP_FLAGS_REG_FD_NO_TRANS	(0x00000004)
 #define MPP_FLAGS_SCL_FD_NO_TRANS	(0x00000008)
+#define MPP_FLAGS_REG_NO_OFFSET		(0x00000010)
 #define MPP_FLAGS_SECURE_MODE		(0x00010000)
 
 /**
@@ -45,6 +48,7 @@ enum MPP_DEVICE_TYPE {
 	MPP_DEVICE_HEVC_DEC	= 8, /* 0x00000100 */
 	MPP_DEVICE_RKVDEC	= 9, /* 0x00000200 */
 	MPP_DEVICE_AVSPLUS_DEC	= 12, /* 0x00001000 */
+	MPP_DEVICE_JPGDEC	= 13, /* 0x00002000 */
 
 	MPP_DEVICE_RKVENC	= 16, /* 0x00010000 */
 	MPP_DEVICE_VEPU1	= 17, /* 0x00020000 */
@@ -69,6 +73,8 @@ enum MPP_DRIVER_TYPE {
 	MPP_DRIVER_RKVENC,
 	MPP_DRIVER_IEP,
 	MPP_DRIVER_IEP2,
+	MPP_DRIVER_JPGDEC,
+	MPP_DRIVER_RKVDEC2,
 	MPP_DRIVER_BUTT,
 };
 
@@ -79,24 +85,32 @@ enum MPP_DEV_COMMAND_TYPE {
 	MPP_CMD_QUERY_BASE		= 0,
 	MPP_CMD_QUERY_HW_SUPPORT	= MPP_CMD_QUERY_BASE + 0,
 	MPP_CMD_QUERY_HW_ID		= MPP_CMD_QUERY_BASE + 1,
+	MPP_CMD_QUERY_CMD_SUPPORT	= MPP_CMD_QUERY_BASE + 2,
+	MPP_CMD_QUERY_BUTT,
 
 	MPP_CMD_INIT_BASE		= 0x100,
 	MPP_CMD_INIT_CLIENT_TYPE	= MPP_CMD_INIT_BASE + 0,
 	MPP_CMD_INIT_DRIVER_DATA	= MPP_CMD_INIT_BASE + 1,
 	MPP_CMD_INIT_TRANS_TABLE	= MPP_CMD_INIT_BASE + 2,
+	MPP_CMD_INIT_BUTT,
 
 	MPP_CMD_SEND_BASE		= 0x200,
 	MPP_CMD_SET_REG_WRITE		= MPP_CMD_SEND_BASE + 0,
 	MPP_CMD_SET_REG_READ		= MPP_CMD_SEND_BASE + 1,
 	MPP_CMD_SET_REG_ADDR_OFFSET	= MPP_CMD_SEND_BASE + 2,
+	MPP_CMD_SET_RCB_INFO		= MPP_CMD_SEND_BASE + 3,
+	MPP_CMD_SEND_BUTT,
 
 	MPP_CMD_POLL_BASE		= 0x300,
 	MPP_CMD_POLL_HW_FINISH		= MPP_CMD_POLL_BASE + 0,
+	MPP_CMD_POLL_BUTT,
 
 	MPP_CMD_CONTROL_BASE		= 0x400,
 	MPP_CMD_RESET_SESSION		= MPP_CMD_CONTROL_BASE + 0,
 	MPP_CMD_TRANS_FD_TO_IOVA	= MPP_CMD_CONTROL_BASE + 1,
 	MPP_CMD_RELEASE_FD		= MPP_CMD_CONTROL_BASE + 2,
+	MPP_CMD_SEND_CODEC_INFO		= MPP_CMD_CONTROL_BASE + 3,
+	MPP_CMD_CONTROL_BUTT,
 
 	MPP_CMD_BUTT,
 };
@@ -121,6 +135,41 @@ enum MPP_RESET_TYPE {
 	RST_TYPE_CABAC,
 	RST_TYPE_HEVC_CABAC,
 	RST_TYPE_BUTT,
+};
+
+enum ENC_INFO_TYPE {
+	ENC_INFO_BASE		= 0,
+	ENC_INFO_WIDTH,
+	ENC_INFO_HEIGHT,
+	ENC_INFO_FORMAT,
+	ENC_INFO_FPS_IN,
+	ENC_INFO_FPS_OUT,
+	ENC_INFO_RC_MODE,
+	ENC_INFO_BITRATE,
+	ENC_INFO_GOP_SIZE,
+	ENC_INFO_FPS_CALC,
+	ENC_INFO_PROFILE,
+
+	ENC_INFO_BUTT,
+};
+
+enum DEC_INFO_TYPE {
+	DEC_INFO_BASE		= 0,
+	DEC_INFO_WIDTH,
+	DEC_INFO_HEIGHT,
+	DEC_INFO_FORMAT,
+	DEC_INFO_BITDEPTH,
+	DEC_INFO_FPS,
+
+	DEC_INFO_BUTT,
+};
+
+enum CODEC_INFO_FLAGS {
+	CODEC_INFO_FLAG_NULL	= 0,
+	CODEC_INFO_FLAG_NUMBER,
+	CODEC_INFO_FLAG_STRING,
+
+	CODEC_INFO_FLAG_BUTT,
 };
 
 /* data common struct for parse out */
@@ -179,10 +228,16 @@ struct reg_offset_info {
 	struct reg_offset_elem elem[MPP_MAX_REG_TRANS_NUM];
 };
 
+struct codec_info_elem {
+	__u32 type;
+	__u32 flag;
+	__u64 data;
+};
+
 struct mpp_clk_info {
 	struct clk *clk;
 
-	/* debug rate, from debugfs */
+	/* debug rate, from debug */
 	u32 debug_rate_hz;
 	/* normal rate, from dtsi */
 	u32 normal_rate_hz;
@@ -212,6 +267,9 @@ struct mpp_mem_region {
 	unsigned long len;
 	u32 reg_idx;
 	void *hdl;
+	int fd;
+	/* whether is dup import entity */
+	bool is_dup;
 };
 
 struct mpp_dma_session;
@@ -224,6 +282,21 @@ struct mpp_dev {
 	struct mpp_hw_ops *hw_ops;
 	struct mpp_dev_ops *dev_ops;
 
+	/* kworker for attached taskqueue */
+	struct kthread_worker worker;
+	/* task for work queue */
+	struct task_struct *kworker_task;
+	/* per-device work for attached taskqueue */
+	struct kthread_work work;
+	/* the flag for get/get/reduce freq */
+	bool auto_freq_en;
+
+	/*
+	 * The task capacity is the task queue length that hardware can accept.
+	 * Default 1 means normal hardware can only accept one task at once.
+	 */
+	u32 task_capacity;
+
 	int irq;
 	u32 irq_status;
 
@@ -232,9 +305,9 @@ struct mpp_dev {
 	struct mpp_iommu_info *iommu_info;
 
 	atomic_t reset_request;
+	atomic_t session_index;
 	atomic_t task_count;
-	/* task for work queue */
-	struct workqueue_struct *workq;
+	atomic_t task_index;
 	/* current task in running */
 	struct mpp_task *cur_task;
 	/* set session max buffers */
@@ -244,19 +317,20 @@ struct mpp_dev {
 	/* point to MPP Service */
 	struct platform_device *pdev_srv;
 	struct mpp_service *srv;
+
+	struct list_head queue_link;
 };
 
 struct mpp_task;
 
 struct mpp_session {
 	enum MPP_DEVICE_TYPE device_type;
+	u32 index;
 	/* the session related device private data */
 	struct mpp_service *srv;
 	struct mpp_dev *mpp;
 	struct mpp_dma_session *dma;
 
-	/* lock for session task register list */
-	struct mutex reg_lock;
 	/* lock for session task pending list */
 	struct mutex pending_lock;
 	/* task pending list in session */
@@ -274,6 +348,13 @@ struct mpp_session {
 	/* trans info set by user */
 	int trans_count;
 	u16 trans_table[MPP_MAX_REG_TRANS_NUM];
+	u32 msg_flags;
+	/* link to mpp_service session_list */
+	struct list_head service_link;
+	/* link to mpp_workqueue session_attach / session_detach */
+	struct list_head session_link;
+	/* private data */
+	void *priv;
 };
 
 /* task state in work thread */
@@ -301,6 +382,8 @@ struct mpp_task {
 	struct list_head queue_link;
 	/* The DMA buffer used in this task */
 	struct list_head mem_region_list;
+	u32 mem_count;
+	struct mpp_mem_region mem_regions[MPP_MAX_REG_TRANS_NUM];
 
 	/* state in the taskqueue */
 	unsigned long state;
@@ -313,14 +396,18 @@ struct mpp_task {
 	struct timeval start;
 	/* hardware info for current task */
 	struct mpp_hw_info *hw_info;
+	u32 task_index;
 	u32 *reg;
 };
 
 struct mpp_taskqueue {
-	/* lock for trigger work */
-	struct mutex work_lock;
-	/* work for taskqueue */
-	struct work_struct work;
+	/* lock for session attach and session_detach */
+	struct mutex session_lock;
+	/* link to session session_link for attached sessions */
+	struct list_head session_attach;
+	/* link to session session_link for detached sessions */
+	struct list_head session_detach;
+	atomic_t detach_count;
 
 	/* lock for pending list */
 	struct mutex pending_lock;
@@ -334,6 +421,14 @@ struct mpp_taskqueue {
 	/* lock for mmu list */
 	struct mutex mmu_lock;
 	struct list_head mmu_list;
+	/* lock for dev list */
+	struct mutex dev_lock;
+	struct list_head dev_list;
+	/*
+	 * task_capacity in taskqueue is the minimum task capacity of the
+	 * device task capacity which is attached to the taskqueue
+	 */
+	u32 task_capacity;
 };
 
 struct mpp_reset_group {
@@ -351,8 +446,8 @@ struct mpp_service {
 	dev_t dev_id;
 	struct cdev mpp_cdev;
 	struct device *child_dev;
-#ifdef CONFIG_DEBUG_FS
-	struct dentry *debugfs;
+#ifdef CONFIG_PROC_FS
+	struct proc_dir_entry *procfs;
 #endif
 	unsigned long hw_support;
 	atomic_t shutdown_request;
@@ -365,6 +460,10 @@ struct mpp_service {
 	struct mpp_taskqueue *task_queues[MPP_DEVICE_BUTT];
 	u32 reset_group_cnt;
 	struct mpp_reset_group *reset_groups[MPP_DEVICE_BUTT];
+
+	/* lock for session list */
+	struct mutex session_lock;
+	struct list_head session_list;
 };
 
 /*
@@ -419,13 +518,13 @@ struct mpp_dev_ops {
 		      struct mpp_task_msgs *msgs);
 	int (*free_task)(struct mpp_session *session,
 			 struct mpp_task *task);
-	long (*ioctl)(struct mpp_session *session, struct mpp_request *req);
+	int (*ioctl)(struct mpp_session *session, struct mpp_request *req);
 	int (*init_session)(struct mpp_session *session);
 	int (*free_session)(struct mpp_session *session);
+	int (*dump_session)(struct mpp_session *session, struct seq_file *seq);
 };
 
-int mpp_taskqueue_init(struct mpp_taskqueue *queue,
-		       struct mpp_service *srv);
+struct mpp_taskqueue *mpp_taskqueue_init(struct device *dev);
 
 struct mpp_mem_region *
 mpp_task_attach_fd(struct mpp_task *task, int fd);
@@ -435,6 +534,8 @@ int mpp_translate_reg_address(struct mpp_session *session,
 
 int mpp_check_req(struct mpp_request *req, int base,
 		  int max_size, u32 off_s, u32 off_e);
+int mpp_extract_reg_offset_info(struct reg_offset_info *off_inf,
+				struct mpp_request *req);
 int mpp_query_reg_offset_info(struct reg_offset_info *off_inf,
 			      u32 index);
 int mpp_translate_reg_offset_info(struct mpp_task *task,
@@ -450,6 +551,10 @@ int mpp_task_dump_mem_region(struct mpp_dev *mpp,
 			     struct mpp_task *task);
 int mpp_task_dump_reg(struct mpp_dev *mpp,
 		      struct mpp_task *task);
+int mpp_task_dump_hw_reg(struct mpp_dev *mpp,
+			 struct mpp_task *task);
+
+int mpp_session_deinit(struct mpp_session *session);
 
 int mpp_dev_probe(struct mpp_dev *mpp,
 		  struct platform_device *pdev);
@@ -467,6 +572,7 @@ struct reset_control *mpp_reset_control_get(struct mpp_dev *mpp,
 					    const char *name);
 
 u32 mpp_get_grf(struct mpp_grf_info *grf_info);
+bool mpp_grf_is_changed(struct mpp_grf_info *grf_info);
 int mpp_set_grf(struct mpp_grf_info *grf_info);
 
 int mpp_time_record(struct mpp_task *task);
@@ -598,6 +704,24 @@ static inline int mpp_reset_up_write(struct mpp_reset_group *group)
 	return 0;
 }
 
+#ifdef CONFIG_PROC_FS
+struct proc_dir_entry *
+mpp_procfs_create_u32(const char *name, umode_t mode,
+		      struct proc_dir_entry *parent, void *data);
+#else
+static inline struct proc_dir_entry *
+mpp_procfs_create_u32(const char *name, umode_t mode,
+		      struct proc_dir_entry *parent, void *data)
+{
+	return 0;
+}
+#endif
+
+#ifdef CONFIG_PROC_FS
+extern const char *mpp_device_name[MPP_DEVICE_BUTT];
+extern const char *enc_info_item_name[ENC_INFO_BUTT];
+#endif
+
 /* workaround according hardware */
 int px30_workaround_combo_init(struct mpp_dev *mpp);
 int px30_workaround_combo_switch_grf(struct mpp_dev *mpp);
@@ -612,5 +736,7 @@ extern struct platform_driver rockchip_vdpu2_driver;
 extern struct platform_driver rockchip_vepu2_driver;
 extern struct platform_driver rockchip_vepu22_driver;
 extern struct platform_driver rockchip_iep2_driver;
+extern struct platform_driver rockchip_jpgdec_driver;
+extern struct platform_driver rockchip_rkvdec2_driver;
 
 #endif

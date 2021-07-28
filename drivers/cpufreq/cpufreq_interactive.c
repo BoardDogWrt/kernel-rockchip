@@ -150,6 +150,7 @@ struct interactive_cpu {
 	u64 loc_hispeed_val_time; /* per-cpu hispeed_validate_time */
 	int cpu;
 	unsigned int task_boost_freq;
+	unsigned long task_boost_util;
 	u64 task_boos_endtime;
 };
 
@@ -606,15 +607,20 @@ again:
 		struct interactive_cpu *icpu = &per_cpu(interactive_cpu, cpu);
 		struct cpufreq_policy *policy;
 
-		if (unlikely(!down_read_trylock(&icpu->enable_sem)))
+		policy = cpufreq_cpu_get(cpu);
+		if (!policy)
 			continue;
 
-		if (likely(icpu->ipolicy)) {
-			policy = icpu->ipolicy->policy;
-			cpufreq_interactive_adjust_cpu(cpu, policy);
+		down_write(&policy->rwsem);
+
+		if (likely(down_read_trylock(&icpu->enable_sem))) {
+			if (likely(icpu->ipolicy))
+				cpufreq_interactive_adjust_cpu(cpu, policy);
+			up_read(&icpu->enable_sem);
 		}
 
-		up_read(&icpu->enable_sem);
+		up_write(&policy->rwsem);
+		cpufreq_cpu_put(policy);
 	}
 
 	goto again;
@@ -1365,32 +1371,6 @@ static void rockchip_cpufreq_policy_init(struct interactive_policy *ipolicy)
 	}
 }
 
-static void task_boost_irq_work(struct irq_work *irq_work)
-{
-	struct interactive_cpu *pcpu;
-	unsigned long flags[2];
-
-	pcpu = container_of(irq_work, struct interactive_cpu, boost_irq_work);
-	if (!down_read_trylock(&pcpu->enable_sem))
-		return;
-
-	if (!pcpu->ipolicy)
-		goto out;
-
-	spin_lock_irqsave(&speedchange_cpumask_lock, flags[0]);
-	spin_lock_irqsave(&pcpu->target_freq_lock, flags[1]);
-	if (pcpu->target_freq < pcpu->task_boost_freq) {
-		pcpu->target_freq = pcpu->task_boost_freq;
-		cpumask_set_cpu(pcpu->cpu, &speedchange_cpumask);
-		wake_up_process(speedchange_task);
-	}
-	spin_unlock_irqrestore(&pcpu->target_freq_lock, flags[1]);
-	spin_unlock_irqrestore(&speedchange_cpumask_lock, flags[0]);
-
-out:
-	up_read(&pcpu->enable_sem);
-}
-
 static unsigned int get_freq_for_util(struct cpufreq_policy *policy, unsigned long util)
 {
 	struct cpufreq_frequency_table *pos;
@@ -1409,44 +1389,63 @@ static unsigned int get_freq_for_util(struct cpufreq_policy *policy, unsigned lo
 	return freq;
 }
 
-extern unsigned long capacity_curr_of(int cpu);
-
-void cpufreq_task_boost(int cpu, unsigned long util)
+static void task_boost_irq_work(struct irq_work *irq_work)
 {
-	struct interactive_cpu *pcpu = &per_cpu(interactive_cpu, cpu);
-	struct interactive_policy *ipolicy = pcpu->ipolicy;
-	unsigned long cap, min_util;
+	struct interactive_cpu *pcpu;
+	struct interactive_policy *ipolicy;
+	unsigned long flags[2];
+	u64 now, prev_boos_endtime;
+	unsigned int boost_freq;
 
-	if (!speedchange_task)
-		return;
-
+	pcpu = container_of(irq_work, struct interactive_cpu, boost_irq_work);
 	if (!down_read_trylock(&pcpu->enable_sem))
 		return;
 
+	ipolicy = pcpu->ipolicy;
 	if (!ipolicy)
 		goto out;
 
 	if (ipolicy->policy->cur == ipolicy->policy->max)
 		goto out;
 
-	min_util = util + (util >> 2);
-	cap = capacity_curr_of(cpu);
-	if (min_util > cap) {
-		u64 now = ktime_to_us(ktime_get());
-		u64 prev_boos_endtime = pcpu->task_boos_endtime;
-		unsigned int boost_freq;
+	now = ktime_to_us(ktime_get());
+	prev_boos_endtime = pcpu->task_boos_endtime;;
+	pcpu->task_boos_endtime = now + ipolicy->tunables->sampling_rate;
+	boost_freq = get_freq_for_util(ipolicy->policy, pcpu->task_boost_util);
+	if ((now < prev_boos_endtime) && (boost_freq <= pcpu->task_boost_freq))
+		goto out;
+	pcpu->task_boost_freq = boost_freq;
 
-		pcpu->task_boos_endtime = now + ipolicy->tunables->sampling_rate;
-		boost_freq = get_freq_for_util(ipolicy->policy, min_util);
-		if ((now < prev_boos_endtime) && (boost_freq <= pcpu->task_boost_freq))
-			goto out;
-		pcpu->task_boost_freq = boost_freq;
-
-		irq_work_queue(&pcpu->boost_irq_work);
+	spin_lock_irqsave(&speedchange_cpumask_lock, flags[0]);
+	spin_lock_irqsave(&pcpu->target_freq_lock, flags[1]);
+	if (pcpu->target_freq < pcpu->task_boost_freq) {
+		pcpu->target_freq = pcpu->task_boost_freq;
+		cpumask_set_cpu(pcpu->cpu, &speedchange_cpumask);
+		wake_up_process(speedchange_task);
 	}
+	spin_unlock_irqrestore(&pcpu->target_freq_lock, flags[1]);
+	spin_unlock_irqrestore(&speedchange_cpumask_lock, flags[0]);
 
 out:
 	up_read(&pcpu->enable_sem);
+}
+
+extern unsigned long capacity_curr_of(int cpu);
+
+void cpufreq_task_boost(int cpu, unsigned long util)
+{
+	struct interactive_cpu *pcpu = &per_cpu(interactive_cpu, cpu);
+	unsigned long cap, min_util;
+
+	if (!speedchange_task)
+		return;
+
+	min_util = util + (util >> 2);
+	cap = capacity_curr_of(cpu);
+	if (min_util > cap) {
+		pcpu->task_boost_util = min_util;
+		irq_work_queue(&pcpu->boost_irq_work);
+	}
 }
 #endif
 

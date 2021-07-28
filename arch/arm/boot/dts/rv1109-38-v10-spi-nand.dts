@@ -23,6 +23,10 @@
 		status = "okay";
 		ircut-open-gpios = <&gpio3 RK_PB1 GPIO_ACTIVE_HIGH>;
 		ircut-close-gpios = <&gpio3 RK_PB0 GPIO_ACTIVE_HIGH>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&ircut_pins>;
+		rockchip,camera-module-index = <1>;
+		rockchip,camera-module-facing = "front";
 	};
 
 	vcc_1v8: vcc-1v8 {
@@ -52,6 +56,19 @@
 		regulator-max-microvolt = <3300000>;
 	};
 
+	vcc_sd: vcc-sd {
+		compatible = "regulator-fixed";
+		gpio = <&gpio0 RK_PA4 GPIO_ACTIVE_HIGH>;
+		pinctrl-0 = <&sdmmc_pwr>;
+		pinctrl-names = "default";
+		regulator-name = "vcc_sd";
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
+		startup-delay-us = <100000>;
+		vin-supply = <&vcc3v3_sys>;
+		enable-active-high;
+	};
+
 	vdd_arm: vdd-arm {
 		compatible = "pwm-regulator";
 		pwms = <&pwm0 0 5000 1>;
@@ -61,6 +78,7 @@
 		regulator-init-microvolt = <825000>;
 		regulator-always-on;
 		regulator-boot-on;
+		regulator-settling-time-up-us = <250>;
 		pwm-supply = <&vcc3v3_sys>;
 		status = "okay";
 	};
@@ -78,6 +96,7 @@
 		regulator-init-microvolt = <825000>;
 		regulator-always-on;
 		regulator-boot-on;
+		regulator-settling-time-up-us = <250>;
 		pwm-supply = <&vcc3v3_sys>;
 		status = "okay";
 	};
@@ -90,6 +109,15 @@
 		regulator-min-microvolt = <825000>;
 		regulator-max-microvolt = <825000>;
 	};
+
+	wireless_wlan: wireless-wlan {
+		compatible = "wlan-platdata";
+		rockchip,grf = <&grf>;
+		wifi_chip_type = "rtl8188fu";
+		WIFI,poweren_gpio = <&gpio0 RK_PC0 GPIO_ACTIVE_LOW>;
+		status = "okay";
+	};
+
 };
 
 &csi_dphy0 {
@@ -135,7 +163,7 @@
 	assigned-clock-rates = <50000000>;
 
 	pinctrl-names = "default";
-	pinctrl-0 = <&rmiim0_pins &gmac_clk_m0_drv_level0_pins>;
+	pinctrl-0 = <&rmiim0_miim &rgmiim0_rxer &rmiim0_bus2 &rgmiim0_mclkinout_level0>;
 
 	phy-handle = <&phy>;
 	status = "okay";
@@ -161,7 +189,7 @@
 		rockchip,camera-module-index = <1>;
 		rockchip,camera-module-facing = "front";
 		rockchip,camera-module-name = "CMK-OT1607-FV1";
-		rockchip,camera-module-lens-name = "M12-4IR-4MP-F16";
+		rockchip,camera-module-lens-name = "M12-40IRC-4MP-F16";
 		ir-cut = <&cam_ircut0>;
 
 		port {
@@ -180,12 +208,25 @@
 	};
 };
 
-&nandc {
-	status = "okay";
-};
-
 &npu {
 	npu-supply = <&vdd_logic_npu_vepu_fixed>;
+};
+
+&pinctrl {
+	ircut {
+		/omit-if-no-ref/
+		ircut_pins: ircut-pins {
+			rockchip,pins = <3 RK_PB0 RK_FUNC_GPIO &pcfg_pull_up>,
+					<3 RK_PB1 RK_FUNC_GPIO &pcfg_pull_up>;
+		};
+	};
+
+	sdmmc-pwr {
+		/omit-if-no-ref/
+		sdmmc_pwr: sdmmc-pwr {
+			rockchip,pins = <0 RK_PA4 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+	};
 };
 
 &pmu_io_domains {
@@ -193,7 +234,6 @@
 
 	pmuio0-supply = <&vcc3v3_sys>;
 	pmuio1-supply = <&vcc3v3_sys>;
-	vccio1-supply = <&vcc_1v8>;
 	vccio2-supply = <&vcc3v3_sys>;
 	vccio4-supply = <&vcc_1v8>;
 	vccio5-supply = <&vcc3v3_sys>;
@@ -234,6 +274,57 @@
 	>;
 };
 
+&sdmmc0_bus4 {
+	rockchip,pins =
+		/* sdmmc0_d0 */
+		<1 RK_PA4 1 &pcfg_pull_up_drv_level_0>,
+		/* sdmmc0_d1 */
+		<1 RK_PA5 1 &pcfg_pull_up_drv_level_0>,
+		/* sdmmc0_d2 */
+		<1 RK_PA6 1 &pcfg_pull_up_drv_level_0>,
+		/* sdmmc0_d3 */
+		<1 RK_PA7 1 &pcfg_pull_up_drv_level_0>;
+};
+
+&sdmmc0_clk {
+	rockchip,pins =
+		/* sdmmc0_clk */
+		<1 RK_PB0 1 &pcfg_pull_up_drv_level_3>;
+};
+
+&sdmmc0_cmd {
+	rockchip,pins =
+		/* sdmmc0_cmd */
+		<1 RK_PB1 1 &pcfg_pull_up_drv_level_0>;
+};
+
+&sdmmc {
+	bus-width = <4>;
+	cap-mmc-highspeed;
+	cap-sd-highspeed;
+	card-detect-delay = <200>;
+	rockchip,default-sample-phase = <90>;
+	supports-sd;
+	status = "okay";
+	vmmc-supply = <&vcc_sd>;
+};
+
 &sfc {
+	status = "okay";
+};
+
+&u2phy_host {
+	status = "okay";
+};
+
+&u2phy1 {
+	status = "okay";
+};
+
+&usb_host0_ehci {
+	status = "okay";
+};
+
+&usb_host0_ohci {
 	status = "okay";
 };

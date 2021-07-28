@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/* SPDX-License-Identifier: ((GPL-2.0+ WITH Linux-syscall-note) OR MIT)
  *
  * Rockchip isp2 driver
  * Copyright (C) 2017 Rockchip Electronics Co., Ltd.
@@ -10,7 +10,7 @@
 #include <linux/types.h>
 #include <linux/v4l2-controls.h>
 
-#define RKISP_API_VERSION		KERNEL_VERSION(0, 1, 0x2)
+#define RKISP_API_VERSION		KERNEL_VERSION(1, 6, 1)
 
 #define RKISP_CMD_TRIGGER_READ_BACK \
 	_IOW('V', BASE_VIDIOC_PRIVATE + 0, struct isp2x_csi_trigger)
@@ -24,41 +24,90 @@
 #define RKISP_CMD_FREE_SHARED_BUF \
 	_IO('V', BASE_VIDIOC_PRIVATE + 3)
 
-#define ISP2X_MODULE_DPCC		BIT_ULL(0)
-#define ISP2X_MODULE_BLS		BIT_ULL(1)
-#define ISP2X_MODULE_SDG		BIT_ULL(2)
-#define ISP2X_MODULE_SIHST		BIT_ULL(3)
-#define ISP2X_MODULE_LSC		BIT_ULL(4)
-#define ISP2X_MODULE_AWB_GAIN		BIT_ULL(5)
-#define ISP2X_MODULE_BDM		BIT_ULL(7)
-#define ISP2X_MODULE_CCM		BIT_ULL(8)
-#define ISP2X_MODULE_GOC		BIT_ULL(9)
-#define ISP2X_MODULE_CPROC		BIT_ULL(10)
-#define ISP2X_MODULE_SIAF		BIT_ULL(11)
-#define ISP2X_MODULE_SIAWB		BIT_ULL(12)
-#define ISP2X_MODULE_IE			BIT_ULL(13)
-#define ISP2X_MODULE_YUVAE		BIT_ULL(14)
-#define ISP2X_MODULE_WDR		BIT_ULL(15)
-#define ISP2X_MODULE_RK_IESHARP		BIT_ULL(16)
-#define ISP2X_MODULE_RAWAF		BIT_ULL(17)
-#define ISP2X_MODULE_RAWAE0		BIT_ULL(18)
-#define ISP2X_MODULE_RAWAE1		BIT_ULL(19)
-#define ISP2X_MODULE_RAWAE2		BIT_ULL(20)
-#define ISP2X_MODULE_RAWAE3		BIT_ULL(21)
-#define ISP2X_MODULE_RAWAWB		BIT_ULL(22)
-#define ISP2X_MODULE_RAWHIST0		BIT_ULL(23)
-#define ISP2X_MODULE_RAWHIST1		BIT_ULL(24)
-#define ISP2X_MODULE_RAWHIST2		BIT_ULL(25)
-#define ISP2X_MODULE_RAWHIST3		BIT_ULL(26)
-#define ISP2X_MODULE_HDRMGE		BIT_ULL(27)
-#define ISP2X_MODULE_RAWNR		BIT_ULL(28)
-#define ISP2X_MODULE_HDRTMO		BIT_ULL(29)
-#define ISP2X_MODULE_GIC		BIT_ULL(30)
-#define ISP2X_MODULE_DHAZ		BIT_ULL(31)
-#define ISP2X_MODULE_3DLUT		BIT_ULL(32)
-#define ISP2X_MODULE_LDCH		BIT_ULL(33)
-#define ISP2X_MODULE_GAIN		BIT_ULL(34)
-#define ISP2X_MODULE_DEBAYER		BIT_ULL(35)
+#define RKISP_CMD_GET_LDCHBUF_INFO \
+	_IOR('V', BASE_VIDIOC_PRIVATE + 4, struct rkisp_ldchbuf_info)
+
+#define RKISP_CMD_SET_LDCHBUF_SIZE \
+	_IOW('V', BASE_VIDIOC_PRIVATE + 5, struct rkisp_ldchbuf_size)
+
+#define RKISP_CMD_GET_SHM_BUFFD \
+	_IOWR('V', BASE_VIDIOC_PRIVATE + 6, struct rkisp_thunderboot_shmem)
+
+#define RKISP_CMD_GET_FBCBUF_FD \
+	_IOR('V', BASE_VIDIOC_PRIVATE + 7, struct isp2x_buf_idxfd)
+
+#define ISP2X_ID_DPCC			(0)
+#define ISP2X_ID_BLS			(1)
+#define ISP2X_ID_SDG			(2)
+#define ISP2X_ID_SIHST			(3)
+#define ISP2X_ID_LSC			(4)
+#define ISP2X_ID_AWB_GAIN		(5)
+#define ISP2X_ID_BDM			(7)
+#define ISP2X_ID_CCM			(8)
+#define ISP2X_ID_GOC			(9)
+#define ISP2X_ID_CPROC			(10)
+#define ISP2X_ID_SIAF			(11)
+#define ISP2X_ID_SIAWB			(12)
+#define ISP2X_ID_IE			(13)
+#define ISP2X_ID_YUVAE			(14)
+#define ISP2X_ID_WDR			(15)
+#define ISP2X_ID_RK_IESHARP		(16)
+#define ISP2X_ID_RAWAF			(17)
+#define ISP2X_ID_RAWAE0			(18)
+#define ISP2X_ID_RAWAE1			(19)
+#define ISP2X_ID_RAWAE2			(20)
+#define ISP2X_ID_RAWAE3			(21)
+#define ISP2X_ID_RAWAWB			(22)
+#define ISP2X_ID_RAWHIST0		(23)
+#define ISP2X_ID_RAWHIST1		(24)
+#define ISP2X_ID_RAWHIST2		(25)
+#define ISP2X_ID_RAWHIST3		(26)
+#define ISP2X_ID_HDRMGE			(27)
+#define ISP2X_ID_RAWNR			(28)
+#define ISP2X_ID_HDRTMO			(29)
+#define ISP2X_ID_GIC			(30)
+#define ISP2X_ID_DHAZ			(31)
+#define ISP2X_ID_3DLUT			(32)
+#define ISP2X_ID_LDCH			(33)
+#define ISP2X_ID_GAIN			(34)
+#define ISP2X_ID_DEBAYER		(35)
+#define ISP2X_ID_MAX			(36)
+
+#define ISP2X_MODULE_DPCC		BIT_ULL(ISP2X_ID_DPCC)
+#define ISP2X_MODULE_BLS		BIT_ULL(ISP2X_ID_BLS)
+#define ISP2X_MODULE_SDG		BIT_ULL(ISP2X_ID_SDG)
+#define ISP2X_MODULE_SIHST		BIT_ULL(ISP2X_ID_SIHST)
+#define ISP2X_MODULE_LSC		BIT_ULL(ISP2X_ID_LSC)
+#define ISP2X_MODULE_AWB_GAIN		BIT_ULL(ISP2X_ID_AWB_GAIN)
+#define ISP2X_MODULE_BDM		BIT_ULL(ISP2X_ID_BDM)
+#define ISP2X_MODULE_CCM		BIT_ULL(ISP2X_ID_CCM)
+#define ISP2X_MODULE_GOC		BIT_ULL(ISP2X_ID_GOC)
+#define ISP2X_MODULE_CPROC		BIT_ULL(ISP2X_ID_CPROC)
+#define ISP2X_MODULE_SIAF		BIT_ULL(ISP2X_ID_SIAF)
+#define ISP2X_MODULE_SIAWB		BIT_ULL(ISP2X_ID_SIAWB)
+#define ISP2X_MODULE_IE			BIT_ULL(ISP2X_ID_IE)
+#define ISP2X_MODULE_YUVAE		BIT_ULL(ISP2X_ID_YUVAE)
+#define ISP2X_MODULE_WDR		BIT_ULL(ISP2X_ID_WDR)
+#define ISP2X_MODULE_RK_IESHARP		BIT_ULL(ISP2X_ID_RK_IESHARP)
+#define ISP2X_MODULE_RAWAF		BIT_ULL(ISP2X_ID_RAWAF)
+#define ISP2X_MODULE_RAWAE0		BIT_ULL(ISP2X_ID_RAWAE0)
+#define ISP2X_MODULE_RAWAE1		BIT_ULL(ISP2X_ID_RAWAE1)
+#define ISP2X_MODULE_RAWAE2		BIT_ULL(ISP2X_ID_RAWAE2)
+#define ISP2X_MODULE_RAWAE3		BIT_ULL(ISP2X_ID_RAWAE3)
+#define ISP2X_MODULE_RAWAWB		BIT_ULL(ISP2X_ID_RAWAWB)
+#define ISP2X_MODULE_RAWHIST0		BIT_ULL(ISP2X_ID_RAWHIST0)
+#define ISP2X_MODULE_RAWHIST1		BIT_ULL(ISP2X_ID_RAWHIST1)
+#define ISP2X_MODULE_RAWHIST2		BIT_ULL(ISP2X_ID_RAWHIST2)
+#define ISP2X_MODULE_RAWHIST3		BIT_ULL(ISP2X_ID_RAWHIST3)
+#define ISP2X_MODULE_HDRMGE		BIT_ULL(ISP2X_ID_HDRMGE)
+#define ISP2X_MODULE_RAWNR		BIT_ULL(ISP2X_ID_RAWNR)
+#define ISP2X_MODULE_HDRTMO		BIT_ULL(ISP2X_ID_HDRTMO)
+#define ISP2X_MODULE_GIC		BIT_ULL(ISP2X_ID_GIC)
+#define ISP2X_MODULE_DHAZ		BIT_ULL(ISP2X_ID_DHAZ)
+#define ISP2X_MODULE_3DLUT		BIT_ULL(ISP2X_ID_3DLUT)
+#define ISP2X_MODULE_LDCH		BIT_ULL(ISP2X_ID_LDCH)
+#define ISP2X_MODULE_GAIN		BIT_ULL(ISP2X_ID_GAIN)
+#define ISP2X_MODULE_DEBAYER		BIT_ULL(ISP2X_ID_DEBAYER)
 
 /*
  * Measurement types
@@ -148,14 +197,38 @@
 #define ISP2X_3DLUT_DATA_NUM		729
 
 #define ISP2X_LDCH_MESH_XY_NUM		0x80000
+#define ISP2X_LDCH_BUF_NUM		2
 
 #define ISP2X_THUNDERBOOT_VIDEO_BUF_NUM	30
 
+#define ISP2X_FBCBUF_FD_NUM		64
+
+/* trigger event mode
+ * T_TRY: trigger maybe with retry
+ * T_TRY_YES: trigger to retry
+ * T_TRY_NO: trigger no to retry
+ *
+ * T_START_X1: isp read one frame
+ * T_START_X2: isp read hdr two frame
+ * T_START_X3: isp read hdr three frame
+ */
+enum isp2x_trigger_mode {
+	T_TRY = BIT(0),
+	T_TRY_YES = BIT(1),
+	T_TRY_NO = BIT(2),
+
+	T_START_X1 = BIT(4),
+	T_START_X2 = BIT(5),
+	T_START_X3 = BIT(6),
+};
+
 struct isp2x_csi_trigger {
 	/* timestamp in ns */
+	u64 sof_timestamp;
 	u64 frame_timestamp;
 	u32 frame_id;
 	int times;
+	enum isp2x_trigger_mode mode;
 } __attribute__ ((packed));
 
 enum isp2x_csi_memory {
@@ -164,6 +237,20 @@ enum isp2x_csi_memory {
 	CSI_MEM_BYTE_LE,
 	CSI_MEM_MAX,
 };
+
+struct isp2x_ispgain_buf {
+	u32 gain_dmaidx;
+	u32 mfbc_dmaidx;
+	u32 gain_size;
+	u32 mfbc_size;
+	u32 frame_id;
+} __attribute__ ((packed));
+
+struct isp2x_buf_idxfd {
+	u32 buf_num;
+	u32 index[ISP2X_FBCBUF_FD_NUM];
+	s32 dmafd[ISP2X_FBCBUF_FD_NUM];
+} __attribute__ ((packed));
 
 struct isp2x_window {
 	u16 h_offs;
@@ -487,6 +574,16 @@ struct isp2x_goc_cfg {
 	u8 gamma_y[17];
 } __attribute__ ((packed));
 
+struct isp2x_hdrtmo_predict {
+	u8 global_tmo;
+	s32 iir_max;
+	s32 global_tmo_strength;
+
+	u8 scene_stable;
+	s32 k_rolgmean;
+	s32 iir;
+} __attribute__ ((packed));
+
 struct isp2x_hdrtmo_cfg {
 	u16 cnt_vsize;
 	u8 gain_ld_off2;
@@ -538,6 +635,8 @@ struct isp2x_hdrtmo_cfg {
 
 	u16 maxgain;
 	u16 maxpalpha;
+
+	struct isp2x_hdrtmo_predict predict;
 } __attribute__ ((packed));
 
 struct isp2x_hdrtmo_stat {
@@ -854,10 +953,31 @@ struct isp2x_3dlut_cfg {
 	u16 lut_b[ISP2X_3DLUT_DATA_NUM];
 } __attribute__ ((packed));
 
+enum isp2x_ldch_buf_stat {
+	LDCH_BUF_INIT = 0,
+	LDCH_BUF_WAIT2CHIP,
+	LDCH_BUF_CHIPINUSE,
+};
+
+struct rkisp_ldchbuf_info {
+	s32 buf_fd[ISP2X_LDCH_BUF_NUM];
+	u32 buf_size[ISP2X_LDCH_BUF_NUM];
+} __attribute__ ((packed));
+
+struct rkisp_ldchbuf_size {
+	u32 meas_width;
+	u32 meas_height;
+} __attribute__ ((packed));
+
+struct isp2x_ldch_head {
+	enum isp2x_ldch_buf_stat stat;
+	u32 data_oft;
+} __attribute__ ((packed));
+
 struct isp2x_ldch_cfg {
 	u32 hsize;
 	u32 vsize;
-	u16 data[ISP2X_LDCH_MESH_XY_NUM];
+	s32 buf_fd;
 } __attribute__ ((packed));
 
 struct isp2x_awb_gain_cfg {
@@ -1391,6 +1511,19 @@ struct isp2x_isp_meas_cfg {
 	struct isp2x_sihst_cfg sihst;
 } __attribute__ ((packed));
 
+struct sensor_exposure_s {
+	u32 fine_integration_time;
+	u32 coarse_integration_time;
+	u32 analog_gain_code_global;
+	u32 digital_gain_global;
+	u32 isp_digital_gain;
+} __attribute__ ((packed));
+
+struct sensor_exposure_cfg {
+	struct sensor_exposure_s linear_exp;
+	struct sensor_exposure_s hdr_exp[3];
+} __attribute__ ((packed));
+
 struct isp2x_isp_params_cfg {
 	u64 module_en_update;
 	u64 module_ens;
@@ -1398,7 +1531,8 @@ struct isp2x_isp_params_cfg {
 
 	u32 frame_id;
 	struct isp2x_isp_meas_cfg meas;
-	struct isp2x_isp_other_cfg others;	// must be last item
+	struct isp2x_isp_other_cfg others;
+	struct sensor_exposure_cfg exposure;
 } __attribute__ ((packed));
 
 struct isp2x_siawb_meas {
@@ -1599,6 +1733,15 @@ struct rkisp_thunderboot_resmem_head {
 struct rkisp_thunderboot_resmem {
 	u32 resmem_padr;
 	u32 resmem_size;
+} __attribute__ ((packed));
+
+/**
+ * struct rkisp_thunderboot_shmem
+ */
+struct rkisp_thunderboot_shmem {
+	u32 shm_start;
+	u32 shm_size;
+	s32 shm_fd;
 } __attribute__ ((packed));
 
 #endif /* _UAPI_RKISP2_CONFIG_H */

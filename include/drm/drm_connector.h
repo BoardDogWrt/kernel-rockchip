@@ -39,6 +39,7 @@ struct drm_encoder;
 struct drm_property;
 struct drm_property_blob;
 struct drm_printer;
+struct drm_panel;
 struct edid;
 
 enum drm_connector_force {
@@ -173,6 +174,46 @@ struct drm_scdc {
 	struct drm_scrambling scrambling;
 };
 
+/**
+ * struct drm_hdmi_dsc_cap - DSC capabilities of HDMI sink
+ *
+ * Describes the DSC support provided by HDMI 2.1 sink.
+ * The information is fetched fom additional HFVSDB blocks defined
+ * for HDMI 2.1.
+ */
+struct drm_hdmi_dsc_cap {
+	/** @v_1p2: flag for dsc1.2 version support by sink */
+	bool v_1p2;
+
+	/** @native_420: Does sink support DSC with 4:2:0 compression */
+	bool native_420;
+
+	/**
+	 * @all_bpp: Does sink support all bpp with 4:4:4: or 4:2:2
+	 * compressed formats
+	 */
+	bool all_bpp;
+
+	/**
+	 * @bpc_supported: compressed bpc supported by sink : 10, 12 or 16 bpc
+	 */
+	u8 bpc_supported;
+
+	/** @max_slices: maximum number of Horizontal slices supported by */
+	u8 max_slices;
+
+	/** @clk_per_slice : max pixel clock in MHz supported per slice */
+	int clk_per_slice;
+
+	/** @max_lanes : dsc max lanes supported for Fixed rate Link training */
+	u8 max_lanes;
+
+	/** @max_frl_rate_per_lane : maximum frl rate with DSC per lane */
+	u8 max_frl_rate_per_lane;
+
+	/** @total_chunk_kbytes: max size of chunks in KBs supported per line*/
+	u8 total_chunk_kbytes;
+};
 
 /**
  * struct drm_hdmi_info - runtime information about the connected HDMI sink
@@ -208,6 +249,15 @@ struct drm_hdmi_info {
 
 	/* @colorimetry: bitmap of supported colorimetry modes */
 	u16 colorimetry;
+
+	/** @max_frl_rate_per_lane: support fixed rate link */
+	u8 max_frl_rate_per_lane;
+
+	/** @max_lanes: supported by sink */
+	u8 max_lanes;
+
+	/** @dsc_cap: DSC capabilities of the sink */
+	struct drm_hdmi_dsc_cap dsc_cap;
 };
 
 /**
@@ -254,6 +304,40 @@ enum drm_panel_orientation {
 	DRM_MODE_PANEL_ORIENTATION_LEFT_UP,
 	DRM_MODE_PANEL_ORIENTATION_RIGHT_UP,
 };
+
+/*
+ * This is a consolidated colorimetry list supported by HDMI and
+ * DP protocol standard. The respective connectors will register
+ * a property with the subset of this list (supported by that
+ * respective protocol). Userspace will set the colorspace through
+ * a colorspace property which will be created and exposed to
+ * userspace.
+ */
+
+/* For Default case, driver will set the colorspace */
+#define DRM_MODE_COLORIMETRY_DEFAULT			0
+/* CEA 861 Normal Colorimetry options */
+#define DRM_MODE_COLORIMETRY_NO_DATA			0
+#define DRM_MODE_COLORIMETRY_SMPTE_170M_YCC		1
+#define DRM_MODE_COLORIMETRY_BT709_YCC			2
+/* CEA 861 Extended Colorimetry Options */
+#define DRM_MODE_COLORIMETRY_XVYCC_601			3
+#define DRM_MODE_COLORIMETRY_XVYCC_709			4
+#define DRM_MODE_COLORIMETRY_SYCC_601			5
+#define DRM_MODE_COLORIMETRY_OPYCC_601			6
+#define DRM_MODE_COLORIMETRY_OPRGB			7
+#define DRM_MODE_COLORIMETRY_BT2020_CYCC		8
+#define DRM_MODE_COLORIMETRY_BT2020_RGB			9
+#define DRM_MODE_COLORIMETRY_BT2020_YCC			10
+/* Additional Colorimetry extension added as part of CTA 861.G */
+#define DRM_MODE_COLORIMETRY_DCI_P3_RGB_D65		11
+#define DRM_MODE_COLORIMETRY_DCI_P3_RGB_THEATER		12
+/* DP MSA Colorimetry Options */
+#define DRM_MODE_DP_COLORIMETRY_BT601_YCC		13
+#define DRM_MODE_DP_COLORIMETRY_BT709_YCC		14
+#define DRM_MODE_DP_COLORIMETRY_SRGB			15
+#define DRM_MODE_DP_COLORIMETRY_RGB_WIDE_GAMUT		16
+#define DRM_MODE_DP_COLORIMETRY_SCRGB			17
 
 /**
  * struct drm_display_info - runtime data about the connected sink
@@ -527,6 +611,13 @@ struct drm_connector_state {
 	unsigned int content_protection;
 
 	/**
+	 * @colorspace: State variable for Connector property to request
+	 * colorspace change on Sink. This is most commonly used to switch
+	 * to wider color gamuts like BT2020.
+	 */
+	u32 colorspace;
+
+	/**
 	 * @writeback_job: Writeback job for writeback connectors
 	 *
 	 * Holds the framebuffer and out-fence for a writeback connector. As
@@ -546,8 +637,6 @@ struct drm_connector_state {
 	struct drm_property_blob *hdr_output_metadata;
 
 	struct drm_property_blob *hdr_panel_blob_ptr;
-
-	bool hdr_metadata_changed : 1;
 };
 
 /**
@@ -1006,6 +1095,12 @@ struct drm_connector {
 	struct drm_property *content_protection_property;
 
 	/**
+	 * @colorspace_property: Connector property to set the suitable
+	 * colorspace supported by the sink.
+	 */
+	struct drm_property *colorspace_property;
+
+	/**
 	 * @path_blob_ptr:
 	 *
 	 * DRM blob property data for the DP MST path property. This should only
@@ -1102,6 +1197,54 @@ struct drm_connector {
 	/** @bad_edid_counter: track sinks that give us an EDID with invalid checksum */
 	unsigned bad_edid_counter;
 
+	/*
+	 * @pt_scan_info: PT scan info obtained from the VCDB of EDID
+	 * @it_scan_info: IT scan info obtained from the VCDB of EDID
+	 * @ce_scan_info: CE scan info obtained from the VCDB of EDID
+	 * @color_enc_fmt: Colorimetry encoding formats of sink
+	 * @hdr_eotf: Electro optical transfer function obtained from HDR block
+	 * @hdr_metadata_type_one: Metadata type one obtained from HDR block
+	 * @hdr_max_luminance: desired max luminance obtained from HDR block
+	 * @hdr_avg_luminance: desired avg luminance obtained from HDR block
+	 * @hdr_min_luminance: desired min luminance obtained from HDR block
+	 * @hdr_supported: does the sink support HDR content
+	 * @max_tmds_char: indicates the maximum TMDS Character Rate supported
+	 * @scdc_present: when set the sink supports SCDC functionality
+	 * @rr_capable: when set the sink is capable of initiating an
+	 *		SCDC read request
+	 * @supports_scramble: when set the sink supports less than
+	 *		340Mcsc scrambling
+	 * @flags_3d: 3D view(s) supported by the sink, see drm_edid.h
+	 *		DRM_EDID_3D_*)
+	 */
+	u8 pt_scan_info;
+	u8 it_scan_info;
+	u8 ce_scan_info;
+	u32 color_enc_fmt;
+	u32 hdr_eotf;
+	bool hdr_metadata_type_one;
+	u32 hdr_max_luminance;
+	u32 hdr_avg_luminance;
+	u32 hdr_min_luminance;
+	bool hdr_supported;
+	u8 hdr_plus_app_ver;
+
+	/* EDID bits HDMI 2.0
+	 * @max_tmds_char: indicates the maximum TMDS Character Rate supported
+	 * @scdc_present: when set the sink supports SCDC functionality
+	 * @rr_capable: when set the sink is capable of initiating an
+	 *		SCDC read request
+	 * @supports_scramble: when set the sink supports less than
+	 *		340Mcsc scrambling
+	 * @flags_3d: 3D view(s) supported by the sink, see drm_edid.h
+	 *		(DRM_EDID_3D_*)
+	 */
+	int max_tmds_char;	/* in Mcsc */
+	bool scdc_present;
+	bool rr_capable;
+	bool supports_scramble;
+	int flags_3d;
+
 	/**
 	 * @edid_corrupt: Indicates whether the last read EDID was corrupt. Used
 	 * in Displayport compliance testing - Displayport Link CTS Core 1.2
@@ -1171,9 +1314,21 @@ struct drm_connector {
 	 */
 	struct llist_node free_node;
 
-	/* HDR metdata */
-	struct hdr_output_metadata hdr_output_metadata;
 	struct hdr_sink_metadata hdr_sink_metadata;
+
+	/**
+	 * @panel:
+	 *
+	 * Can find the panel which connected to drm_connector.
+	 */
+	struct drm_panel *panel;
+
+	/**
+	 * @checksum:
+	 *
+	 * The calculated checksum value of first 127 bytes of associated EDID.
+	 */
+	u8 checksum;
 };
 
 #define obj_to_connector(x) container_of(x, struct drm_connector, base)
@@ -1304,6 +1459,7 @@ int drm_connector_attach_scaling_mode_property(struct drm_connector *connector,
 int drm_connector_attach_content_protection_property(
 		struct drm_connector *connector);
 int drm_mode_create_aspect_ratio_property(struct drm_device *dev);
+int drm_mode_create_colorspace_property(struct drm_connector *connector);
 int drm_mode_create_content_type_property(struct drm_device *dev);
 void drm_hdmi_avi_infoframe_content_type(struct hdmi_avi_infoframe *frame,
 					 const struct drm_connector_state *conn_state);
@@ -1315,9 +1471,6 @@ int drm_connector_set_path_property(struct drm_connector *connector,
 int drm_connector_set_tile_property(struct drm_connector *connector);
 int drm_connector_update_edid_property(struct drm_connector *connector,
 				       const struct edid *edid);
-int
-drm_mode_connector_update_hdr_property(struct drm_connector *connector,
-				       const struct hdr_static_metadata *data);
 void drm_connector_set_link_status_property(struct drm_connector *connector,
 					    uint64_t link_status);
 int drm_connector_init_panel_orientation_property(

@@ -9,6 +9,7 @@
 #include "stream.h"
 #include "stats.h"
 #include "hw.h"
+#include "procfs.h"
 
 #define DRIVER_NAME			"rkispp"
 #define II_VDEV_NAME DRIVER_NAME	"_input_image"
@@ -16,6 +17,7 @@
 #define S0_VDEV_NAME DRIVER_NAME	"_scale0"
 #define S1_VDEV_NAME DRIVER_NAME	"_scale1"
 #define S2_VDEV_NAME DRIVER_NAME	"_scale2"
+#define VIR_VDEV_NAME DRIVER_NAME	"_iqtool"
 
 enum rkispp_input {
 	INP_INVAL = 0,
@@ -36,7 +38,9 @@ struct rkispp_device {
 	struct rkispp_stream_vdev stream_vdev;
 	struct rkispp_params_vdev params_vdev;
 	struct rkispp_stats_vdev stats_vdev;
+	struct proc_dir_entry *procfs;
 
+	struct work_struct irq_work;
 	enum rkispp_ver	ispp_ver;
 	/* mutex to serialize the calls from user */
 	struct mutex apilock;
@@ -45,6 +49,9 @@ struct rkispp_device {
 	enum rkispp_input inp;
 	u32 dev_id;
 	u32 isp_mode;
+	u32 isr_cnt;
+	u32 isr_err_cnt;
+	u32 mis_val;
 	wait_queue_head_t sync_onoff;
 	bool stream_sync;
 

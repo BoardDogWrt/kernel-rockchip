@@ -842,13 +842,21 @@ dtb-$(CONFIG_ARCH_RENESAS) += \
 	sh73a0-kzm9g.dtb
 dtb-$(CONFIG_ARCH_ROCKCHIP) += \
 	rv1108-evb.dtb \
+	rv1109-38x38-v10-emmc.dtb \
+	rv1109-38x38-v10-emmc-imx307.dtb \
 	rv1109-38-v10-spi-nand.dtb \
 	rv1109-ai-cam-ddr3-v1.dtb \
 	rv1109-evb-ddr3-v12-facial-gate.dtb \
+	rv1109-evb-ddr3-v13-facial-gate.dtb \
 	rv1109-fpga.dtb \
+	rv1126-38x38-v10-emmc.dtb \
 	rv1126-38x38-v10-spi-nor.dtb \
 	rv1126-ai-cam-ddr3-v1.dtb \
+	rv1126-ai-cam-ddr3-v1-spi-nand.dtb \
+	rv1126-ai-cam-plus.dtb \
+	rv1126-bat-evb-v10.dtb \
 	rv1126-bat-ipc-v10.dtb \
+	rv1126-bat-ipc-4k-v10.dtb \
 	rv1126-evb-ddr3-v10.dtb \
 	rv1126-evb-ddr3-v10-robot.dtb \
 	rv1126-evb-ddr3-v12.dtb \
@@ -858,10 +866,13 @@ dtb-$(CONFIG_ARCH_ROCKCHIP) += \
 	rv1126-evb-ddr3-v12-tb-emmc.dtb \
 	rv1126-evb-ddr3-v12-tb-spi-nor.dtb \
 	rv1126-evb-ddr3-v13.dtb \
+	rv1126-evb-ddr3-v13-dualcam-tb-emmc.dtb \
 	rv1126-evb-ddr3-v13-robot.dtb \
 	rv1126-evb-ddr3-v13-tb-emmc.dtb \
+	rv1126-evb-ddr3-v13-uvc.dtb \
 	rv1126-iotest-v10.dtb \
 	rv1126-ipc2-ddr3-v10.dtb \
+	rv1126-rmsl-ddr3-v1.dtb \
 	rv1126-sphericalipc-ddr3-v10.dtb \
 	rk3036-evb.dtb \
 	rk3036-kylin.dtb \
@@ -886,6 +897,11 @@ dtb-$(CONFIG_ARCH_ROCKCHIP) += \
 	rk3288-evb-act8846.dtb \
 	rk3288-evb-rk808.dtb \
 	rk3288-evb-android-rk808-edp-avb.dtb \
+	rk3288-evb-rk628-hdmi2csi-avb.dtb \
+	rk3288-evb-rk628-rgb2dsi-avb.dtb \
+	rk3288-evb-rk628-rgb2hdmi-avb.dtb \
+	rk3288-evb-rk628-rgb2lvds-avb.dtb \
+	rk3288-evb-rk628-rgb2lvds-dual-avb.dtb \
 	rk3288-fennec.dtb \
 	rk3288-firefly-beta.dtb \
 	rk3288-firefly.dtb \

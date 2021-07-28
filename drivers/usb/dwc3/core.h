@@ -250,7 +250,9 @@
 
 /* Global User Control 1 Register */
 #define DWC3_GUCTL1_TX_IPGAP_LINECHECK_DIS	BIT(28)
+#define DWC3_GUCTL1_DEV_FORCE_20_CLK_FOR_30_CLK	BIT(26)
 #define DWC3_GUCTL1_DEV_L1_EXIT_BY_HW	BIT(24)
+#define DWC3_GUCTL1_PARKMODE_DISABLE_SS	BIT(17)
 
 /* Global Status Register */
 #define DWC3_GSTS_OTG_IP	BIT(10)
@@ -281,6 +283,7 @@
 
 /* Global USB2 PHY Vendor Control Register */
 #define DWC3_GUSB2PHYACC_NEWREGREQ	BIT(25)
+#define DWC3_GUSB2PHYACC_DONE		BIT(24)
 #define DWC3_GUSB2PHYACC_BUSY		BIT(23)
 #define DWC3_GUSB2PHYACC_WRITE		BIT(22)
 #define DWC3_GUSB2PHYACC_ADDR(n)	(n << 16)
@@ -308,6 +311,10 @@
 #define DWC31_GTXFIFOSIZ_TXFDEF(n)	((n) & 0x7fff)	/* DWC_usb31 only */
 #define DWC3_GTXFIFOSIZ_TXFDEF(n)	((n) & 0xffff)
 #define DWC3_GTXFIFOSIZ_TXFSTADDR(n)	((n) & 0xffff0000)
+
+/* Global RX Fifo Size Register */
+#define DWC31_GRXFIFOSIZ_RXFDEP(n)	((n) & 0x7fff)	/* DWC_usb31 only */
+#define DWC3_GRXFIFOSIZ_RXFDEP(n)	((n) & 0xffff)
 
 /* Global Event Size Registers */
 #define DWC3_GEVNTSIZ_INTMASK		BIT(31)
@@ -1025,6 +1032,8 @@ struct dwc3_scratchpad_array {
  *			change quirk.
  * @dis_tx_ipgap_linecheck_quirk: set if we disable u2mac linestate
  *			check during HS transmit.
+ * @parkmode_disable_ss_quirk: set if we need to disable all SuperSpeed
+ *			instances in park mode.
  * @xhci_slow_suspend_quirk: set if need an extraordinary delay to wait
  *			for xHC enter the Halted state after the Run/Stop
  *			(R/S) bit is cleared to '0'.
@@ -1042,10 +1051,12 @@ struct dwc3_scratchpad_array {
  * 	3	- Reserved
  * @dis_metastability_quirk: set to disable metastability quirk.
  * @needs_fifo_resize: set if we want to resize TXFIFO.
+ * @fifo_resize_status: true if the TXFIFOs have been resized.
  * @drd_connected: true when usb connected to a host or a device(drd mode),
  *			false otherwise.
  * @en_runtime: true when need runtime PM management. For example, RK3399 need
  *			reset dwc3 and usb3phy to support typec interface.
+ * @uwk_en: true when enable usb wakeup from host resume signal.
  * @imod_interval: set the interrupt moderation interval in 250ns
  *                 increments or 0 to disable.
  */
@@ -1227,6 +1238,7 @@ struct dwc3 {
 	unsigned		dis_u2_freeclk_exists_quirk:1;
 	unsigned		dis_del_phy_power_chg_quirk:1;
 	unsigned		dis_tx_ipgap_linecheck_quirk:1;
+	unsigned		parkmode_disable_ss_quirk:1;
 	unsigned		xhci_slow_suspend_quirk:1;
 	unsigned		xhci_trb_ent_quirk:1;
 	unsigned		xhci_warm_reset_on_suspend_quirk:1;
@@ -1237,8 +1249,10 @@ struct dwc3 {
 
 	unsigned		dis_metastability_quirk:1;
 	unsigned		needs_fifo_resize:1;
+	unsigned		fifo_resize_status:1;
 	unsigned		drd_connected:1;
 	unsigned		en_runtime:1;
+	unsigned		uwk_en:1;
 
 	u16			imod_interval;
 };
@@ -1441,6 +1455,8 @@ int dwc3_gadget_set_link_state(struct dwc3 *dwc, enum dwc3_link_state state);
 int dwc3_send_gadget_ep_cmd(struct dwc3_ep *dep, unsigned cmd,
 		struct dwc3_gadget_ep_cmd_params *params);
 int dwc3_send_gadget_generic_command(struct dwc3 *dwc, unsigned cmd, u32 param);
+void dwc3_gadget_disable_irq(struct dwc3 *dwc);
+void dwc3_gadget_enable_irq(struct dwc3 *dwc);
 #else
 static inline int dwc3_gadget_init(struct dwc3 *dwc)
 { return 0; }
@@ -1460,6 +1476,10 @@ static inline int dwc3_send_gadget_ep_cmd(struct dwc3_ep *dep, unsigned cmd,
 static inline int dwc3_send_gadget_generic_command(struct dwc3 *dwc,
 		int cmd, u32 param)
 { return 0; }
+static inline void dwc3_gadget_enable_irq(struct dwc3 *dwc)
+{ }
+static inline void dwc3_gadget_disable_irq(struct dwc3 *dwc)
+{ }
 #endif
 
 #if IS_ENABLED(CONFIG_USB_DWC3_DUAL_ROLE)

@@ -195,6 +195,8 @@ source "drivers/thunderbolt/Kconfig"
 
 source "drivers/android/Kconfig"
 
+source "drivers/gpu/trace/Kconfig"
+
 source "drivers/nvdimm/Kconfig"
 
 source "drivers/dax/Kconfig"
@@ -226,5 +228,7 @@ source "drivers/rkflash/Kconfig"
 source "drivers/rk_nand/Kconfig"
 
 source "drivers/headset_observe/Kconfig"
+
+source "drivers/rknpu/Kconfig"
 
 endmenu

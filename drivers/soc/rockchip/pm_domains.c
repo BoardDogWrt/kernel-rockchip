@@ -8,6 +8,7 @@
  * published by the Free Software Foundation.
  */
 
+#include <linux/module.h>
 #include <linux/io.h>
 #include <linux/iopoll.h>
 #include <linux/err.h>
@@ -35,6 +36,7 @@
 #include <dt-bindings/power/rk3366-power.h>
 #include <dt-bindings/power/rk3368-power.h>
 #include <dt-bindings/power/rk3399-power.h>
+#include <dt-bindings/power/rk3568-power.h>
 
 struct rockchip_domain_info {
 	int pwr_mask;
@@ -102,7 +104,7 @@ static struct rockchip_pmu *g_pmu;
 static void rockchip_pmu_lock(struct rockchip_pm_domain *pd)
 {
 	mutex_lock(&pd->pmu->mutex);
-	rockchip_dmcfreq_lock();
+	rockchip_dmcfreq_lock_nested();
 }
 
 static void rockchip_pmu_unlock(struct rockchip_pm_domain *pd)
@@ -196,6 +198,12 @@ static void rockchip_pmu_unlock(struct rockchip_pm_domain *pd)
 
 #define DOMAIN_RK3399_PROTECT(pwr, status, req, wakeup)	\
 	DOMAIN(pwr, status, req, req, req, wakeup, true)
+
+#define DOMAIN_RK3568(pwr, req, wakeup)		\
+	DOMAIN_M(pwr, pwr, req, req, req, wakeup, false)
+
+#define DOMAIN_RK3568_PROTECT(pwr, req, wakeup)		\
+	DOMAIN_M(pwr, pwr, req, req, req, wakeup, true)
 
 static bool rockchip_pmu_domain_is_idle(struct rockchip_pm_domain *pd)
 {
@@ -853,11 +861,10 @@ static int rockchip_pm_add_one_domain(struct rockchip_pmu *pmu,
 	pd->genpd.power_on = rockchip_pd_power_on;
 	pd->genpd.attach_dev = rockchip_pd_attach_dev;
 	pd->genpd.detach_dev = rockchip_pd_detach_dev;
-	pd->genpd.flags = GENPD_FLAG_PM_CLK;
 	if (pd_info->active_wakeup)
 		pd->genpd.flags |= GENPD_FLAG_ACTIVE_WAKEUP;
+#ifndef MODULE
 	if (pd_info->keepon_startup) {
-		pd->genpd.flags &= (~GENPD_FLAG_PM_CLK);
 		pd->genpd.flags |= GENPD_FLAG_ALWAYS_ON;
 		if (!rockchip_pmu_domain_is_on(pd)) {
 			error = rockchip_pd_power(pd, true);
@@ -869,6 +876,7 @@ static int rockchip_pm_add_one_domain(struct rockchip_pmu *pmu,
 			}
 		}
 	}
+#endif
 	if (is_qos_need_init)
 		rockchip_pd_qos_init(pd, &qos_is_need_init[0]);
 
@@ -1005,6 +1013,7 @@ err_out:
 	return error;
 }
 
+#ifndef MODULE
 static void rockchip_pd_keepon_do_release(struct generic_pm_domain *genpd,
 					  struct rockchip_pm_domain *pd)
 {
@@ -1012,7 +1021,6 @@ static void rockchip_pd_keepon_do_release(struct generic_pm_domain *genpd,
 	int enable_count;
 
 	pd->genpd.flags &= (~GENPD_FLAG_ALWAYS_ON);
-	pd->genpd.flags |= GENPD_FLAG_PM_CLK;
 	list_for_each_entry(pm_data, &genpd->dev_list, list_node) {
 		if (!atomic_read(&pm_data->dev->power.usage_count)) {
 			enable_count = 0;
@@ -1048,6 +1056,7 @@ static int __init rockchip_pd_keepon_release(void)
 	return 0;
 }
 late_initcall_sync(rockchip_pd_keepon_release);
+#endif
 
 static void __iomem *pd_base;
 
@@ -1186,7 +1195,7 @@ err_out:
 }
 
 static const struct rockchip_domain_info px30_pm_domains[] = {
-	[PX30_PD_USB]		= DOMAIN_PX30(BIT(5),  BIT(5),  BIT(10), false),
+	[PX30_PD_USB]		= DOMAIN_PX30(BIT(5),  BIT(5),  BIT(10), true),
 	[PX30_PD_SDCARD]	= DOMAIN_PX30(BIT(8),  BIT(8),  BIT(9),  false),
 	[PX30_PD_GMAC]		= DOMAIN_PX30(BIT(10), BIT(10), BIT(6),  false),
 	[PX30_PD_MMC_NAND]	= DOMAIN_PX30(BIT(11), BIT(11), BIT(5),  false),
@@ -1205,7 +1214,7 @@ static const struct rockchip_domain_info rv1126_pm_domains[] = {
 	[RV1126_PD_VDPU]	= DOMAIN_RV1126(BIT(3), BIT(10), BIT(10), false),
 	[RV1126_PD_NVM]		= DOMAIN_RV1126(BIT(7), BIT(11), BIT(11),  false),
 	[RV1126_PD_SDIO]	= DOMAIN_RV1126(BIT(8), BIT(13), BIT(13),  false),
-	[RV1126_PD_USB]		= DOMAIN_RV1126(BIT(9), BIT(15), BIT(15),  false),
+	[RV1126_PD_USB]		= DOMAIN_RV1126(BIT(9), BIT(15), BIT(15),  true),
 	[RV1126_PD_NPU]		= DOMAIN_RV1126_O(BIT(0), BIT(2), BIT(18), 0x4, false),
 };
 
@@ -1313,6 +1322,18 @@ static const struct rockchip_domain_info rk3399_pm_domains[] = {
 	[RK3399_PD_GIC]		= DOMAIN_RK3399(BIT(29), BIT(29), BIT(27), true),
 	[RK3399_PD_SD]		= DOMAIN_RK3399(BIT(30), BIT(30), BIT(28), true),
 	[RK3399_PD_SDIOAUDIO]	= DOMAIN_RK3399(BIT(31), BIT(31), BIT(29), true),
+};
+
+static const struct rockchip_domain_info rk3568_pm_domains[] = {
+	[RK3568_PD_NPU]		= DOMAIN_RK3568(BIT(1), BIT(2), false),
+	[RK3568_PD_GPU]		= DOMAIN_RK3568(BIT(0), BIT(1), false),
+	[RK3568_PD_VI]		= DOMAIN_RK3568(BIT(6), BIT(3), false),
+	[RK3568_PD_VO]		= DOMAIN_RK3568_PROTECT(BIT(7),  BIT(4), false),
+	[RK3568_PD_RGA]		= DOMAIN_RK3568(BIT(5),  BIT(5), false),
+	[RK3568_PD_VPU]		= DOMAIN_RK3568(BIT(2), BIT(6), false),
+	[RK3568_PD_RKVDEC]	= DOMAIN_RK3568(BIT(4), BIT(8), false),
+	[RK3568_PD_RKVENC]	= DOMAIN_RK3568(BIT(3), BIT(7), false),
+	[RK3568_PD_PIPE]	= DOMAIN_RK3568(BIT(8), BIT(11), false),
 };
 
 static const struct rockchip_pmu_info px30_pmu = {
@@ -1454,6 +1475,17 @@ static const struct rockchip_pmu_info rk3399_pmu = {
 	.domain_info = rk3399_pm_domains,
 };
 
+static const struct rockchip_pmu_info rk3568_pmu = {
+	.pwr_offset = 0xa0,
+	.status_offset = 0x98,
+	.req_offset = 0x50,
+	.idle_offset = 0x68,
+	.ack_offset = 0x60,
+
+	.num_domains = ARRAY_SIZE(rk3568_pm_domains),
+	.domain_info = rk3568_pm_domains,
+};
+
 static const struct of_device_id rockchip_pm_domain_dt_match[] = {
 	{
 		.compatible = "rockchip,px30-power-controller",
@@ -1499,8 +1531,13 @@ static const struct of_device_id rockchip_pm_domain_dt_match[] = {
 		.compatible = "rockchip,rk3399-power-controller",
 		.data = (void *)&rk3399_pmu,
 	},
+	{
+		.compatible = "rockchip,rk3568-power-controller",
+		.data = (void *)&rk3568_pmu,
+	},
 	{ /* sentinel */ },
 };
+MODULE_DEVICE_TABLE(of, rockchip_pm_domain_dt_match);
 
 static struct platform_driver rockchip_pm_domain_driver = {
 	.probe = rockchip_pm_domain_probe,
@@ -1521,3 +1558,13 @@ static int __init rockchip_pm_domain_drv_register(void)
 	return platform_driver_register(&rockchip_pm_domain_driver);
 }
 postcore_initcall(rockchip_pm_domain_drv_register);
+
+static void __exit rockchip_pm_domain_drv_unregister(void)
+{
+	platform_driver_unregister(&rockchip_pm_domain_driver);
+}
+module_exit(rockchip_pm_domain_drv_unregister);
+
+MODULE_DESCRIPTION("ROCKCHIP PM Domain Driver");
+MODULE_LICENSE("GPL");
+MODULE_ALIAS("platform:rockchip-pm-domain");

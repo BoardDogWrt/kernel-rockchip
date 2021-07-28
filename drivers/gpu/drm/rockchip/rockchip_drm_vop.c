@@ -22,7 +22,7 @@
 #ifdef CONFIG_DRM_ANALOGIX_DP
 #include <drm/bridge/analogix_dp.h>
 #endif
-#include <dt-bindings/clock/rk_system_status.h>
+#include <dt-bindings/soc/rockchip-system-status.h>
 
 #include <linux/debugfs.h>
 #include <linux/fixp-arith.h>
@@ -260,6 +260,8 @@ struct vop {
 	u32 *lut;
 	u32 lut_len;
 	bool lut_active;
+	/* gamma look up table */
+	struct drm_color_lut *gamma_lut;
 	bool dual_channel_swap;
 	/* one time only one process allowed to config the register */
 	spinlock_t reg_lock;
@@ -313,6 +315,9 @@ static const struct drm_bus_format_enum_list drm_bus_format_enum_list[] = {
 	{ MEDIA_BUS_FMT_RGB888_1X24, "RGB888_1X24" },
 	{ MEDIA_BUS_FMT_RGB888_1X7X4_SPWG, "RGB888_1X7X4_SPWG" },
 	{ MEDIA_BUS_FMT_RGB888_1X7X4_JEIDA, "RGB888_1X7X4_JEIDA" },
+	{ MEDIA_BUS_FMT_UYVY8_2X8, "UYVY8_2X8" },
+	{ MEDIA_BUS_FMT_YUYV8_1X16, "YUYV8_1X16" },
+	{ MEDIA_BUS_FMT_UYVY8_1X16, "UYVY8_1X16" },
 };
 
 static DRM_ENUM_NAME_FN(drm_get_bus_format_name, drm_bus_format_enum_list)
@@ -602,13 +607,30 @@ static bool is_uv_swap(uint32_t bus_format, uint32_t output_mode)
 	 *
 	 * From H/W testing, YUV444 mode need a rb swap.
 	 */
-	if ((bus_format == MEDIA_BUS_FMT_YUV8_1X24 ||
-	     bus_format == MEDIA_BUS_FMT_YUV10_1X30) &&
-	    (output_mode == ROCKCHIP_OUT_MODE_AAAA ||
-	     output_mode == ROCKCHIP_OUT_MODE_P888))
+	if (bus_format == MEDIA_BUS_FMT_YVYU8_1X16 ||
+	    bus_format == MEDIA_BUS_FMT_VYUY8_1X16 ||
+	    bus_format == MEDIA_BUS_FMT_YVYU8_2X8 ||
+	    bus_format == MEDIA_BUS_FMT_VYUY8_2X8 ||
+	    ((bus_format == MEDIA_BUS_FMT_YUV8_1X24 ||
+	      bus_format == MEDIA_BUS_FMT_YUV10_1X30) &&
+	     (output_mode == ROCKCHIP_OUT_MODE_AAAA ||
+	      output_mode == ROCKCHIP_OUT_MODE_P888)))
 		return true;
 	else
 		return false;
+}
+
+static bool is_yc_swap(uint32_t bus_format)
+{
+	switch (bus_format) {
+	case MEDIA_BUS_FMT_YUYV8_1X16:
+	case MEDIA_BUS_FMT_YVYU8_1X16:
+	case MEDIA_BUS_FMT_YUYV8_2X8:
+	case MEDIA_BUS_FMT_YVYU8_2X8:
+		return true;
+	default:
+		return false;
+	}
 }
 
 static bool is_yuv_output(uint32_t bus_format)
@@ -619,7 +641,13 @@ static bool is_yuv_output(uint32_t bus_format)
 	case MEDIA_BUS_FMT_UYYVYY8_0_5X24:
 	case MEDIA_BUS_FMT_UYYVYY10_0_5X30:
 	case MEDIA_BUS_FMT_YUYV8_2X8:
+	case MEDIA_BUS_FMT_YVYU8_2X8:
+	case MEDIA_BUS_FMT_UYVY8_2X8:
+	case MEDIA_BUS_FMT_VYUY8_2X8:
 	case MEDIA_BUS_FMT_YUYV8_1X16:
+	case MEDIA_BUS_FMT_YVYU8_1X16:
+	case MEDIA_BUS_FMT_UYVY8_1X16:
+	case MEDIA_BUS_FMT_VYUY8_1X16:
 		return true;
 	default:
 		return false;
@@ -1389,6 +1417,40 @@ static void rockchip_vop_crtc_fb_gamma_get(struct drm_crtc *crtc, u16 *red,
 	*blue = b * 0xffff / (lut_len - 1);
 }
 
+static int vop_crtc_legacy_gamma_set(struct drm_crtc *crtc, u16 *red, u16 *green,
+				     u16 *blue, uint32_t size,
+				     struct drm_modeset_acquire_ctx *ctx)
+{
+	struct vop *vop = to_vop(crtc);
+	int len = min(size, vop->lut_len);
+	int i;
+
+	if (!vop->lut)
+		return -EINVAL;
+
+	for (i = 0; i < len; i++)
+		rockchip_vop_crtc_fb_gamma_set(crtc, red[i], green[i], blue[i], i);
+
+	vop_crtc_load_lut(crtc);
+
+	return 0;
+}
+
+static int vop_crtc_atomic_gamma_set(struct drm_crtc *crtc,
+				     struct drm_crtc_state *old_state)
+{
+	struct vop *vop = to_vop(crtc);
+	struct drm_color_lut *lut = vop->gamma_lut;
+	unsigned int i;
+
+	for (i = 0; i < vop->lut_len; i++)
+		rockchip_vop_crtc_fb_gamma_set(crtc, lut[i].red, lut[i].green,
+					       lut[i].blue, i);
+	vop_crtc_load_lut(crtc);
+
+	return 0;
+}
+
 static void vop_power_enable(struct drm_crtc *crtc)
 {
 	struct vop *vop = to_vop(crtc);
@@ -1481,6 +1543,7 @@ static void vop_crtc_atomic_disable(struct drm_crtc *crtc,
 	VOP_CTRL_SET(vop, reg_done_frm, 1);
 	VOP_CTRL_SET(vop, dsp_interlace, 0);
 	drm_crtc_vblank_off(crtc);
+	VOP_CTRL_SET(vop, out_mode, ROCKCHIP_OUT_MODE_P888);
 	VOP_CTRL_SET(vop, afbdc_en, 0);
 	vop_disable_all_planes(vop);
 
@@ -1597,6 +1660,14 @@ static int vop_plane_atomic_check(struct drm_plane *plane,
 
 	*src = state->src;
 	*dest = state->dst;
+
+	if (state->src_w >> 16 < 4 || state->src_h >> 16 < 4 ||
+	    state->crtc_w < 4 || state->crtc_h < 4) {
+		DRM_ERROR("Invalid size: %dx%d->%dx%d, min size is 4x4\n",
+			  state->src_w >> 16, state->src_h >> 16,
+			  state->crtc_w, state->crtc_h);
+		return -EINVAL;
+	}
 
 	if (drm_rect_width(src) >> 16 > vop_data->max_input.width ||
 	    drm_rect_height(src) >> 16 > vop_data->max_input.height) {
@@ -2651,14 +2722,41 @@ static void vop_crtc_close(struct drm_crtc *crtc)
 	mutex_unlock(&vop->vop_lock);
 }
 
+static u32 vop_mode_done(struct vop *vop)
+{
+	return VOP_CTRL_GET(vop, out_mode);
+}
+
+static void vop_set_out_mode(struct vop *vop, u32 mode)
+{
+	int ret;
+	u32 val;
+
+	VOP_CTRL_SET(vop, out_mode, mode);
+	vop_cfg_done(vop);
+	ret = readx_poll_timeout(vop_mode_done, vop, val, val == mode,
+				 1000, 500 * 1000);
+	if (ret)
+		dev_err(vop->dev, "wait mode 0x%x timeout\n", mode);
+
+}
+
 static void vop_crtc_send_mcu_cmd(struct drm_crtc *crtc,  u32 type, u32 value)
 {
+	struct rockchip_crtc_state *state;
 	struct vop *vop = NULL;
 
 	if (!crtc)
 		return;
 
 	vop = to_vop(crtc);
+	state = to_rockchip_crtc_state(crtc->state);
+
+	/*
+	 * set output mode to P888 when start send cmd.
+	 */
+	if ((type == MCU_SETBYPASS) && value)
+		vop_set_out_mode(vop, ROCKCHIP_OUT_MODE_P888);
 	mutex_lock(&vop->vop_lock);
 	if (vop && vop->is_enabled) {
 		switch (type) {
@@ -2679,6 +2777,12 @@ static void vop_crtc_send_mcu_cmd(struct drm_crtc *crtc,  u32 type, u32 value)
 		}
 	}
 	mutex_unlock(&vop->vop_lock);
+
+	/*
+	 * restore output mode at the end
+	 */
+	if ((type == MCU_SETBYPASS) && !value)
+		vop_set_out_mode(vop, state->output_mode);
 }
 
 static const struct rockchip_crtc_funcs private_crtc_funcs = {
@@ -2884,7 +2988,7 @@ static void vop_crtc_atomic_enable(struct drm_crtc *crtc,
 	int act_end;
 	bool interlaced = !!(adjusted_mode->flags & DRM_MODE_FLAG_INTERLACE);
 	int for_ddr_freq = 0;
-	bool dclk_inv;
+	bool dclk_inv, yc_swap = false;
 
 	rockchip_set_system_status(sys_status);
 	vop_lock(vop);
@@ -2931,10 +3035,11 @@ static void vop_crtc_atomic_enable(struct drm_crtc *crtc,
 		VOP_CTRL_SET(vop, lvds_pin_pol, val);
 		VOP_CTRL_SET(vop, lvds_dclk_pol, dclk_inv);
 		VOP_GRF_SET(vop, grf_dclk_inv, dclk_inv);
-
-		if (s->bus_format == MEDIA_BUS_FMT_YUYV8_1X16) {
+		if (s->output_if & VOP_OUTPUT_IF_BT1120) {
 			VOP_CTRL_SET(vop, bt1120_en, 1);
-			VOP_CTRL_SET(vop, bt1120_yc_swap, 1);
+			yc_swap = is_yc_swap(s->bus_format);
+			VOP_CTRL_SET(vop, bt1120_yc_swap, yc_swap);
+			VOP_CTRL_SET(vop, yuv_clip, 1);
 		}
 		break;
 	case DRM_MODE_CONNECTOR_eDP:
@@ -2952,9 +3057,9 @@ static void vop_crtc_atomic_enable(struct drm_crtc *crtc,
 		VOP_CTRL_SET(vop, mipi_pin_pol, val);
 		VOP_CTRL_SET(vop, mipi_dclk_pol, dclk_inv);
 		VOP_CTRL_SET(vop, mipi_dual_channel_en,
-			!!(s->output_flags & ROCKCHIP_OUTPUT_DSI_DUAL_CHANNEL));
+			!!(s->output_flags & ROCKCHIP_OUTPUT_DUAL_CHANNEL_LEFT_RIGHT_MODE));
 		VOP_CTRL_SET(vop, data01_swap,
-			!!(s->output_flags & ROCKCHIP_OUTPUT_DSI_DUAL_LINK) ||
+			!!(s->output_flags & ROCKCHIP_OUTPUT_DATA_SWAP) ||
 			vop->dual_channel_swap);
 		break;
 	case DRM_MODE_CONNECTOR_DisplayPort:
@@ -3450,28 +3555,48 @@ static void vop_tv_config_update(struct drm_crtc *crtc,
 	}
 
 	if (vop_data->feature & VOP_FEATURE_OUTPUT_10BIT)
-		brightness = interpolate(0, -128, 100, 127,
-					 s->tv_state->brightness);
+		brightness = interpolate(0, -128, 100, 127, s->tv_state->brightness);
+	else if (VOP_MAJOR(vop->version) == 2 && VOP_MINOR(vop->version) == 6) /* px30 vopb */
+		brightness = interpolate(0, -64, 100, 63, s->tv_state->brightness);
 	else
-		brightness = interpolate(0, -32, 100, 31,
-					 s->tv_state->brightness);
-	contrast = interpolate(0, 0, 100, 511, s->tv_state->contrast);
-	saturation = interpolate(0, 0, 100, 511, s->tv_state->saturation);
-	hue = interpolate(0, -30, 100, 30, s->tv_state->hue);
+		brightness = interpolate(0, -32, 100, 31, s->tv_state->brightness);
 
-	/*
-	 *  a:[-30~0]:
-	 *    sin_hue = 0x100 - sin(a)*256;
-	 *    cos_hue = cos(a)*256;
-	 *  a:[0~30]
-	 *    sin_hue = sin(a)*256;
-	 *    cos_hue = cos(a)*256;
-	 */
-	sin_hue = fixp_sin32(hue) >> 23;
-	cos_hue = fixp_cos32(hue) >> 23;
+	if ((VOP_MAJOR(vop->version) == 3) ||
+	    (VOP_MAJOR(vop->version) == 2 && VOP_MINOR(vop->version) == 6)) { /* px30 vopb */
+		contrast = interpolate(0, 0, 100, 511, s->tv_state->contrast);
+		saturation = interpolate(0, 0, 100, 511, s->tv_state->saturation);
+		/*
+		 *  a:[-30~0]:
+		 *    sin_hue = 0x100 - sin(a)*256;
+		 *    cos_hue = cos(a)*256;
+		 *  a:[0~30]
+		 *    sin_hue = sin(a)*256;
+		 *    cos_hue = cos(a)*256;
+		 */
+		hue = interpolate(0, -30, 100, 30, s->tv_state->hue);
+		sin_hue = fixp_sin32(hue) >> 23;
+		cos_hue = fixp_cos32(hue) >> 23;
+		VOP_CTRL_SET(vop, bcsh_sat_con, saturation * contrast / 0x100);
+
+	} else {
+		contrast = interpolate(0, 0, 100, 255, s->tv_state->contrast);
+		saturation = interpolate(0, 0, 100, 255, s->tv_state->saturation);
+		/*
+		 *  a:[-30~0]:
+		 *    sin_hue = 0x100 - sin(a)*128;
+		 *    cos_hue = cos(a)*128;
+		 *  a:[0~30]
+		 *    sin_hue = sin(a)*128;
+		 *    cos_hue = cos(a)*128;
+		 */
+		hue = interpolate(0, -30, 100, 30, s->tv_state->hue);
+		sin_hue = fixp_sin32(hue) >> 24;
+		cos_hue = fixp_cos32(hue) >> 24;
+		VOP_CTRL_SET(vop, bcsh_sat_con, saturation * contrast / 0x80);
+	}
+
 	VOP_CTRL_SET(vop, bcsh_brightness, brightness);
 	VOP_CTRL_SET(vop, bcsh_contrast, contrast);
-	VOP_CTRL_SET(vop, bcsh_sat_con, saturation * contrast / 0x100);
 	VOP_CTRL_SET(vop, bcsh_sin_hue, sin_hue);
 	VOP_CTRL_SET(vop, bcsh_cos_hue, cos_hue);
 	VOP_CTRL_SET(vop, bcsh_out_mode, BCSH_OUT_MODE_NORMAL_VIDEO);
@@ -3580,6 +3705,13 @@ static void vop_crtc_atomic_flush(struct drm_crtc *crtc,
 	}
 
 	vop_update_hdr(crtc, old_crtc_state);
+	if (old_crtc_state->color_mgmt_changed || old_crtc_state->active_changed) {
+		if (crtc->state->gamma_lut || vop->gamma_lut) {
+			if (old_crtc_state->gamma_lut)
+				vop->gamma_lut = old_crtc_state->gamma_lut->data;
+			vop_crtc_atomic_gamma_set(crtc, old_crtc_state);
+		}
+	}
 
 	spin_lock_irqsave(&vop->irq_lock, flags);
 	vop->pre_overlay = s->hdr.pre_overlay;
@@ -3842,28 +3974,8 @@ static int vop_crtc_atomic_set_property(struct drm_crtc *crtc,
 	return -EINVAL;
 }
 
-static int vop_crtc_gamma_set(struct drm_crtc *crtc, u16 *red, u16 *green,
-			       u16 *blue, uint32_t size,
-			       struct drm_modeset_acquire_ctx *ctx)
-{
-	struct vop *vop = to_vop(crtc);
-	int len = min(size, vop->lut_len);
-	int i;
-
-	if (!vop->lut)
-		return -EINVAL;
-
-	for (i = 0; i < len; i++)
-		rockchip_vop_crtc_fb_gamma_set(crtc, red[i], green[i],
-					       blue[i], i);
-
-	vop_crtc_load_lut(crtc);
-
-	return 0;
-}
-
 static const struct drm_crtc_funcs vop_crtc_funcs = {
-	.gamma_set = vop_crtc_gamma_set,
+	.gamma_set = vop_crtc_legacy_gamma_set,
 	.set_config = drm_atomic_helper_set_config,
 	.page_flip = drm_atomic_helper_page_flip,
 	.destroy = vop_crtc_destroy,
@@ -4231,6 +4343,7 @@ static int vop_create_crtc(struct vop *vop)
 		}
 
 		drm_mode_crtc_set_gamma_size(crtc, lut_len);
+		drm_crtc_enable_color_mgmt(crtc, 0, false, lut_len);
 		r_base = crtc->gamma_store;
 		g_base = r_base + crtc->gamma_size;
 		b_base = g_base + crtc->gamma_size;

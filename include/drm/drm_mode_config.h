@@ -760,6 +760,17 @@ struct drm_mode_config {
 	struct drm_property *gamma_lut_size_property;
 
 	/**
+	 * @cubic_lut_property: Optional CRTC property to set the 3D LUT used to
+	 * convert color spaces.
+	 */
+	struct drm_property *cubic_lut_property;
+	/**
+	 * @cubic_lut_size_property: Optional CRTC property for the size of the
+	 * 3D LUT as supported by the driver (read-only).
+	 */
+	struct drm_property *cubic_lut_size_property;
+
+	/**
 	 * @suggested_x_property: Optional connector property with a hint for
 	 * the position of the output on the host's screen.
 	 */
@@ -813,8 +824,6 @@ struct drm_mode_config {
 	 * on HDR content
 	 */
 	struct drm_property *hdr_output_metadata_property;
-
-	struct drm_property *hdr_panel_metadata_property;
 
 	/* dumb ioctl parameters */
 	uint32_t preferred_depth, prefer_shadow;

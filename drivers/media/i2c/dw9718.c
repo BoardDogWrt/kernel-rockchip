@@ -2,9 +2,6 @@
 /*
  * dw9718 vcm driver
  *
- * Copyright (c) 2020 FriendlyElec Computer Tech. Co., Ltd.
- * (http://www.friendlyarm.com)
- *
  * Copyright (C) 2019 Fuzhou Rockchip Electronics Co., Ltd.
  */
 
@@ -16,39 +13,38 @@
 #include <linux/version.h>
 #include <media/v4l2-ctrls.h>
 #include <media/v4l2-device.h>
-#include "rk_vcm_head.h"
+#include <linux/rk_vcm_head.h>
 
 #define DRIVER_VERSION			KERNEL_VERSION(0, 0x01, 0x0)
 #define DW9718_NAME			"dw9718"
 
+#define DW9718T_PD_REG 0X00
+#define DW9718T_CONTROL 0X01
+#define DW9718T_DATAM_REG 0X02
+#define DW9718T_DATAL_REG 0X03
+#define DW9718T_SW_REG 0X04
+#define DW9718T_SACT_REG 0X05
+#define DW9718T_FLAG_REG 0X10
+
 #define DW9718_MAX_CURRENT		100U
 #define DW9718_MAX_REG			1023U
-
-/* Register addresses */
-#define DW9718_PD			0x00
-#define DW9718_CONTROL			0x01
-#define DW9718_DATA_M			0x02
-#define DW9718_DATA_L			0x03
-#define DW9718_SACT			0x05
-
-#define DW9718_CONTROL_SW_LINEAR	BIT(0)
-#define DW9718_CONTROL_S_SAC4		(BIT(1) | BIT(3))
-#define DW9718_CONTROL_OCP_DISABLE	BIT(4)
-#define DW9718_CONTROL_UVLO_DISABLE	BIT(5)
-
-#define DW9718_SACT_MULT_TWO		0x00
-#define DW9718_SACT_PERIOD_8_8MS	0x19
-#define DW9718_SACT_DEFAULT_VAL		0x60
 
 #define DW9718_DEFAULT_START_CURRENT	0
 #define DW9718_DEFAULT_RATED_CURRENT	100
 #define DW9718_DEFAULT_STEP_MODE	0xd
 #define REG_NULL			0xFF
 
+#define OF_CAMERA_VCMDRV_CONTROL_MODE     "rockchip,vcm-control-mode"
+#define OF_CAMERA_VCMDRV_SACDIV_MODE      "rockchip,vcm-sacdiv-mode"
+#define VCMDRV_DEFAULT_CONTROL_MODE       4
+#define VCMDRV_DEFAULT_SACDIV_MODE        1
+
 /* dw9718 device structure */
 struct dw9718_device {
 	struct v4l2_ctrl_handler ctrls_vcm;
 	struct v4l2_subdev sd;
+	struct v4l2_device vdev;
+	u16 current_val;
 
 	unsigned short current_related_pos;
 	unsigned short current_lens_pos;
@@ -56,97 +52,16 @@ struct dw9718_device {
 	unsigned int rated_current;
 	unsigned int step;
 	unsigned int step_mode;
-	unsigned int vcm_movefull_t;
-	unsigned int dlc_enable;
-	unsigned int t_src;
-	unsigned int mclk;
+	unsigned int control_mode;
+	unsigned int sacdiv_mode;
+	unsigned long mv_time_per_pos;
 
 	struct timeval start_move_tv;
 	struct timeval end_move_tv;
-	unsigned long move_ms;
+	unsigned long move_us;
 
 	u32 module_index;
 	const char *module_facing;
-};
-
-struct TimeTabel_s {
-	unsigned int t_src;/* time of slew rate control */
-	unsigned int step00;/* S[1:0] /MCLK[1:0] step period */
-	unsigned int step01;
-	unsigned int step10;
-	unsigned int step11;
-};
-
-static const struct TimeTabel_s dw9718_lsc_time_table[] = {
-	{0b10000, 136, 272, 544, 1088},
-	{0b10001, 130, 260, 520, 1040},
-	{0b10010, 125, 250, 500, 1000},
-	{0b10011, 120, 240, 480, 960 },
-	{0b10100, 116, 232, 464, 928 },
-	{0b10101, 112, 224, 448, 896 },
-	{0b10110, 108, 216, 432, 864 },
-	{0b10111, 104, 208, 416, 832 },
-	{0b11000, 101, 202, 404, 808 },
-	{0b11001,  98, 196, 392, 784 },
-	{0b11010,  95, 190, 380, 760 },
-	{0b11011,  92, 184, 368, 736 },
-	{0b11100,  89, 178, 356, 712 },
-	{0b11101,  87, 174, 348, 696 },
-	{0b11110,  85, 170, 340, 680 },
-	{0b11111,  83, 166, 332, 664 },
-	{0b00000,  81, 162, 324, 648 },
-	{0b00001,  79, 158, 316, 632 },
-	{0b00010,  77, 155, 310, 620 },
-	{0b00011,  76, 152, 304, 608 },
-	{0b00100,  74, 149, 298, 596 },
-	{0b00101,  73, 146, 292, 584 },
-	{0b00110,  71, 143, 286, 572 },
-	{0b00111,  70, 140, 280, 560 },
-	{0b01000,  69, 138, 276, 552 },
-	{0b01001,  68, 136, 272, 544 },
-	{0b01010,  67, 134, 268, 536 },
-	{0b01011,  66, 132, 264, 528 },
-	{0b01100,  65, 131, 262, 524 },
-	{0b01101,  65, 130, 260, 520 },
-	{0b01110,  64, 129, 258, 516 },
-	{0b01111,  64, 128, 256, 512 },
-	{REG_NULL,  0, 0, 0, 0},
-};
-
-static const struct TimeTabel_s dw9718_dlc_time_table[] = {/* us */
-	{0b10000, 21250, 10630, 5310, 2660},
-	{0b10001, 20310, 10160, 5080, 2540},
-	{0b10010, 19530,  9770, 4880, 2440},
-	{0b10011, 18750,  9380, 4690, 2340},
-	{0b10100, 18130,  9060, 4530, 2270},
-	{0b10101, 17500,  8750, 4380, 2190},
-	{0b10110, 16880,  8440, 4220, 2110},
-	{0b10111, 16250,  8130, 4060, 2030},
-	{0b11000, 15780,  7890, 3950, 1970},
-	{0b11001, 15310,  7660, 3830, 1910},
-	{0b11010, 14840,  7420, 3710, 1860},
-	{0b11011, 14380,  7190, 3590, 1800},
-	{0b11100, 13910,  6950, 3480, 1740},
-	{0b11101, 13590,  6800, 3400, 1700},
-	{0b11110, 13280,  6640, 3320, 1660},
-	{0b11111, 12970,  6480, 3240, 1620},
-	{0b00000, 12660,  6330, 3160, 1580},
-	{0b00001, 12340,  6170, 3090, 1540},
-	{0b00010, 12110,  6050, 3030, 1510},
-	{0b00011, 11880,  5940, 2970, 1480},
-	{0b00100, 11640,  5820, 2910, 1460},
-	{0b00101, 11410,  5700, 2850, 1430},
-	{0b00110, 11170,  5590, 2790, 1400},
-	{0b00111, 10940,  5470, 2730, 1370},
-	{0b01000, 10780,  5390, 2700, 1350},
-	{0b01001, 10630,  5310, 2660, 1330},
-	{0b01010, 10470,  5230, 2620, 1310},
-	{0b01011, 10310,  5160, 2580, 1290},
-	{0b01100, 10230,  5120, 2560, 1280},
-	{0b01101, 10160,  5080, 2540, 1270},
-	{0b01110, 10080,  5040, 2520, 1260},
-	{0b01111, 10000,  5000, 2500, 1250},
-	{REG_NULL, 0, 0, 0, 0},
 };
 
 static inline struct dw9718_device *to_dw9718_vcm(struct v4l2_ctrl *ctrl)
@@ -159,222 +74,177 @@ static inline struct dw9718_device *sd_to_dw9718_vcm(struct v4l2_subdev *subdev)
 	return container_of(subdev, struct dw9718_device, sd);
 }
 
-static int dw9718_i2c_rd8(struct i2c_client *client, u8 reg, u8 *val)
+static int dw9718_read_reg(struct i2c_client *client,
+	u8 addr, u32 *val, u8 len)
 {
-	struct i2c_msg msg[2];
-	u8 buf[2] = { reg };
-
-	msg[0].addr = client->addr;
-	msg[0].flags = 0;
-	msg[0].len = 1;
-	msg[0].buf = buf;
-
-	msg[0].addr = client->addr;
-	msg[1].flags = I2C_M_RD;
-	msg[1].len = 1;
-	msg[1].buf = &buf[1];
-	*val = 0;
-
-	if (i2c_transfer(client->adapter, msg, 2) != 2)
-		return -EIO;
-	*val = buf[1];
-
-	return 0;
-}
-
-static int dw9718_i2c_wr8(struct i2c_client *client, u8 reg, u8 val)
-{
-	struct i2c_msg msg;
-	u8 buf[2] = { reg, val};
-
-	msg.addr = client->addr;
-	msg.flags = 0;
-	msg.len = sizeof(buf);
-	msg.buf = buf;
-
-	if (i2c_transfer(client->adapter, &msg, 1) != 1)
-		return -EIO;
-
-	return 0;
-}
-
-static int dw9718_i2c_wr16(struct i2c_client *client, u8 reg, u16 val)
-{
-	struct i2c_msg msg;
-	u8 buf[3] = { reg, (u8)(val >> 8), (u8)(val & 0xff)};
-
-	msg.addr = client->addr;
-	msg.flags = 0;
-	msg.len = sizeof(buf);
-	msg.buf = buf;
-
-	if (i2c_transfer(client->adapter, &msg, 1) != 1)
-		return -EIO;
-
-	return 0;
-}
-
-static unsigned int dw9718_move_time(struct dw9718_device *priv,
-		unsigned int move_pos)
-{
-	struct i2c_client *client = v4l2_get_subdevdata(&priv->sd);
-	unsigned int move_time_ms = 200;
-	unsigned int step_period_lsc = 0;
-	unsigned int step_period_dlc = 0;
-	unsigned int step_period = 0;
-	unsigned int codes_per_step = 1;
-	int table_cnt = 0;
-	int i = 0;
-	int step_case;
-
-	if (priv->dlc_enable) {
-		step_case = priv->mclk & 0x3;
-		table_cnt = sizeof(dw9718_dlc_time_table) /
-					sizeof(struct TimeTabel_s);
-		for (i = 0; i < table_cnt; i++) {
-			if (dw9718_dlc_time_table[i].t_src == priv->t_src)
-				break;
-		}
-	} else {
-		step_case = priv->step_mode & 0x3;
-		table_cnt = sizeof(dw9718_lsc_time_table) /
-					sizeof(struct TimeTabel_s);
-		for (i = 0; i < table_cnt; i++) {
-			if (dw9718_lsc_time_table[i].t_src == priv->t_src)
-				break;
-		}
-	}
-
-	if (i >= table_cnt)
-		i = 0;
-
-	switch (step_case) {
-	case 0:
-		step_period_lsc = dw9718_lsc_time_table[i].step00;
-		step_period_dlc = dw9718_dlc_time_table[i].step00;
-		break;
-	case 1:
-		step_period_lsc = dw9718_lsc_time_table[i].step01;
-		step_period_dlc = dw9718_dlc_time_table[i].step01;
-		break;
-	case 2:
-		step_period_lsc = dw9718_lsc_time_table[i].step10;
-		step_period_dlc = dw9718_dlc_time_table[i].step10;
-		break;
-	case 3:
-		step_period_lsc = dw9718_lsc_time_table[i].step11;
-		step_period_dlc = dw9718_dlc_time_table[i].step11;
-		break;
-	default:
-		dev_err(&client->dev,
-			"%s: step_case is error %d\n", __func__, step_case);
-		break;
-	}
-
-	codes_per_step = (priv->step_mode & 0x0c) >> 2;
-	if (codes_per_step > 1)
-		codes_per_step = 1 << (codes_per_step - 1);
-
-	if (priv->dlc_enable)
-		step_period = step_period_dlc;
-	else
-		step_period = step_period_lsc;
-
-	if (!codes_per_step)
-		move_time_ms = step_period * move_pos / 1000;
-	else
-		move_time_ms = step_period * move_pos / codes_per_step / 1000;
-
-	return move_time_ms;
-}
-
-static int dw9718_get_pos(struct dw9718_device *priv,
-		unsigned int *cur_pos)
-{
-	struct i2c_client *client = v4l2_get_subdevdata(&priv->sd);
-
-	*cur_pos = priv->current_related_pos;
-	dev_dbg(&client->dev, "%s: get position %d\n", __func__, *cur_pos);
-
-	return 0;
-}
-
-static int dw9718_set_pos(struct dw9718_device *priv,
-		unsigned int dest_pos)
-{
-	struct i2c_client *client = v4l2_get_subdevdata(&priv->sd);
-	u16 position;
+	struct i2c_msg msgs[2];
+	u8 *data_be_p;
+	__be32 data_be = 0;
 	int ret;
 
-	if (dest_pos >= VCMDRV_MAX_LOG)
-		position = priv->start_current;
+	if (len > 4 || !len)
+		return -EINVAL;
+
+	data_be_p = (u8 *)&data_be;
+	/* Write register address */
+	msgs[0].addr = client->addr;
+	msgs[0].flags = 0;
+	msgs[0].len = 1;
+	msgs[0].buf = (u8 *)&addr;
+
+	/* Read data from register */
+	msgs[1].addr = client->addr;
+	msgs[1].flags = I2C_M_RD;
+	msgs[1].len = len;
+	msgs[1].buf = &data_be_p[4 - len];
+
+	ret = i2c_transfer(client->adapter, msgs, ARRAY_SIZE(msgs));
+	if (ret != ARRAY_SIZE(msgs))
+		return -EIO;
+
+	*val = be32_to_cpu(data_be);
+
+	return 0;
+}
+
+static int dw9718_write_reg(struct i2c_client *client,
+	u8 addr, u32 val, u8 len)
+{
+	u32 buf_i, val_i;
+	u8 buf[5];
+	u8 *val_p;
+	__be32 val_be;
+
+	if (len > 4)
+		return -EINVAL;
+
+	buf[0] = addr & 0xff;
+
+	val_be = cpu_to_be32(val);
+	val_p = (u8 *)&val_be;
+	buf_i = 1;
+	val_i = 4 - len;
+
+	while (val_i < 4)
+		buf[buf_i++] = val_p[val_i++];
+
+	if (i2c_master_send(client, buf, len + 1) != len + 1)
+		return -EIO;
+
+	return 0;
+}
+
+static int dw9718_get_pos(struct dw9718_device *dev_vcm,
+	unsigned int *cur_pos)
+{
+	struct i2c_client *client = v4l2_get_subdevdata(&dev_vcm->sd);
+	int ret;
+	u32 val;
+	unsigned int abs_step;
+
+	ret = dw9718_read_reg(client, DW9718T_DATAM_REG, &val, 2);
+	if (ret != 0)
+		goto err;
+
+	abs_step = val & 0x3ff;
+	if (abs_step <= dev_vcm->start_current)
+		abs_step = VCMDRV_MAX_LOG;
+	else if ((abs_step > dev_vcm->start_current) &&
+		 (abs_step <= dev_vcm->rated_current))
+		abs_step = (dev_vcm->rated_current - abs_step) / dev_vcm->step;
 	else
-		position = priv->start_current +
-			(priv->step * (VCMDRV_MAX_LOG - dest_pos));
+		abs_step = 0;
+
+	*cur_pos = abs_step;
+	dev_dbg(&client->dev, "%s: get position %d\n", __func__, *cur_pos);
+	return 0;
+
+err:
+	dev_err(&client->dev,
+		"%s: failed with error %d\n", __func__, ret);
+	return ret;
+}
+
+static int dw9718_set_pos(struct dw9718_device *dev_vcm,
+	unsigned int dest_pos)
+{
+	int ret;
+	unsigned int position = 0;
+	struct i2c_client *client = v4l2_get_subdevdata(&dev_vcm->sd);
+
+	if (dest_pos >= VCMDRV_MAX_LOG)
+		position = dev_vcm->start_current;
+	else
+		position = dev_vcm->start_current +
+			   (dev_vcm->step * (VCMDRV_MAX_LOG - dest_pos));
 
 	if (position > DW9718_MAX_REG)
 		position = DW9718_MAX_REG;
 
-	ret = dw9718_i2c_wr16(client, DW9718_DATA_M, position);
-	if (ret < 0) {
-		dev_err(&client->dev, "%s: failed with error %d\n", __func__, ret);
-		return ret;
-	}
+	dev_vcm->current_lens_pos = position;
+	dev_vcm->current_related_pos = dest_pos;
+	ret = dw9718_write_reg(client, DW9718T_DATAM_REG, position & 0x3ff, 2);
+	if (ret != 0)
+		goto err;
 
-	priv->current_lens_pos = position;
-	priv->current_related_pos = dest_pos;
-
-	return 0;
+	return ret;
+err:
+	dev_err(&client->dev,
+		"%s: failed with error %d\n", __func__, ret);
+	return ret;
 }
 
 static int dw9718_get_ctrl(struct v4l2_ctrl *ctrl)
 {
-	struct dw9718_device *priv = to_dw9718_vcm(ctrl);
+	struct dw9718_device *dev_vcm = to_dw9718_vcm(ctrl);
 
 	if (ctrl->id == V4L2_CID_FOCUS_ABSOLUTE)
-		return dw9718_get_pos(priv, &ctrl->val);
+		return dw9718_get_pos(dev_vcm, &ctrl->val);
 
 	return -EINVAL;
 }
 
 static int dw9718_set_ctrl(struct v4l2_ctrl *ctrl)
 {
-	struct dw9718_device *priv = to_dw9718_vcm(ctrl);
-	struct i2c_client *client = v4l2_get_subdevdata(&priv->sd);
+	struct dw9718_device *dev_vcm = to_dw9718_vcm(ctrl);
+	struct i2c_client *client = v4l2_get_subdevdata(&dev_vcm->sd);
 	unsigned int dest_pos = ctrl->val;
 	int move_pos;
-	long int mv_us;
+	long mv_us;
 	int ret = 0;
 
 	if (ctrl->id == V4L2_CID_FOCUS_ABSOLUTE) {
 		if (dest_pos > VCMDRV_MAX_LOG) {
-			dev_err(&client->dev,
-				"%s: invalid dest_pos, %d > %d\n",
+			dev_info(&client->dev,
+				"%s dest_pos is error. %d > %d\n",
 				__func__, dest_pos, VCMDRV_MAX_LOG);
 			return -EINVAL;
 		}
-
 		/* calculate move time */
-		move_pos = priv->current_related_pos - dest_pos;
+		move_pos = dev_vcm->current_related_pos - dest_pos;
 		if (move_pos < 0)
 			move_pos = -move_pos;
 
-		ret = dw9718_set_pos(priv, dest_pos);
+		ret = dw9718_set_pos(dev_vcm, dest_pos);
 
-		priv->move_ms =
-			((priv->vcm_movefull_t * (uint32_t)move_pos) /
-			 VCMDRV_MAX_LOG);
+		if (dev_vcm->control_mode == 1)
+			dev_vcm->move_us = dev_vcm->mv_time_per_pos * move_pos;
+		else
+			dev_vcm->move_us = dev_vcm->mv_time_per_pos;
 		dev_dbg(&client->dev,
-			"dest_pos %d, move_ms %ld\n", dest_pos, priv->move_ms);
+			"dest_pos %d, move_us %ld\n",
+			dest_pos, dev_vcm->move_us);
 
-		priv->start_move_tv = ns_to_timeval(ktime_get_ns());
-		mv_us = priv->start_move_tv.tv_usec + priv->move_ms * 1000;
+		dev_vcm->start_move_tv = ns_to_timeval(ktime_get_ns());
+		mv_us = dev_vcm->start_move_tv.tv_usec + dev_vcm->move_us;
 		if (mv_us >= 1000000) {
-			priv->end_move_tv.tv_sec = priv->start_move_tv.tv_sec + 1;
-			priv->end_move_tv.tv_usec = mv_us - 1000000;
+			dev_vcm->end_move_tv.tv_sec =
+				dev_vcm->start_move_tv.tv_sec + 1;
+			dev_vcm->end_move_tv.tv_usec = mv_us - 1000000;
 		} else {
-			priv->end_move_tv.tv_sec = priv->start_move_tv.tv_sec;
-			priv->end_move_tv.tv_usec = mv_us;
+			dev_vcm->end_move_tv.tv_sec =
+					dev_vcm->start_move_tv.tv_sec;
+			dev_vcm->end_move_tv.tv_usec = mv_us;
 		}
 	}
 
@@ -386,9 +256,42 @@ static const struct v4l2_ctrl_ops dw9718_vcm_ctrl_ops = {
 	.s_ctrl = dw9718_set_ctrl,
 };
 
+static int dw9718t_init(struct dw9718_device *dev)
+{
+	int ret = 0;
+	struct i2c_client *client = v4l2_get_subdevdata(&dev->sd);
+	u32 control_mode = 0;
+	u32 step_mode = 0;
+
+	/*There is need a sleep after power on for write i2c*/
+	usleep_range(10000, 11000);
+	dev_info(&client->dev, "enter vcm driver init\n");
+
+	ret = dw9718_write_reg(client, DW9718T_PD_REG, 0, 1);
+	if (ret < 0)
+		goto err;
+	/*There is need a sleep after out of standby status*/
+	msleep(100);
+	step_mode = (dev->sacdiv_mode << 6) | (dev->step_mode & 0x3f);
+	ret = dw9718_write_reg(client, DW9718T_SACT_REG, step_mode, 1);
+	if (ret < 0)
+		goto err;
+	control_mode = 0x31;
+	control_mode |= (dev->control_mode & 0x07) << 1;
+	ret = dw9718_write_reg(client, DW9718T_CONTROL, control_mode, 1);
+	if (ret < 0)
+		goto err;
+
+	return 0;
+err:
+	dev_err(&client->dev, "failed with error %d\n", ret);
+	return ret;
+}
+
 static int dw9718_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 {
 	int rval;
+	struct dw9718_device *dev_vcm = sd_to_dw9718_vcm(sd);
 
 	rval = pm_runtime_get_sync(sd->dev);
 	if (rval < 0) {
@@ -396,6 +299,11 @@ static int dw9718_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 		return rval;
 	}
 
+	rval = dw9718t_init(dev_vcm);
+	if (rval < 0) {
+		pm_runtime_put_noidle(sd->dev);
+		return rval;
+	}
 	return 0;
 }
 
@@ -427,8 +335,7 @@ static long dw9718_ioctl(struct v4l2_subdev *sd, unsigned int cmd, void *arg)
 		vcm_tim->vcm_end_t.tv_sec = dw9718_dev->end_move_tv.tv_sec;
 		vcm_tim->vcm_end_t.tv_usec = dw9718_dev->end_move_tv.tv_usec;
 
-		dev_dbg(&client->dev,
-			"dw9718_get_move_ts 0x%lx, 0x%lx, 0x%lx, 0x%lx\n",
+		dev_dbg(&client->dev, "dw9718_get_move_res 0x%lx, 0x%lx, 0x%lx, 0x%lx\n",
 			vcm_tim->vcm_start_t.tv_sec,
 			vcm_tim->vcm_start_t.tv_usec,
 			vcm_tim->vcm_end_t.tv_sec,
@@ -492,13 +399,14 @@ static const struct v4l2_subdev_ops dw9718_ops = {
 static void dw9718_subdev_cleanup(struct dw9718_device *dw9718_dev)
 {
 	v4l2_device_unregister_subdev(&dw9718_dev->sd);
+	v4l2_device_unregister(&dw9718_dev->vdev);
 	v4l2_ctrl_handler_free(&dw9718_dev->ctrls_vcm);
 	media_entity_cleanup(&dw9718_dev->sd.entity);
 }
 
-static int dw9718_init_controls(struct dw9718_device *priv)
+static int dw9718_init_controls(struct dw9718_device *dev_vcm)
 {
-	struct v4l2_ctrl_handler *hdl = &priv->ctrls_vcm;
+	struct v4l2_ctrl_handler *hdl = &dev_vcm->ctrls_vcm;
 	const struct v4l2_ctrl_ops *ops = &dw9718_vcm_ctrl_ops;
 
 	v4l2_ctrl_handler_init(hdl, 1);
@@ -507,9 +415,9 @@ static int dw9718_init_controls(struct dw9718_device *priv)
 			  0, VCMDRV_MAX_LOG, 1, VCMDRV_MAX_LOG);
 
 	if (hdl->error)
-		dev_err(priv->sd.dev, "%s fail error: 0x%x\n",
+		dev_err(dev_vcm->sd.dev, "%s fail error: 0x%x\n",
 			__func__, hdl->error);
-	priv->sd.ctrl_handler = hdl;
+	dev_vcm->sd.ctrl_handler = hdl;
 	return hdl->error;
 }
 
@@ -518,37 +426,56 @@ static int dw9718_probe(struct i2c_client *client,
 {
 	struct device_node *np = of_node_get(client->dev.of_node);
 	struct dw9718_device *dw9718_dev;
+	int ret;
 	int current_distance;
 	unsigned int start_current;
 	unsigned int rated_current;
 	unsigned int step_mode;
+	unsigned int control_mode;
+	unsigned int sacdiv_mode;
 	struct v4l2_subdev *sd;
 	char facing[2];
-	u8 value;
-	int ret;
 
 	dev_info(&client->dev, "probing...\n");
-
 	if (of_property_read_u32(np,
 		OF_CAMERA_VCMDRV_START_CURRENT,
 		(unsigned int *)&start_current)) {
 		start_current = DW9718_DEFAULT_START_CURRENT;
-		dev_info(&client->dev, "could not get module %s\n",
+		dev_info(&client->dev,
+			"could not get module %s from dts!\n",
 			OF_CAMERA_VCMDRV_START_CURRENT);
 	}
 	if (of_property_read_u32(np,
 		OF_CAMERA_VCMDRV_RATED_CURRENT,
 		(unsigned int *)&rated_current)) {
 		rated_current = DW9718_DEFAULT_RATED_CURRENT;
-		dev_info(&client->dev, "could not get module %s\n",
+		dev_info(&client->dev,
+			"could not get module %s from dts!\n",
 			OF_CAMERA_VCMDRV_RATED_CURRENT);
 	}
 	if (of_property_read_u32(np,
 		OF_CAMERA_VCMDRV_STEP_MODE,
 		(unsigned int *)&step_mode)) {
 		step_mode = DW9718_DEFAULT_STEP_MODE;
-		dev_info(&client->dev, "could not get module %s\n",
+		dev_info(&client->dev,
+			"could not get module %s from dts!\n",
 			OF_CAMERA_VCMDRV_STEP_MODE);
+	}
+	if (of_property_read_u32(np,
+		OF_CAMERA_VCMDRV_CONTROL_MODE,
+		(unsigned int *)&control_mode)) {
+		control_mode = VCMDRV_DEFAULT_CONTROL_MODE;
+		dev_info(&client->dev,
+			"could not get module %s from dts!\n",
+			OF_CAMERA_VCMDRV_CONTROL_MODE);
+	}
+	if (of_property_read_u32(np,
+		OF_CAMERA_VCMDRV_SACDIV_MODE,
+		(unsigned int *)&sacdiv_mode)) {
+		sacdiv_mode = VCMDRV_DEFAULT_SACDIV_MODE;
+		dev_info(&client->dev,
+			"could not get module %s from dts!\n",
+			OF_CAMERA_VCMDRV_SACDIV_MODE);
 	}
 
 	dw9718_dev = devm_kzalloc(&client->dev, sizeof(*dw9718_dev),
@@ -564,35 +491,6 @@ static int dw9718_probe(struct i2c_client *client,
 		dev_err(&client->dev,
 			"could not get module information!\n");
 		return -EINVAL;
-	}
-
-	/* Detect device */
-	ret = dw9718_i2c_rd8(client, DW9718_SACT, &value);
-	if (ret < 0) {
-		dev_err(&client->dev, "read DW9718_SACT failed %d\n", ret);
-		return -ENXIO;
-	}
-
-	if (value != DW9718_SACT_DEFAULT_VAL &&
-		value != (DW9718_SACT_MULT_TWO | DW9718_SACT_PERIOD_8_8MS))
-		dev_warn(&client->dev, "incorrect ID (%02x)\n", value);
-
-	/* Initialize according to recommended settings */
-	ret = dw9718_i2c_wr8(client, DW9718_CONTROL,
-			     DW9718_CONTROL_SW_LINEAR |
-			     DW9718_CONTROL_S_SAC4 |
-			     DW9718_CONTROL_OCP_DISABLE |
-			     DW9718_CONTROL_UVLO_DISABLE);
-	if (ret < 0) {
-		dev_err(&client->dev, "write DW9718_CONTROL failed %d\n", ret);
-		return -ENXIO;
-	}
-	ret = dw9718_i2c_wr8(client, DW9718_SACT,
-			     DW9718_SACT_MULT_TWO |
-			     DW9718_SACT_PERIOD_8_8MS);
-	if (ret < 0) {
-		dev_err(&client->dev, "write DW9718_SACT failed %d\n", ret);
-		return -ENXIO;
 	}
 
 	v4l2_i2c_subdev_init(&dw9718_dev->sd, client, &dw9718_ops);
@@ -634,20 +532,54 @@ static int dw9718_probe(struct i2c_client *client,
 						VCMDRV_MAX_LOG *
 						dw9718_dev->step;
 	dw9718_dev->step_mode     = step_mode;
-	dw9718_dev->move_ms       = 0;
+	dw9718_dev->move_us       = 0;
 	dw9718_dev->current_related_pos = VCMDRV_MAX_LOG;
 	dw9718_dev->start_move_tv = ns_to_timeval(ktime_get_ns());
 	dw9718_dev->end_move_tv = ns_to_timeval(ktime_get_ns());
 
-	dw9718_dev->dlc_enable = 0;
-	dw9718_dev->mclk = 0;
-	dw9718_dev->t_src = 0x0;
+	switch (control_mode) {
+	case 0:
+		dev_err(&client->dev, "control_mode is derect mode, not support\n");
+		return -EINVAL;
+	case 1:
+		dw9718_dev->mv_time_per_pos = (126 + step_mode * 2) * dw9718_dev->step;
+		dev_dbg(&client->dev, "control_mode is LSC mode\n");
+		break;
+	case 2:
+	case 3:
+	case 4:
+	case 5:
+	case 6:
+	case 7:
+		dw9718_dev->mv_time_per_pos = (6300 + step_mode * 100);
+		dev_dbg(&client->dev, "control_mode is LSC mode\n");
+		break;
+	default:
+		dev_err(&client->dev, "set unknown control_mode\n");
+		return -EINVAL;
+	}
 
-	/* Initialize default position */
-	dw9718_set_pos(dw9718_dev, VCMDRV_MAX_LOG);
+	switch (sacdiv_mode) {
+	case 0:
+		dw9718_dev->mv_time_per_pos *= 2;
+		dev_dbg(&client->dev, "sacdiv_mode is %d\n", sacdiv_mode);
+		break;
+	case 1:
+		dev_dbg(&client->dev, "sacdiv_mode is %d\n", sacdiv_mode);
+		break;
+	case 2:
+		dw9718_dev->mv_time_per_pos /= 2;
+		dev_dbg(&client->dev, "sacdiv_mode is %d\n", sacdiv_mode);
+		break;
+	case 3:
+		dw9718_dev->mv_time_per_pos /= 4;
+		dev_dbg(&client->dev, "sacdiv_mode is %d\n", sacdiv_mode);
+		break;
+	default:
+		dev_err(&client->dev, "set unknown control_mode\n");
+		return -EINVAL;
+	}
 
-	dw9718_dev->vcm_movefull_t =
-		dw9718_move_time(dw9718_dev, DW9718_MAX_REG);
 	pm_runtime_set_active(&client->dev);
 	pm_runtime_enable(&client->dev);
 	pm_runtime_idle(&client->dev);
@@ -713,6 +645,5 @@ static struct i2c_driver dw9718_i2c_driver = {
 
 module_i2c_driver(dw9718_i2c_driver);
 
-MODULE_AUTHOR("support@friendlyarm.com");
 MODULE_DESCRIPTION("DW9718 VCM driver");
 MODULE_LICENSE("GPL v2");

@@ -1,6 +1,6 @@
 /*
  *
- * (C) COPYRIGHT 2010-2018 ARM Limited. All rights reserved.
+ * (C) COPYRIGHT 2010-2018, 2020 ARM Limited. All rights reserved.
  *
  * This program is free software and is provided to you under the terms of the
  * GNU General Public License version 2 as published by the Free Software
@@ -87,6 +87,8 @@ struct dma_fence *kbase_fence_out_new(struct kbase_jd_atom *katom);
 	} while (0)
 #endif
 
+
+#if !MALI_USE_CSF
 /**
  * kbase_fence_out_remove() - Removes the output fence from atom
  * @katom: Atom to remove output fence for
@@ -267,6 +269,8 @@ bool kbase_fence_free_callbacks(struct kbase_jd_atom *katom);
  * Return: The fence, or NULL if there is no output fence for atom
  */
 #define kbase_fence_out_get(katom) dma_fence_get((katom)->dma_fence.fence)
+
+#endif /* !MALI_USE_CSF */
 
 /**
  * kbase_fence_put() - Releases a reference to a fence

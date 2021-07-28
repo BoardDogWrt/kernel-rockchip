@@ -140,6 +140,8 @@ module_param_named(dbg_level, dbg_enable, int, 0644);
 /* sleep */
 #define SLP_CURR_MAX			40
 #define SLP_CURR_MIN			6
+#define LOW_PWR_SLP_CURR_MAX		20
+#define LOW_PWR_SLP_CURR_MIN		1
 #define DISCHRG_TIME_STEP1		MINUTE(10)
 #define DISCHRG_TIME_STEP2		MINUTE(60)
 #define SLP_DSOC_VOL_THRESD		3600
@@ -476,6 +478,7 @@ struct battery_platform_data {
 	u32 bat_res_down;
 	u32 design_max_voltage;
 	bool extcon;
+	u32 low_pwr_sleep;
 };
 
 struct rk817_battery_device {
@@ -493,6 +496,7 @@ struct rk817_battery_device {
 	struct workqueue_struct		*bat_monitor_wq;
 	struct delayed_work		bat_delay_work;
 	struct delayed_work		calib_delay_work;
+	struct work_struct		resume_work;
 	struct wake_lock		wake_lock;
 	struct timer_list		caltimer;
 
@@ -620,7 +624,10 @@ struct rk817_battery_device {
 	int				plugout_irq;
 	int				chip_id;
 	int				is_register_chg_psy;
+	bool				change; /* Battery status change, report information */
 };
+
+static void rk817_bat_resume_work(struct work_struct *work);
 
 static u64 get_boot_sec(void)
 {
@@ -703,6 +710,14 @@ static int rk817_bat_field_write(struct rk817_battery_device *battery,
 				 unsigned int val)
 {
 	return regmap_field_write(battery->rmap_fields[field_id], val);
+}
+
+static bool rk817_is_bat_exist(struct rk817_battery_device *battery)
+{
+	if (battery->chip_id == RK817_ID)
+		return rk817_bat_field_read(battery, BAT_EXS) ? true : false;
+
+	return true;
 }
 
 /*cal_offset: current offset value*/
@@ -1859,6 +1874,8 @@ static int rk817_bat_parse_dt(struct rk817_battery_device *battery)
 	ret = of_property_read_u32(np, "virtual_power", &pdata->bat_mode);
 	if (ret < 0)
 		dev_err(dev, "virtual_power missing!\n");
+	if (!rk817_is_bat_exist(battery))
+		battery->pdata->bat_mode = MODE_VIRTUAL;
 
 	ret = of_property_read_u32(np, "bat_res", &pdata->bat_res);
 	if (ret < 0)
@@ -1882,6 +1899,10 @@ static int rk817_bat_parse_dt(struct rk817_battery_device *battery)
 	ret = of_property_read_u32(np, "power_off_thresd", &pdata->pwroff_vol);
 	if (ret < 0)
 		dev_err(dev, "power_off_thresd missing!\n");
+
+	ret = of_property_read_u32(np, "low_power_sleep", &pdata->low_pwr_sleep);
+	if (ret < 0)
+		dev_info(dev, "low_power_sleep missing!\n");
 
 	if (battery->chip_id == RK809_ID) {
 		ret = of_property_read_u32(np, "bat_res_up",
@@ -1942,9 +1963,12 @@ static enum power_supply_property rk817_bat_props[] = {
 	POWER_SUPPLY_PROP_VOLTAGE_NOW,
 	POWER_SUPPLY_PROP_HEALTH,
 	POWER_SUPPLY_PROP_CAPACITY,
+	POWER_SUPPLY_PROP_CAPACITY_LEVEL,
 	POWER_SUPPLY_PROP_TEMP,
 	POWER_SUPPLY_PROP_CHARGE_COUNTER,
 	POWER_SUPPLY_PROP_CHARGE_FULL,
+	POWER_SUPPLY_PROP_CHARGE_FULL_DESIGN,
+	POWER_SUPPLY_PROP_TIME_TO_FULL_NOW,
 };
 
 static int rk817_bat_get_usb_psy(struct device *dev, void *data)
@@ -2014,6 +2038,45 @@ static int rk817_bat_get_charge_state(struct rk817_battery_device *battery)
 	return (battery->usb_in || battery->ac_in);
 }
 
+static int rk817_get_capacity_leve(struct rk817_battery_device *battery)
+{
+	int dsoc;
+
+	if (battery->pdata->bat_mode == MODE_VIRTUAL)
+		return POWER_SUPPLY_CAPACITY_LEVEL_NORMAL;
+
+	dsoc = (battery->dsoc + 500) / 1000;
+	if (dsoc < 1)
+		return POWER_SUPPLY_CAPACITY_LEVEL_CRITICAL;
+	else if (dsoc <= 20)
+		return POWER_SUPPLY_CAPACITY_LEVEL_LOW;
+	else if (dsoc <= 70)
+		return POWER_SUPPLY_CAPACITY_LEVEL_NORMAL;
+	else if (dsoc <= 90)
+		return POWER_SUPPLY_CAPACITY_LEVEL_HIGH;
+	else
+		return POWER_SUPPLY_CAPACITY_LEVEL_FULL;
+}
+
+static int rk817_battery_time_to_full(struct rk817_battery_device *battery)
+{
+	int time_sec;
+	int cap_temp;
+
+	if (battery->pdata->bat_mode == MODE_VIRTUAL) {
+		time_sec = 3600;
+	} else if (battery->voltage_avg > 0) {
+		cap_temp = battery->design_cap - (battery->remain_cap / 1000);
+		if (cap_temp < 0)
+			cap_temp = 0;
+		time_sec = (3600 * cap_temp) / battery->voltage_avg;
+	} else {
+		time_sec = 3600 * 24; /* One day */
+	}
+
+	return time_sec;
+}
+
 static int rk817_battery_get_property(struct power_supply *psy,
 				      enum power_supply_property psp,
 				      union power_supply_propval *val)
@@ -2035,6 +2098,9 @@ static int rk817_battery_get_property(struct power_supply *psy,
 		val->intval = (battery->dsoc  + 500) / 1000;
 		if (battery->pdata->bat_mode == MODE_VIRTUAL)
 			val->intval = VIRTUAL_SOC;
+		break;
+	case POWER_SUPPLY_PROP_CAPACITY_LEVEL:
+		val->intval = rk817_get_capacity_leve(battery);
 		break;
 	case POWER_SUPPLY_PROP_HEALTH:
 		val->intval = POWER_SUPPLY_HEALTH_GOOD;
@@ -2064,7 +2130,11 @@ static int rk817_battery_get_property(struct power_supply *psy,
 		val->intval = battery->charge_count;
 		break;
 	case POWER_SUPPLY_PROP_CHARGE_FULL:
+	case POWER_SUPPLY_PROP_CHARGE_FULL_DESIGN:
 		val->intval = battery->pdata->design_capacity * 1000;/* uAh */
+		break;
+	case POWER_SUPPLY_PROP_TIME_TO_FULL_NOW:
+		val->intval = rk817_battery_time_to_full(battery);
 		break;
 	case POWER_SUPPLY_PROP_VOLTAGE_MAX:
 		val->intval = 4500 * 1000;
@@ -2169,9 +2239,10 @@ static void rk817_bat_power_supply_changed(struct rk817_battery_device *battery)
 	else if (battery->dsoc < 0)
 		battery->dsoc = 0;
 
-	if (battery->dsoc == old_soc)
+	if (battery->dsoc == old_soc && !battery->change)
 		return;
 
+	battery->change = false;
 	old_soc = battery->dsoc;
 	battery->last_dsoc = battery->dsoc;
 	power_supply_changed(battery->bat);
@@ -2222,6 +2293,7 @@ rk817_bat_update_charging_status(struct rk817_battery_device *battery)
 	if (is_charging == battery->is_charging)
 		return;
 
+	battery->change = true;
 	battery->is_charging = is_charging;
 	if (is_charging)
 		battery->charge_count++;
@@ -2372,7 +2444,7 @@ static void rk817_bat_smooth_algorithm(struct rk817_battery_device *battery)
 	}
 
 	/* discharge: sm_linek < 0, if delate_cap <0, ydsoc > 0 */
-	ydsoc = battery->sm_linek * abs(delta_cap / DIV(battery->fcc)) / 10;
+	ydsoc = battery->sm_linek * abs(delta_cap / 10) / DIV(battery->fcc);
 
 	DBG("smooth: ydsoc = %d, fcc = %d\n", ydsoc, battery->fcc);
 	if (ydsoc == 0) {
@@ -2677,6 +2749,14 @@ static void rk817_bat_zero_algorithm(struct rk817_battery_device *battery)
 		DBG("Zero: dsoc: %d\n", battery->dsoc);
 		rk817_bat_calc_zero_linek(battery);
 	}
+
+	if ((battery->rsoc / 1000 < 1) &&
+	    (battery->zero_batocv_to_cap > battery->fcc / 100)) {
+		DBG("ZERO2:---------check step1 -----------\n");
+		rk817_bat_init_coulomb_cap(battery,
+					   battery->zero_batocv_to_cap);
+		rk817_bat_calc_zero_linek(battery);
+	}
 }
 
 static void rk817_bat_finish_algorithm(struct rk817_battery_device *battery)
@@ -2977,6 +3057,7 @@ static int rk817_battery_probe(struct platform_device *pdev)
 	INIT_DELAYED_WORK(&battery->bat_delay_work, rk817_battery_work);
 	queue_delayed_work(battery->bat_monitor_wq, &battery->bat_delay_work,
 			   msecs_to_jiffies(TIMER_MS_COUNTS * 5));
+	INIT_WORK(&battery->resume_work, rk817_bat_resume_work);
 
 	ret = rk817_bat_init_power_supply(battery);
 	if (ret) {
@@ -3173,6 +3254,7 @@ static int rk817_bat_sleep_dischrg(struct rk817_battery_device *battery)
 	int tgt_dsoc, gap_soc, sleep_soc = 0;
 	int pwroff_vol = battery->pdata->pwroff_vol;
 	unsigned long sleep_sec = battery->sleep_dischrg_sec;
+	int sleep_cur;
 
 	DBG("<%s>. enter: dsoc=%d, rsoc=%d, rv=%d, v=%d, sleep_min=%lu\n",
 	    __func__, battery->dsoc, battery->rsoc, battery->voltage_relax,
@@ -3187,7 +3269,11 @@ static int rk817_bat_sleep_dischrg(struct rk817_battery_device *battery)
 
 	/* handle dsoc */
 	if (battery->dsoc <= battery->rsoc) {
-		battery->sleep_sum_cap = (SLP_CURR_MIN * sleep_sec / 3600);
+		if (battery->pdata->low_pwr_sleep)
+			sleep_cur = LOW_PWR_SLP_CURR_MIN;
+		else
+			sleep_cur = SLP_CURR_MIN;
+		battery->sleep_sum_cap = (sleep_cur * sleep_sec / 3600);
 		sleep_soc = battery->sleep_sum_cap * 100 / DIV(battery->fcc);
 		tgt_dsoc = battery->dsoc - sleep_soc * 1000;
 		if (sleep_soc > 0) {
@@ -3210,13 +3296,17 @@ static int rk817_bat_sleep_dischrg(struct rk817_battery_device *battery)
 		    __func__, battery->sleep_sum_cap, sleep_soc, tgt_dsoc);
 	} else {
 		/* di->dsoc > di->rsoc */
-		battery->sleep_sum_cap = (SLP_CURR_MAX * sleep_sec / 3600);
+		if (battery->pdata->low_pwr_sleep)
+			sleep_cur = LOW_PWR_SLP_CURR_MAX;
+		else
+			sleep_cur = SLP_CURR_MAX;
+		battery->sleep_sum_cap = (sleep_cur * sleep_sec / 3600);
 		sleep_soc = battery->sleep_sum_cap / DIV(battery->fcc / 100);
 		gap_soc = battery->dsoc - battery->rsoc;
 
 		DBG("calib1: rsoc=%d, dsoc=%d, intval=%d\n",
 		    battery->rsoc, battery->dsoc, sleep_soc);
-		if (gap_soc > sleep_soc) {
+		if (gap_soc / 1000 > sleep_soc) {
 			if ((gap_soc - 5000) > (sleep_soc * 2 * 1000))
 				battery->dsoc -= (sleep_soc * 2 * 1000);
 			else
@@ -3252,10 +3342,9 @@ static int rk817_bat_sleep_dischrg(struct rk817_battery_device *battery)
 	return sleep_soc;
 }
 
-static int rk817_bat_pm_resume(struct device *dev)
+static void rk817_bat_resume_work(struct work_struct *work)
 {
-	struct platform_device *pdev = to_platform_device(dev);
-	struct rk817_battery_device *battery = dev_get_drvdata(&pdev->dev);
+	struct rk817_battery_device *battery = container_of(work, struct rk817_battery_device, resume_work);
 	int interval_sec = 0, time_step = 0, pwroff_vol;
 
 	battery->s2r = true;
@@ -3302,6 +3391,13 @@ static int rk817_bat_pm_resume(struct device *dev)
 
 	queue_delayed_work(battery->bat_monitor_wq, &battery->bat_delay_work,
 			   msecs_to_jiffies(1000));
+}
+
+static int rk817_bat_pm_resume(struct device *dev)
+{
+	struct rk817_battery_device *battery = dev_get_drvdata(dev);
+
+	queue_work(battery->bat_monitor_wq, &battery->resume_work);
 
 	return 0;
 }
@@ -3333,7 +3429,5 @@ static void __exit rk817_battery_exit(void)
 }
 module_exit(rk817_battery_exit);
 
+MODULE_DESCRIPTION("RK817 Battery driver");
 MODULE_LICENSE("GPL");
-MODULE_AUTHOR("shengfeixu <xsf@rock-chips.com>");
-MODULE_DESCRIPTION("rk817 battery Charger Driver");
-

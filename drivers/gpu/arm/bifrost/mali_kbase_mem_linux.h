@@ -1,6 +1,6 @@
 /*
  *
- * (C) COPYRIGHT 2010, 2012-2019 ARM Limited. All rights reserved.
+ * (C) COPYRIGHT 2010, 2012-2020 ARM Limited. All rights reserved.
  *
  * This program is free software and is provided to you under the terms of the
  * GNU General Public License version 2 as published by the Free Software
@@ -129,6 +129,18 @@ int kbase_mem_flags_change(struct kbase_context *kctx, u64 gpu_addr, unsigned in
 int kbase_mem_commit(struct kbase_context *kctx, u64 gpu_addr, u64 new_pages);
 
 /**
+ * kbase_mem_shrink - Shrink the physical backing size of a region
+ *
+ * @kctx: The kernel context
+ * @reg:  The GPU region
+ * @new_pages: Number of physical pages to back the region with
+ *
+ * Return: 0 on success or error code
+ */
+int kbase_mem_shrink(struct kbase_context *kctx,
+		struct kbase_va_region *reg, u64 new_pages);
+
+/**
  * kbase_context_mmap - Memory map method, gets invoked when mmap system call is
  *                      issued on device file /dev/malixx.
  * @kctx: The kernel context
@@ -182,8 +194,8 @@ int kbase_mem_grow_gpu_mapping(struct kbase_context *kctx,
  * Take the provided region and make all the physical pages within it
  * reclaimable by the kernel, updating the per-process VM stats as well.
  * Remove any CPU mappings (as these can't be removed in the shrinker callback
- * as mmap_sem might already be taken) but leave the GPU mapping intact as
- * and until the shrinker reclaims the allocation.
+ * as mmap_sem/mmap_lock might already be taken) but leave the GPU mapping
+ * intact as and until the shrinker reclaims the allocation.
  *
  * Note: Must be called with the region lock of the containing context.
  */
@@ -334,23 +346,6 @@ void kbase_mem_shrink_cpu_mapping(struct kbase_context *kctx,
 		u64 new_pages, u64 old_pages);
 
 /**
- * kbase_mem_shrink_gpu_mapping - Shrink the GPU mapping of an allocation
- * @kctx:      Context the region belongs to
- * @reg:       The GPU region or NULL if there isn't one
- * @new_pages: The number of pages after the shrink
- * @old_pages: The number of pages before the shrink
- *
- * Return: 0 on success, negative -errno on error
- *
- * Unmap the shrunk pages from the GPU mapping. Note that the size of the region
- * itself is unmodified as we still need to reserve the VA, only the page tables
- * will be modified by this function.
- */
-int kbase_mem_shrink_gpu_mapping(struct kbase_context *kctx,
-		struct kbase_va_region *reg,
-		u64 new_pages, u64 old_pages);
-
-/**
  * kbase_phy_alloc_mapping_term - Terminate the kernel side mapping of a
  *                                physical allocation
  * @kctx:  The kernel base context associated with the mapping
@@ -465,5 +460,19 @@ static inline vm_fault_t vmf_insert_pfn_prot(struct vm_area_struct *vma,
 	return VM_FAULT_NOPAGE;
 }
 #endif
+
+/**
+ * kbase_mem_get_process_mmap_lock - Return the mmap lock for the current process
+ *
+ * Return: the mmap lock for the current process
+ */
+static inline struct rw_semaphore *kbase_mem_get_process_mmap_lock(void)
+{
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 8, 0)
+	return &current->mm->mmap_sem;
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(5, 8, 0) */
+	return &current->mm->mmap_lock;
+#endif /* LINUX_VERSION_CODE < KERNEL_VERSION(5, 8, 0) */
+}
 
 #endif				/* _KBASE_MEM_LINUX_H_ */

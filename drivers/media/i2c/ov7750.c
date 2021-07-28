@@ -7,6 +7,8 @@
  * V0.0X01.0X01 add poweron function.
  * V0.0X01.0X02 fix mclk issue when probe multiple camera.
  * V0.0X01.0X03 add enum_frame_interval function.
+ * V0.0X01.0X04 add quick stream on/off
+ * V0.0X01.0X05 add function g_mbus_config
  */
 
 #include <linux/clk.h>
@@ -27,7 +29,7 @@
 #include <media/v4l2-subdev.h>
 #include <linux/pinctrl/consumer.h>
 
-#define DRIVER_VERSION			KERNEL_VERSION(0, 0x01, 0x03)
+#define DRIVER_VERSION			KERNEL_VERSION(0, 0x01, 0x05)
 
 #ifndef V4L2_CID_DIGITAL_GAIN
 #define V4L2_CID_DIGITAL_GAIN		V4L2_CID_GAIN
@@ -71,7 +73,6 @@
 #define OV7750_REG_VALUE_16BIT		2
 #define OV7750_REG_VALUE_24BIT		3
 
-#define OV7750_LANES			2
 #define OV7750_BITS_PER_SAMPLE		10
 #define OV7750_REG_MANUAL_CTL		0x3503
 #define OV7750_CHIP_REVISION_REG	0x3029
@@ -82,6 +83,8 @@
 #define OF_CAMERA_PINCTRL_SLEEP	"rockchip,camera_sleep"
 
 #define OV7750_NAME			"ov7750"
+
+#define OV7750_LANES			1
 
 static const struct regval *ov7750_global_regs;
 
@@ -630,10 +633,26 @@ static long ov7750_ioctl(struct v4l2_subdev *sd, unsigned int cmd, void *arg)
 {
 	struct ov7750 *ov7750 = to_ov7750(sd);
 	long ret = 0;
+	u32 stream = 0;
 
 	switch (cmd) {
 	case RKMODULE_GET_MODULE_INFO:
 		ov7750_get_module_inf(ov7750, (struct rkmodule_inf *)arg);
+		break;
+	case RKMODULE_SET_QUICK_STREAM:
+
+		stream = *((u32 *)arg);
+
+		if (stream)
+			ret = ov7750_write_reg(ov7750->client,
+				 OV7750_REG_CTRL_MODE,
+				 OV7750_REG_VALUE_08BIT,
+				 OV7750_MODE_STREAMING);
+		else
+			ret = ov7750_write_reg(ov7750->client,
+				 OV7750_REG_CTRL_MODE,
+				 OV7750_REG_VALUE_08BIT,
+				 OV7750_MODE_SW_STANDBY);
 		break;
 	default:
 		ret = -ENOTTY;
@@ -651,6 +670,7 @@ static long ov7750_compat_ioctl32(struct v4l2_subdev *sd,
 	struct rkmodule_inf *inf;
 	struct rkmodule_awb_cfg *cfg;
 	long ret;
+	u32 stream = 0;
 
 	switch (cmd) {
 	case RKMODULE_GET_MODULE_INFO:
@@ -676,6 +696,11 @@ static long ov7750_compat_ioctl32(struct v4l2_subdev *sd,
 		if (!ret)
 			ret = ov7750_ioctl(sd, cmd, cfg);
 		kfree(cfg);
+		break;
+	case RKMODULE_SET_QUICK_STREAM:
+		ret = copy_from_user(&stream, up, sizeof(u32));
+		if (!ret)
+			ret = ov7750_ioctl(sd, cmd, &stream);
 		break;
 	default:
 		ret = -ENOIOCTLCMD;
@@ -925,6 +950,20 @@ static int ov7750_enum_frame_interval(struct v4l2_subdev *sd,
 	return 0;
 }
 
+static int ov7750_g_mbus_config(struct v4l2_subdev *sd,
+				struct v4l2_mbus_config *config)
+{
+	u32 val = 0;
+
+	val = 1 << (OV7750_LANES - 1) |
+	      V4L2_MBUS_CSI2_CHANNEL_0 |
+	      V4L2_MBUS_CSI2_CONTINUOUS_CLOCK;
+	config->type = V4L2_MBUS_CSI2;
+	config->flags = val;
+
+	return 0;
+}
+
 static const struct dev_pm_ops ov7750_pm_ops = {
 	SET_RUNTIME_PM_OPS(ov7750_runtime_suspend,
 			   ov7750_runtime_resume, NULL)
@@ -946,6 +985,7 @@ static const struct v4l2_subdev_core_ops ov7750_core_ops = {
 
 static const struct v4l2_subdev_video_ops ov7750_video_ops = {
 	.s_stream = ov7750_s_stream,
+	.g_mbus_config = ov7750_g_mbus_config,
 };
 
 static const struct v4l2_subdev_pad_ops ov7750_pad_ops = {
@@ -983,7 +1023,7 @@ static int ov7750_set_ctrl(struct v4l2_ctrl *ctrl)
 		break;
 	}
 
-	if (pm_runtime_get(&client->dev) <= 0)
+	if (!pm_runtime_get_if_in_use(&client->dev))
 		return 0;
 
 	switch (ctrl->id) {

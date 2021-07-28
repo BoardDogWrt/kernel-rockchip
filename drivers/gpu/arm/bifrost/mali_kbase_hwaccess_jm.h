@@ -1,6 +1,6 @@
 /*
  *
- * (C) COPYRIGHT 2014-2019 ARM Limited. All rights reserved.
+ * (C) COPYRIGHT 2014-2020 ARM Limited. All rights reserved.
  *
  * This program is free software and is provided to you under the terms of the
  * GNU General Public License version 2 as published by the Free Software
@@ -154,6 +154,7 @@ void kbase_backend_cache_clean(struct kbase_device *kbdev,
 void kbase_backend_complete_wq(struct kbase_device *kbdev,
 				struct kbase_jd_atom *katom);
 
+#if !MALI_USE_CSF
 /**
  * kbase_backend_complete_wq_post_sched - Perform backend-specific actions
  *                                        required on completing an atom, after
@@ -166,6 +167,7 @@ void kbase_backend_complete_wq(struct kbase_device *kbdev,
  */
 void kbase_backend_complete_wq_post_sched(struct kbase_device *kbdev,
 		base_jd_core_req core_req);
+#endif /* !MALI_USE_CSF */
 
 /**
  * kbase_backend_reset() - The GPU is being reset. Cancel all jobs on the GPU
@@ -298,10 +300,5 @@ void kbase_job_slot_hardstop(struct kbase_context *kctx, int js,
  * Return: true if there are any atoms on the GPU, false otherwise
  */
 bool kbase_gpu_atoms_submitted_any(struct kbase_device *kbdev);
-
-/* Object containing callbacks for enabling/disabling protected mode, used
- * on GPU which supports protected mode switching natively.
- */
-extern struct protected_mode_ops kbase_native_protected_ops;
 
 #endif /* _KBASE_HWACCESS_JM_H_ */

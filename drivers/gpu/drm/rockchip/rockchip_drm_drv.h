@@ -28,7 +28,8 @@
 
 #define ROCKCHIP_MAX_FB_BUFFER	3
 #define ROCKCHIP_MAX_CONNECTOR	2
-#define ROCKCHIP_MAX_CRTC	2
+#define ROCKCHIP_MAX_CRTC	4
+#define ROCKCHIP_MAX_LAYER	16
 
 struct drm_device;
 struct drm_connector;
@@ -97,6 +98,21 @@ struct rockchip_hdr_state {
 	bool hdr2sdr_en;
 	struct rockchip_sdr2hdr_state sdr2hdr_state;
 };
+
+#define VOP_OUTPUT_IF_RGB	BIT(0)
+#define VOP_OUTPUT_IF_BT1120	BIT(1)
+#define VOP_OUTPUT_IF_BT656	BIT(2)
+#define VOP_OUTPUT_IF_LVDS0	BIT(3)
+#define VOP_OUTPUT_IF_LVDS1	BIT(4)
+#define VOP_OUTPUT_IF_MIPI0	BIT(5)
+#define VOP_OUTPUT_IF_MIPI1	BIT(6)
+#define VOP_OUTPUT_IF_eDP0	BIT(7)
+#define VOP_OUTPUT_IF_eDP1	BIT(8)
+#define VOP_OUTPUT_IF_DP0	BIT(9)
+#define VOP_OUTPUT_IF_DP1	BIT(10)
+#define VOP_OUTPUT_IF_HDMI0	BIT(11)
+#define VOP_OUTPUT_IF_HDMI1	BIT(12)
+
 struct rockchip_crtc_state {
 	struct drm_crtc_state base;
 	struct drm_tv_connector_state *tv_state;
@@ -104,6 +120,7 @@ struct rockchip_crtc_state {
 	int right_margin;
 	int top_margin;
 	int bottom_margin;
+	int vdisplay;
 	int afbdc_win_format;
 	int afbdc_win_width;
 	int afbdc_win_height;
@@ -118,6 +135,7 @@ struct rockchip_crtc_state {
 	int output_mode;
 	int output_bpc;
 	int output_flags;
+	u32 output_if;
 	u32 bus_format;
 	u32 bus_flags;
 	int yuv_overlay;
@@ -127,11 +145,19 @@ struct rockchip_crtc_state {
 	int bcsh_en;
 	int color_space;
 	int eotf;
+	u32 background;
+	u32 line_flag;
 	u8 mode_update;
 	struct rockchip_hdr_state hdr;
 };
 #define to_rockchip_crtc_state(s) \
 		container_of(s, struct rockchip_crtc_state, base)
+
+struct rockchip_drm_vcnt {
+	struct drm_pending_vblank_event *event;
+	__u32 sequence;
+	int pipe;
+};
 
 struct rockchip_logo {
 	dma_addr_t dma_addr;
@@ -139,6 +165,11 @@ struct rockchip_logo {
 	phys_addr_t start;
 	phys_addr_t size;
 	int count;
+};
+
+struct loader_cubic_lut {
+	bool enable;
+	u32 offset;
 };
 
 /*
@@ -157,6 +188,7 @@ struct rockchip_drm_private {
 	struct drm_property *alpha_scale_prop;
 	struct drm_property *async_commit_prop;
 	struct drm_property *share_id_prop;
+	struct drm_property *connector_id_prop;
 	struct drm_fb_helper *fbdev_helper;
 	struct drm_gem_object *fbdev_bo;
 	const struct rockchip_crtc_funcs *crtc_funcs[ROCKCHIP_MAX_CRTC];
@@ -177,12 +209,17 @@ struct rockchip_drm_private {
 	u8 dmc_support;
 	struct list_head psr_list;
 	struct mutex psr_list_lock;
+	struct rockchip_drm_vcnt vcnt[ROCKCHIP_MAX_CRTC];
 
 	/**
 	 * @loader_protect
 	 * ignore restore_fbdev_mode_atomic when in logo on state
 	 */
 	bool loader_protect;
+
+	dma_addr_t cubic_lut_dma_addr;
+	void *cubic_lut_kvaddr;
+	struct loader_cubic_lut cubic_lut[ROCKCHIP_MAX_CRTC];
 };
 
 #ifndef MODULE
@@ -232,5 +269,7 @@ extern struct platform_driver rockchip_dp_driver;
 extern struct platform_driver rockchip_lvds_driver;
 extern struct platform_driver rockchip_tve_driver;
 extern struct platform_driver vop_platform_driver;
+extern struct platform_driver vop2_platform_driver;
+extern struct platform_driver vvop_platform_driver;
 extern struct platform_driver rockchip_rgb_driver;
 #endif /* _ROCKCHIP_DRM_DRV_H_ */

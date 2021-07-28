@@ -1,7 +1,8 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Linux Wireless Extensions support
  *
- * Copyright (C) 1999-2017, Broadcom Corporation
+ * Copyright (C) 1999-2019, Broadcom Corporation
  * 
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -24,7 +25,7 @@
  *
  * <<Broadcom-WL-IPTag/Open:>>
  *
- * $Id: wl_iw.c 666543 2017-08-25 07:42:40Z $
+ * $Id: wl_iw.c 709309 2019-01-17 09:04:00Z $
  */
 
 #if defined(USE_IW)
@@ -38,8 +39,12 @@
 #include <bcmendian.h>
 #include <proto/ethernet.h>
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
+#include <linux/sched/signal.h>
+#endif
+
 #include <linux/if_arp.h>
-#include <asm/uaccess.h>
+#include <linux/uaccess.h>
 
 #include <wlioctl.h>
 #include <wlioctl_utils.h>
@@ -157,7 +162,7 @@ typedef struct iscan_info {
 	char ioctlbuf[WLC_IOCTL_SMLEN];
 } iscan_info_t;
 iscan_info_t *g_iscan = NULL;
-static void wl_iw_timerfunc(struct timer_list *t);
+static void wl_iw_timerfunc(ulong data);
 static void wl_iw_set_event_mask(struct net_device *dev);
 static int wl_iw_iscan(iscan_info_t *iscan, wlc_ssid_t *ssid, uint16 action);
 
@@ -225,7 +230,7 @@ dev_wlc_ioctl(
 	ifr.ifr_data = (caddr_t) &ioc;
 
 	fs = get_fs();
-	set_fs(get_ds());
+	set_fs(KERNEL_DS);
 #if defined(WL_USE_NETDEV_OPS)
 	ret = dev->netdev_ops->ndo_do_ioctl(dev, &ifr, SIOCDEVPRIVATE);
 #else
@@ -3522,9 +3527,9 @@ done:
 }
 
 static void
-wl_iw_timerfunc(struct timer_list *t)
+wl_iw_timerfunc(ulong data)
 {
-	iscan_info_t *iscan = from_timer(iscan, t, timer);
+	iscan_info_t *iscan = (iscan_info_t *)data;
 	iscan->timer_on = 0;
 	if (iscan->iscan_state != ISCAN_STATE_IDLE) {
 		WL_TRACE(("timer trigger\n"));
@@ -3757,7 +3762,9 @@ wl_iw_attach(struct net_device *dev, void * dhdp)
 
 	/* Set up the timer */
 	iscan->timer_ms    = 2000;
-	timer_setup(&iscan->timer, wl_iw_timerfunc, 0);
+	init_timer(&iscan->timer);
+	iscan->timer.data = (ulong)iscan;
+	iscan->timer.function = wl_iw_timerfunc;
 
 	sema_init(&iscan->sysioc_sem, 0);
 	init_completion(&iscan->sysioc_exited);

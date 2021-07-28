@@ -192,7 +192,11 @@ static irqreturn_t headset_interrupt(int irq, void *dev_id)
 		headset_info->cur_headset_status = HEADSET_OUT;
 		cancel_delayed_work(&headset_info->hook_work);
 		if (headset_info->isMic) {
-			headset_info->hook_status = HOOK_UP;
+			if (headset_info->hook_status == HOOK_DOWN) {
+				headset_info->hook_status = HOOK_UP;
+				input_report_key(headset_info->input_dev, HOOK_KEY_CODE, headset_info->hook_status);
+				input_sync(headset_info->input_dev);
+			}
 #ifdef CONFIG_SND_SOC_WM8994
 			//rt5625_headset_mic_detect(false);
 			wm8994_headset_mic_detect(false);
@@ -471,6 +475,7 @@ failed:
 	dev_err(&pdev->dev, "failed headset adc probe ret=%d\n", ret);
 	return ret;
 }
+EXPORT_SYMBOL_GPL(rk_headset_adc_probe);
 
 int rk_headset_adc_suspend(struct platform_device *pdev, pm_message_t state)
 {
@@ -479,6 +484,7 @@ int rk_headset_adc_suspend(struct platform_device *pdev, pm_message_t state)
 //	del_timer(&headset_info->hook_timer);
 	return 0;
 }
+EXPORT_SYMBOL_GPL(rk_headset_adc_suspend);
 
 int rk_headset_adc_resume(struct platform_device *pdev)
 {
@@ -488,3 +494,6 @@ int rk_headset_adc_resume(struct platform_device *pdev)
 //		mod_timer(&headset_info->hook_timer, jiffies + msecs_to_jiffies(1500));
 	return 0;
 }
+EXPORT_SYMBOL_GPL(rk_headset_adc_resume);
+
+MODULE_LICENSE("GPL");

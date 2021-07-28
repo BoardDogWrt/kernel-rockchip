@@ -11,6 +11,7 @@
 #include "isp_params.h"
 #include "isp_params_v1x.h"
 #include "isp_params_v2x.h"
+#include "isp_params_v21.h"
 
 #define PARAMS_NAME DRIVER_NAME "-input-params"
 #define RKISP_ISP_PARAMS_REQ_BUFS_MIN	2
@@ -65,16 +66,28 @@ static int rkisp_params_querycap(struct file *file,
 static int rkisp_params_subs_evt(struct v4l2_fh *fh,
 				 const struct v4l2_event_subscription *sub)
 {
+	struct rkisp_isp_params_vdev *params_vdev = video_get_drvdata(fh->vdev);
+
 	if (sub->id != 0)
 		return -EINVAL;
 
 	switch (sub->type) {
 	case CIFISP_V4L2_EVENT_STREAM_START:
 	case CIFISP_V4L2_EVENT_STREAM_STOP:
+		params_vdev->is_subs_evt = true;
 		return v4l2_event_subscribe(fh, sub, 0, NULL);
 	default:
 		return -EINVAL;
 	}
+}
+
+static int rkisp_params_unsubs_evt(struct v4l2_fh *fh,
+				   const struct v4l2_event_subscription *sub)
+{
+	struct rkisp_isp_params_vdev *params_vdev = video_get_drvdata(fh->vdev);
+
+	params_vdev->is_subs_evt = false;
+	return v4l2_event_unsubscribe(fh, sub);
 }
 
 /* ISP params video device IOCTLs */
@@ -94,7 +107,7 @@ static const struct v4l2_ioctl_ops rkisp_params_ioctl = {
 	.vidioc_try_fmt_meta_out = rkisp_params_g_fmt_meta_out,
 	.vidioc_querycap = rkisp_params_querycap,
 	.vidioc_subscribe_event = rkisp_params_subs_evt,
-	.vidioc_unsubscribe_event = v4l2_event_unsubscribe
+	.vidioc_unsubscribe_event = rkisp_params_unsubs_evt,
 };
 
 static int rkisp_params_vb2_queue_setup(struct vb2_queue *vq,
@@ -186,6 +199,7 @@ static void rkisp_params_vb2_stop_streaming(struct vb2_queue *vq)
 
 	/* clean module params */
 	params_vdev->ops->clear_first_param(params_vdev);
+	params_vdev->rdbk_times = 0;
 }
 
 static int
@@ -231,7 +245,11 @@ static int rkisp_params_fh_open(struct file *filp)
 static int rkisp_params_fop_release(struct file *file)
 {
 	struct rkisp_isp_params_vdev *params = video_drvdata(file);
+	struct video_device *vdev = video_devdata(file);
 	int ret;
+
+	if (file->private_data == vdev->queue->owner && params->ops->fop_release)
+		params->ops->fop_release(params);
 
 	ret = vb2_fop_release(file);
 	if (!ret) {
@@ -277,6 +295,8 @@ static int rkisp_init_params_vdev(struct rkisp_isp_params_vdev *params_vdev)
 
 	if (params_vdev->dev->isp_ver <= ISP_V13)
 		return rkisp_init_params_vdev_v1x(params_vdev);
+	else if (params_vdev->dev->isp_ver == ISP_V21)
+		return rkisp_init_params_vdev_v21(params_vdev);
 	else
 		return rkisp_init_params_vdev_v2x(params_vdev);
 }
@@ -285,16 +305,22 @@ static void rkisp_uninit_params_vdev(struct rkisp_isp_params_vdev *params_vdev)
 {
 	if (params_vdev->dev->isp_ver <= ISP_V13)
 		rkisp_uninit_params_vdev_v1x(params_vdev);
+	else if (params_vdev->dev->isp_ver == ISP_V21)
+		rkisp_uninit_params_vdev_v21(params_vdev);
 	else
 		rkisp_uninit_params_vdev_v2x(params_vdev);
 }
 
-void rkisp_params_cfg(struct rkisp_isp_params_vdev *params_vdev,
-		      u32 frame_id, u32 rdbk_times)
+void rkisp_params_cfg(struct rkisp_isp_params_vdev *params_vdev, u32 frame_id)
 {
 	if (params_vdev->ops->param_cfg)
-		params_vdev->ops->param_cfg(params_vdev, frame_id,
-					    rdbk_times, RKISP_PARAMS_IMD);
+		params_vdev->ops->param_cfg(params_vdev, frame_id, RKISP_PARAMS_IMD);
+}
+
+void rkisp_params_cfgsram(struct rkisp_isp_params_vdev *params_vdev)
+{
+	if (params_vdev->ops->param_cfgsram)
+		params_vdev->ops->param_cfgsram(params_vdev);
 }
 
 void rkisp_params_isr(struct rkisp_isp_params_vdev *params_vdev,
@@ -320,6 +346,24 @@ void rkisp_params_disable_isp(struct rkisp_isp_params_vdev *params_vdev)
 	params_vdev->ops->disable_isp(params_vdev);
 }
 
+void rkisp_params_get_ldchbuf_inf(struct rkisp_isp_params_vdev *params_vdev,
+				  struct rkisp_ldchbuf_info *ldchbuf)
+{
+	params_vdev->ops->get_ldchbuf_inf(params_vdev, ldchbuf);
+}
+
+void rkisp_params_set_ldchbuf_size(struct rkisp_isp_params_vdev *params_vdev,
+				   struct rkisp_ldchbuf_size *ldchsize)
+{
+	params_vdev->ops->set_ldchbuf_size(params_vdev, ldchsize);
+}
+
+void rkisp_params_stream_stop(struct rkisp_isp_params_vdev *params_vdev)
+{
+	if (params_vdev->ops->stream_stop)
+		params_vdev->ops->stream_stop(params_vdev);
+}
+
 int rkisp_register_params_vdev(struct rkisp_isp_params_vdev *params_vdev,
 				struct v4l2_device *v4l2_dev,
 				struct rkisp_device *dev)
@@ -330,6 +374,7 @@ int rkisp_register_params_vdev(struct rkisp_isp_params_vdev *params_vdev,
 	struct media_entity *source, *sink;
 
 	params_vdev->dev = dev;
+	params_vdev->is_subs_evt = false;
 	spin_lock_init(&params_vdev->config_lock);
 
 	strlcpy(vdev->name, PARAMS_NAME, sizeof(vdev->name));

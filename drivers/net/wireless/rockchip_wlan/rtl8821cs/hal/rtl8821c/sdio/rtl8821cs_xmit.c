@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /******************************************************************************
  *
  * Copyright(c) 2016 - 2017 Realtek Corporation.
@@ -269,6 +270,17 @@ static s32 xmit_xmitframes(PADAPTER adapter, struct xmit_priv *pxmitpriv)
 	pxmitbuf = NULL;
 	rtw_halmac_get_tx_desc_size(adapter_to_dvobj(adapter), &txdesc_size);
 	rtw_hal_get_def_var(adapter, HAL_DEF_TX_PAGE_SIZE, &page_size);
+
+#ifdef CONFIG_RTW_MGMT_QUEUE 
+	/* dump management frame directly */
+	do {
+		pxmitframe = rtw_dequeue_mgmt_xframe(pxmitpriv);
+		if (pxmitframe)
+			adapter->hal_func.mgnt_xmit(adapter, pxmitframe);
+	} while (pxmitframe != NULL);
+
+	hwentry--;
+#endif
 
 	if (adapter->registrypriv.wifi_spec == 1) {
 		for (idx = 0; idx < 4; idx++)
@@ -626,6 +638,39 @@ s32 rtl8821cs_mgnt_xmit(PADAPTER adapter, struct xmit_frame *pmgntframe)
 
 /*
  * Description:
+ *	Enqueue management xmitframe
+ *
+ * Return:
+ *	_TRUE	enqueue ok
+ *	_FALSE	fail
+ */
+#ifdef CONFIG_RTW_MGMT_QUEUE 
+s32 rtl8821cs_hal_mgmt_xmit_enqueue(PADAPTER adapter, struct xmit_frame *pxmitframe)
+{
+	struct xmit_priv *pxmitpriv;
+	s32 ret;
+
+	pxmitpriv = &adapter->xmitpriv;
+
+	ret = rtw_mgmt_xmitframe_enqueue(adapter, pxmitframe);
+	if (ret != _SUCCESS) {
+		rtw_free_xmitframe(pxmitpriv, pxmitframe);
+		pxmitpriv->tx_drop++;
+		return _FALSE;
+	}
+
+#ifdef CONFIG_SDIO_TX_TASKLET
+	tasklet_hi_schedule(&pxmitpriv->xmit_tasklet);
+#else
+	_rtw_up_sema(&pxmitpriv->SdioXmitSema);
+#endif
+
+	return _TRUE;
+}
+#endif
+
+/*
+ * Description:
  *	Enqueue xmitframe
  *
  * Return:
@@ -679,8 +724,7 @@ s32 rtl8821cs_hal_xmit(PADAPTER adapter, struct xmit_frame *pxmitframe)
 	    && (pxmitframe->attrib.ether_type != 0x0806)
 	    && (pxmitframe->attrib.ether_type != 0x888e)
 	    && (pxmitframe->attrib.dhcp_pkt != 1)) {
-		if (adapter->mlmepriv.LinkDetectInfo.bBusyTraffic == _TRUE)
-			rtw_issue_addbareq_cmd(adapter, pxmitframe);
+		rtw_issue_addbareq_cmd(adapter, pxmitframe, _TRUE);
 	}
 #endif /* CONFIG_80211N_HT */
 

@@ -87,8 +87,10 @@ static inline struct f_rndis *func_to_rndis(struct usb_function *f)
 /* peak (theoretical) bulk transfer rate in bits-per-second */
 static unsigned int bitrate(struct usb_gadget *g)
 {
+	if (gadget_is_superspeed(g) && g->speed >= USB_SPEED_SUPER_PLUS)
+		return 4250000000U;
 	if (gadget_is_superspeed(g) && g->speed == USB_SPEED_SUPER)
-		return 13 * 1024 * 8 * 1000 * 8;
+		return 3750000000U;
 	else if (gadget_is_dualspeed(g) && g->speed == USB_SPEED_HIGH)
 		return 13 * 512 * 8 * 1000 * 8;
 	else
@@ -508,6 +510,20 @@ rndis_setup(struct usb_function *f, const struct usb_ctrlrequest *ctrl)
 			}
 			/* else stalls ... spec says to avoid that */
 		}
+		break;
+
+	case ((USB_DIR_OUT | USB_TYPE_CLASS | USB_RECIP_INTERFACE) << 8)
+			| USB_CDC_SET_ETHERNET_PACKET_FILTER:
+		/*
+		 * see 6.2.30: no data, wIndex = interface, wValue = packet
+		 * filter bitmap. However, we don't really set cdc_filter to
+		 * wValue for rndis, because cdc_filter is not RNDIS-specific.
+		 * Return value 0 to avoid usb controllers stall ep0.
+		 */
+		if (w_length != 0 || w_index != rndis->ctrl_id)
+			goto invalid;
+		DBG(cdev, "packet filter %02x\n", w_value);
+		value = 0;
 		break;
 
 	default:

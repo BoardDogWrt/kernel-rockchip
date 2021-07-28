@@ -13,6 +13,7 @@
 #include <linux/scatterlist.h>
 #include <linux/seq_file.h>
 #include <linux/slab.h>
+#include <linux/swiotlb.h>
 #include <linux/vmalloc.h>
 #include "ion.h"
 
@@ -20,8 +21,8 @@
 
 static gfp_t high_order_gfp_flags = (GFP_HIGHUSER | __GFP_ZERO | __GFP_NOWARN |
 				     __GFP_NORETRY) & ~__GFP_RECLAIM;
-static gfp_t low_order_gfp_flags  = GFP_HIGHUSER | __GFP_ZERO;
-static const unsigned int orders[] = {8, 4, 0};
+static gfp_t low_order_gfp_flags  = GFP_HIGHUSER | __GFP_ZERO | __GFP_NOWARN;
+static unsigned int orders[] = {8, 4, 0};
 
 static int order_to_index(unsigned int order)
 {
@@ -42,13 +43,18 @@ static inline unsigned int order_to_size(int order)
 struct ion_system_heap {
 	struct ion_heap heap;
 	struct ion_page_pool *pools[NUM_ORDERS];
+	struct ion_page_pool *dma32_pools[NUM_ORDERS];
 };
 
 static struct page *alloc_buffer_page(struct ion_system_heap *heap,
 				      struct ion_buffer *buffer,
-				      unsigned long order)
+				      unsigned long order,
+				      unsigned long flags)
 {
 	struct ion_page_pool *pool = heap->pools[order_to_index(order)];
+
+	if (flags & ION_FLAG_DMA32)
+		pool = heap->dma32_pools[order_to_index(order)];
 
 	return ion_page_pool_alloc(pool);
 }
@@ -73,7 +79,8 @@ static void free_buffer_page(struct ion_system_heap *heap,
 static struct page *alloc_largest_available(struct ion_system_heap *heap,
 					    struct ion_buffer *buffer,
 					    unsigned long size,
-					    unsigned int max_order)
+					    unsigned int max_order,
+					    unsigned long flags)
 {
 	struct page *page;
 	int i;
@@ -84,7 +91,7 @@ static struct page *alloc_largest_available(struct ion_system_heap *heap,
 		if (max_order < orders[i])
 			continue;
 
-		page = alloc_buffer_page(heap, buffer, orders[i]);
+		page = alloc_buffer_page(heap, buffer, orders[i], flags);
 		if (!page)
 			continue;
 
@@ -126,7 +133,7 @@ static int ion_system_heap_allocate(struct ion_heap *heap,
 	i = 0;
 	while (size_remaining > 0) {
 		page = alloc_largest_available(sys_heap, buffer, size_remaining,
-					       max_order);
+					       max_order, flags);
 		if (!page)
 			goto free_pages;
 
@@ -285,6 +292,17 @@ static int ion_system_heap_debug_show(struct ion_heap *heap, struct seq_file *s,
 			   pool->low_count, pool->order,
 			   (PAGE_SIZE << pool->order) * pool->low_count);
 	}
+	seq_puts(s, "dma32 pools\n");
+	for (i = 0; i < NUM_ORDERS; i++) {
+		pool = sys_heap->dma32_pools[i];
+
+		seq_printf(s, "%d order %u highmem pages %lu total\n",
+			   pool->high_count, pool->order,
+			   (PAGE_SIZE << pool->order) * pool->high_count);
+		seq_printf(s, "%d order %u lowmem pages %lu total\n",
+			   pool->low_count, pool->order,
+			   (PAGE_SIZE << pool->order) * pool->low_count);
+	}
 
 	return 0;
 }
@@ -321,6 +339,29 @@ err_create_pool:
 	return -ENOMEM;
 }
 
+static int ion_system_heap_create_dma32_pools(struct ion_page_pool **pools)
+{
+	int i;
+
+	for (i = 0; i < NUM_ORDERS; i++) {
+		struct ion_page_pool *pool;
+		gfp_t gfp_flags = low_order_gfp_flags;
+
+		if (orders[i] > 4)
+			gfp_flags = high_order_gfp_flags;
+
+		pool = ion_page_pool_create(gfp_flags | GFP_DMA32, orders[i]);
+		if (!pool)
+			goto err_create_pool;
+		pools[i] = pool;
+	}
+	return 0;
+
+err_create_pool:
+	ion_system_heap_destroy_pools(pools);
+	return -ENOMEM;
+}
+
 static struct ion_heap *__ion_system_heap_create(void)
 {
 	struct ion_system_heap *heap;
@@ -335,9 +376,14 @@ static struct ion_heap *__ion_system_heap_create(void)
 	if (ion_system_heap_create_pools(heap->pools))
 		goto free_heap;
 
+	if (ion_system_heap_create_dma32_pools(heap->dma32_pools))
+		goto free_dma32_heap;
+
 	heap->heap.debug_show = ion_system_heap_debug_show;
 	return &heap->heap;
 
+free_dma32_heap:
+	ion_system_heap_destroy_pools(heap->pools);
 free_heap:
 	kfree(heap);
 	return ERR_PTR(-ENOMEM);
@@ -346,6 +392,32 @@ free_heap:
 int ion_system_heap_create(void)
 {
 	struct ion_heap *heap;
+
+#ifdef CONFIG_SWIOTLB
+	/*
+	 * Since swiotlb has memory size limitation, this will calculate
+	 * the maximum size locally.
+	 *
+	 * Once swiotlb_max_segment() return not '0', means that the totalram size
+	 * is larger than 4GiB and swiotlb is not force mode, in this case, system
+	 * heap should limit largest allocation.
+	 *
+	 * FIX: fix the orders[] as a workaround.
+	 */
+	if (swiotlb_max_segment()) {
+		unsigned int max_size = (1 << IO_TLB_SHIFT) * IO_TLB_SEGSIZE;
+		int max_order = MAX_ORDER;
+		int i;
+
+		max_size = max_t(unsigned int, max_size, PAGE_SIZE) >> PAGE_SHIFT;
+		max_order = min(max_order, ilog2(max_size));
+		for (i = 0; i < NUM_ORDERS; i++) {
+			if (max_order < orders[i])
+				orders[i] = max_order;
+			pr_info("orders[%d] = %u\n", i, orders[i]);
+		}
+	}
+#endif
 
 	heap = __ion_system_heap_create();
 	if (IS_ERR(heap))

@@ -2214,12 +2214,6 @@ static void rkisp1_params_first_cfg_v1x(struct rkisp_isp_params_vdev *params_vde
 				   hst_params_default_config.mode);
 	}
 
-	/* set the  range */
-	if (params_vdev->quantization == V4L2_QUANTIZATION_FULL_RANGE)
-		ops->csm_config(params_vdev, true);
-	else
-		ops->csm_config(params_vdev, false);
-
 	/* disable color related config for grey sensor */
 	if (params_vdev->in_mbus_code == MEDIA_BUS_FMT_Y8_1X8 ||
 	    params_vdev->in_mbus_code == MEDIA_BUS_FMT_Y10_1X10 ||
@@ -2270,6 +2264,18 @@ static void
 rkisp1_get_param_size_v1x(struct rkisp_isp_params_vdev *params_vdev, unsigned int sizes[])
 {
 	sizes[0] = sizeof(struct rkisp1_isp_params_cfg);
+}
+
+static void
+rkisp_params_get_ldchbuf_inf_v1x(struct rkisp_isp_params_vdev *params_vdev,
+				 struct rkisp_ldchbuf_info *ldchbuf)
+{
+}
+
+static void
+rkisp_params_set_ldchbuf_size_v1x(struct rkisp_isp_params_vdev *params_vdev,
+				  struct rkisp_ldchbuf_size *ldchsize)
+{
 }
 
 /* Not called when the camera active, thus not isr protection. */
@@ -2353,6 +2359,8 @@ static struct rkisp_isp_params_ops rkisp_isp_params_ops_tbl = {
 	.first_cfg = rkisp1_params_first_cfg_v1x,
 	.disable_isp = rkisp1_params_disable_isp_v1x,
 	.isr_hdl = rkisp1_params_isr_v1x,
+	.get_ldchbuf_inf = rkisp_params_get_ldchbuf_inf_v1x,
+	.set_ldchbuf_size = rkisp_params_set_ldchbuf_size_v1x,
 };
 
 int rkisp_init_params_vdev_v1x(struct rkisp_isp_params_vdev *params_vdev)

@@ -1005,6 +1005,11 @@ static int dw_mci_get_cd(struct mmc_host *mmc)
 	struct dw_mci *host = slot->host;
 	int gpio_cd = mmc_gpio_get_cd(mmc);
 
+#ifdef CONFIG_SDIO_KEEPALIVE
+	if (mmc->logic_remove_card)
+		return test_bit(DW_MMC_CARD_PRESENT, &slot->flags);
+#endif
+
 	/* Use platform get_cd function, else try onboard card detect */
 	if (((mmc->caps & MMC_CAP_NEEDS_POLL)
 				|| !mmc_card_is_removable(mmc))) {
@@ -2866,7 +2871,15 @@ static int dw_mci_init_slot_caps(struct dw_mci_slot *slot)
 				ctrl_id);
 			return -EINVAL;
 		}
-		mmc->caps |= drv_data->caps[ctrl_id];
+		/*
+		 * Some sd cards violate the spec. They claim to support
+		 * CMD23 but actually not. We don't have a good method to
+		 * work around them except for adding MMC_QUIRK_BLK_NO_CMD23
+		 * one by one. But it's not a acceptable way for our custmors.
+		 * So removing CMD23 support for all sd cards to solve it.
+		 */
+		if (!(mmc->restrict_caps & RESTRICT_CARD_TYPE_SD))
+			mmc->caps |= drv_data->caps[ctrl_id];
 	}
 
 	if (host->pdata->caps2)
@@ -2943,6 +2956,11 @@ static int dw_mci_init_slot(struct dw_mci *host)
 	}
 
 	dw_mci_get_cd(mmc);
+
+#ifdef CONFIG_SDIO_KEEPALIVE
+	if (mmc->logic_remove_card)
+		clear_bit(DW_MMC_CARD_PRESENT, &slot->flags);
+#endif
 
 	ret = mmc_add_host(mmc);
 	if (ret)
@@ -3287,28 +3305,6 @@ int dw_mci_probe(struct dw_mci *host)
 	int width, i, ret = 0;
 	u32 fifo_size;
 
-#ifdef CONFIG_ROCKCHIP_THUNDER_BOOT
-	struct device *dev = host->dev;
-	u32 intr;
-
-	if (device_property_read_bool(host->dev, "supports-emmc")) {
-		if (readl_poll_timeout(host->regs + SDMMC_STATUS,
-				fifo_size,
-				!(fifo_size & (BIT(10) | GENMASK(7, 4))),
-				0, 500 * USEC_PER_MSEC))
-			dev_err(dev, "Controller is occupied!\n");
-
-		if (readl_poll_timeout(host->regs + SDMMC_IDSTS,
-				fifo_size, !(fifo_size & GENMASK(16, 13)),
-				0, 500 * USEC_PER_MSEC))
-			dev_err(dev, "DMA is still running!\n");
-
-		intr = mci_readl(host, RINTSTS);
-		if (intr & DW_MCI_CMD_ERROR_FLAGS || intr & DW_MCI_DATA_ERROR_FLAGS)
-			BUG_ON(1);
-	}
-#endif
-
 	if (!host->pdata) {
 		host->pdata = dw_mci_parse_dt(host);
 		if (PTR_ERR(host->pdata) == -EPROBE_DEFER) {
@@ -3329,6 +3325,22 @@ int dw_mci_probe(struct dw_mci *host)
 			return ret;
 		}
 	}
+#ifdef CONFIG_ROCKCHIP_THUNDER_BOOT
+	if (device_property_read_bool(host->dev, "supports-emmc")) {
+		if (readl_poll_timeout(host->regs + SDMMC_STATUS,
+				fifo_size,
+				!(fifo_size & (BIT(10) | GENMASK(7, 4))),
+				0, 500 * USEC_PER_MSEC))
+			dev_err(host->dev, "Controller is occupied!\n");
+
+		if (readl_poll_timeout(host->regs + SDMMC_IDSTS,
+				fifo_size, !(fifo_size & GENMASK(16, 13)),
+				0, 500 * USEC_PER_MSEC))
+			dev_err(host->dev, "DMA is still running!\n");
+
+		BUG_ON(mci_readl(host, RINTSTS) & DW_MCI_ERROR_FLAGS);
+	}
+#endif
 
 	host->ciu_clk = devm_clk_get(host->dev, "ciu");
 	if (IS_ERR(host->ciu_clk)) {

@@ -4,6 +4,8 @@
  *
  * Copyright (C) 2019 Fuzhou Rockchip Electronics Co.,Ltd.
  * V0.0X01.0X02 add enum_frame_interval function.
+ * V0.0X01.0X03 add quick stream on/off
+ * V0.0X01.0X04 add function g_mbus_config
  */
 
 #include <linux/clk.h>
@@ -69,11 +71,13 @@
 #define GC0403_EXPOSURE_MIN		1
 
 #define GC0403_NAME			"gc0403"
-#define DRIVER_VERSION			KERNEL_VERSION(0, 0x01, 0x02)
+#define DRIVER_VERSION			KERNEL_VERSION(0, 0x01, 0x03)
 
 #define GC0403_XVCLK_FREQ		24000000
 #define GC0403_LINK_FREQ		96000000
 #define GC0403_PIXEL_RATE		(GC0403_LINK_FREQ * 2 * 1 / 10)
+
+#define GC0403_LANES			1
 
 static const s64 link_freq_menu_items[] = {
 	GC0403_LINK_FREQ
@@ -631,10 +635,25 @@ static long gc0403_ioctl(struct v4l2_subdev *sd, unsigned int cmd, void *arg)
 {
 	struct gc0403 *gc0403 = to_gc0403(sd);
 	long ret = 0;
+	u32 stream = 0;
 
 	switch (cmd) {
 	case RKMODULE_GET_MODULE_INFO:
 		gc0403_get_module_inf(gc0403, (struct rkmodule_inf *)arg);
+		break;
+	case RKMODULE_SET_QUICK_STREAM:
+
+		stream = *((u32 *)arg);
+
+		if (stream) {
+			ret = gc0403_write_reg(gc0403->client, PAGE_SELECT_REG, 0x03);
+			ret |= gc0403_write_reg(gc0403->client, GC0403_REG_MIPI_EN, 0x90);
+			ret |= gc0403_write_reg(gc0403->client, PAGE_SELECT_REG, 0x00);
+		} else {
+			ret = gc0403_write_reg(gc0403->client, PAGE_SELECT_REG, 0x03);
+			ret |= gc0403_write_reg(gc0403->client, GC0403_REG_MIPI_EN, 0x80);
+			ret |= gc0403_write_reg(gc0403->client, PAGE_SELECT_REG, 0x00);
+		}
 		break;
 	default:
 		ret = -ENOIOCTLCMD;
@@ -652,6 +671,7 @@ static long gc0403_compat_ioctl32(struct v4l2_subdev *sd,
 	struct rkmodule_inf *inf;
 	struct rkmodule_awb_cfg *cfg;
 	long ret;
+	u32 stream = 0;
 
 	switch (cmd) {
 	case RKMODULE_GET_MODULE_INFO:
@@ -684,6 +704,11 @@ static long gc0403_compat_ioctl32(struct v4l2_subdev *sd,
 		else
 			ret = -EFAULT;
 		kfree(cfg);
+		break;
+	case RKMODULE_SET_QUICK_STREAM:
+		ret = copy_from_user(&stream, up, sizeof(u32));
+		if (!ret)
+			ret = gc0403_ioctl(sd, cmd, &stream);
 		break;
 	default:
 		ret = -ENOIOCTLCMD;
@@ -892,6 +917,20 @@ static int gc0403_enum_frame_interval(struct v4l2_subdev *sd,
 	return 0;
 }
 
+static int gc0403_g_mbus_config(struct v4l2_subdev *sd,
+				struct v4l2_mbus_config *config)
+{
+	u32 val = 0;
+
+	val = 1 << (GC0403_LANES - 1) |
+	      V4L2_MBUS_CSI2_CHANNEL_0 |
+	      V4L2_MBUS_CSI2_CONTINUOUS_CLOCK;
+	config->type = V4L2_MBUS_CSI2;
+	config->flags = val;
+
+	return 0;
+}
+
 static const struct dev_pm_ops gc0403_pm_ops = {
 	SET_RUNTIME_PM_OPS(gc0403_runtime_suspend,
 			   gc0403_runtime_resume, NULL)
@@ -914,6 +953,7 @@ static struct v4l2_subdev_core_ops gc0403_core_ops = {
 static const struct v4l2_subdev_video_ops gc0403_video_ops = {
 	.s_stream = gc0403_s_stream,
 	.g_frame_interval = gc0403_g_frame_interval,
+	.g_mbus_config = gc0403_g_mbus_config,
 };
 
 static const struct v4l2_subdev_pad_ops gc0403_pad_ops = {
@@ -945,7 +985,7 @@ static int gc0403_set_ctrl(struct v4l2_ctrl *ctrl)
 	int analog_gain = 0;
 	int i = 0;
 
-	if (pm_runtime_get(&client->dev) <= 0)
+	if (!pm_runtime_get_if_in_use(&client->dev))
 		return 0;
 
 	switch (ctrl->id) {

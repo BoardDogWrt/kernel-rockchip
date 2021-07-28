@@ -14,6 +14,7 @@
  *	4.support raw12bit linear/hdr mode
  *	5.implement RKMODULE_SET/GET_HDR_CFG
  * V0.0X01.0X05 group hold launch immediately when set hdr ae.
+ * V0.0X01.0X06 add quick stream on/off
  */
 
 #include <linux/clk.h>
@@ -42,7 +43,7 @@
 #include <linux/mfd/syscon.h>
 #include <linux/rk-preisp.h>
 
-#define DRIVER_VERSION			KERNEL_VERSION(0, 0x01, 0x05)
+#define DRIVER_VERSION			KERNEL_VERSION(0, 0x01, 0x06)
 
 #ifndef V4L2_CID_DIGITAL_GAIN
 #define V4L2_CID_DIGITAL_GAIN		V4L2_CID_GAIN
@@ -7645,7 +7646,10 @@ static const struct ov2718_mode supported_modes[] = {
 		.vts_def = 0x0466,
 		.hdr_mode = HDR_X2,
 		.reg_list = ov2718_hdr10bit_init_tab_1920_1080,
-		.vc[PAD0] = V4L2_MBUS_CSI2_CHANNEL_0,
+		.vc[PAD0] = V4L2_MBUS_CSI2_CHANNEL_1,
+		.vc[PAD1] = V4L2_MBUS_CSI2_CHANNEL_0,
+		.vc[PAD2] = V4L2_MBUS_CSI2_CHANNEL_1,
+		.vc[PAD3] = V4L2_MBUS_CSI2_CHANNEL_1,
 	}
 };
 
@@ -7994,6 +7998,29 @@ static void ov2718_get_hcg_reg(u32 gain, u32 *again_reg, u32 *dgain_reg)
 	}
 }
 
+static int ov2718_g_mbus_config(struct v4l2_subdev *sd,
+				struct v4l2_mbus_config *config)
+{
+	struct ov2718 *ov2718 = to_ov2718(sd);
+	const struct ov2718_mode *mode = ov2718->cur_mode;
+	u32 val = 0;
+
+	if (mode->hdr_mode == NO_HDR)
+		val = 1 << (OV2718_LANES - 1) |
+		V4L2_MBUS_CSI2_CHANNEL_0 |
+		V4L2_MBUS_CSI2_CONTINUOUS_CLOCK;
+	if (mode->hdr_mode == HDR_X2)
+		val = 1 << (OV2718_LANES - 1) |
+		V4L2_MBUS_CSI2_CHANNEL_0 |
+		V4L2_MBUS_CSI2_CONTINUOUS_CLOCK |
+		V4L2_MBUS_CSI2_CHANNEL_1;
+
+	config->type = V4L2_MBUS_CSI2;
+	config->flags = val;
+
+	return 0;
+}
+
 static void ov2718_get_module_inf(struct ov2718 *ov2718,
 				  struct rkmodule_inf *inf)
 {
@@ -8013,6 +8040,7 @@ static long ov2718_ioctl(struct v4l2_subdev *sd, unsigned int cmd, void *arg)
 	u32 s_again, s_dgain, l_again, l_dgain;
 	u32 again, i, h, w;
 	long ret = 0;
+	u32 stream = 0;
 
 	switch (cmd) {
 	case PREISP_CMD_SET_HDRAE_EXP:
@@ -8146,6 +8174,17 @@ static long ov2718_ioctl(struct v4l2_subdev *sd, unsigned int cmd, void *arg)
 				ov2718->cur_mode->hdr_mode, i);
 		}
 		break;
+	case RKMODULE_SET_QUICK_STREAM:
+
+		stream = *((u32 *)arg);
+
+		if (stream)
+			ret = ov2718_write_reg(ov2718->client, OV2718_REG_CTRL_MODE,
+				OV2718_REG_VALUE_08BIT, OV2718_MODE_STREAMING);
+		else
+			ret = ov2718_write_reg(ov2718->client, OV2718_REG_CTRL_MODE,
+				OV2718_REG_VALUE_08BIT, OV2718_MODE_SW_STANDBY);
+		break;
 	default:
 		return -ENOIOCTLCMD;
 	}
@@ -8163,6 +8202,7 @@ static long ov2718_compat_ioctl32(struct v4l2_subdev *sd,
 	struct rkmodule_hdr_cfg *hdr;
 	struct preisp_hdrae_exp_s *hdrae;
 	long ret;
+	u32 stream = 0;
 
 	switch (cmd) {
 	case RKMODULE_GET_MODULE_INFO:
@@ -8224,6 +8264,11 @@ static long ov2718_compat_ioctl32(struct v4l2_subdev *sd,
 		if (!ret)
 			ret = ov2718_ioctl(sd, cmd, hdrae);
 		kfree(hdrae);
+		break;
+	case RKMODULE_SET_QUICK_STREAM:
+		ret = copy_from_user(&stream, up, sizeof(u32));
+		if (!ret)
+			ret = ov2718_ioctl(sd, cmd, &stream);
 		break;
 	default:
 		ret = -ENOIOCTLCMD;
@@ -8527,6 +8572,7 @@ static const struct v4l2_subdev_internal_ops ov2718_internal_ops = {
 static const struct v4l2_subdev_video_ops ov2718_video_ops = {
 	.s_stream = ov2718_s_stream,
 	.g_frame_interval = ov2718_g_frame_interval,
+	.g_mbus_config = ov2718_g_mbus_config,
 };
 
 static const struct v4l2_subdev_pad_ops ov2718_pad_ops = {
@@ -8611,7 +8657,7 @@ static int ov2718_set_ctrl(struct v4l2_ctrl *ctrl)
 		break;
 	}
 
-	if (pm_runtime_get(&client->dev) <= 0)
+	if (!pm_runtime_get_if_in_use(&client->dev))
 		return 0;
 
 	switch (ctrl->id) {
@@ -8714,11 +8760,13 @@ static int ov2718_initialize_controls(struct ov2718 *ov2718)
 		ctrl->flags |= V4L2_CTRL_FLAG_READ_ONLY;
 
 	if (mode->bus_fmt == MEDIA_BUS_FMT_SBGGR10_1X10)
-		v4l2_ctrl_new_std(handler, NULL, V4L2_CID_PIXEL_RATE,
-				  0, OV2718_PIXEL_RATE_10BIT, 1, OV2718_PIXEL_RATE_10BIT);
+		ov2718->pixel_rate = v4l2_ctrl_new_std(handler, NULL,
+				     V4L2_CID_PIXEL_RATE, 0, OV2718_PIXEL_RATE_10BIT,
+				     1, OV2718_PIXEL_RATE_10BIT);
 	else
-		v4l2_ctrl_new_std(handler, NULL, V4L2_CID_PIXEL_RATE,
-				  0, OV2718_PIXEL_RATE_10BIT, 1, OV2718_PIXEL_RATE_12BIT);
+		ov2718->pixel_rate = v4l2_ctrl_new_std(handler, NULL,
+				     V4L2_CID_PIXEL_RATE, 0, OV2718_PIXEL_RATE_10BIT,
+				     1, OV2718_PIXEL_RATE_12BIT);
 
 	h_blank = mode->hts_def - mode->width;
 	ov2718->hblank = v4l2_ctrl_new_std(handler, NULL, V4L2_CID_HBLANK,
