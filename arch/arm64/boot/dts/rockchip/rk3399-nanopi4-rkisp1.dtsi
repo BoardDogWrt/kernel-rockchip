@@ -12,7 +12,7 @@
 		clocks = <&cru SCLK_CIF_OUT>;
 		clock-names = "xvclk";
 
-		reset-gpios = <&gpio2 27 GPIO_ACTIVE_HIGH>;
+		reset-gpios = <&gpio2 27 GPIO_ACTIVE_LOW>;
 		pwdn-gpios = <&gpio2 28 GPIO_ACTIVE_HIGH>;
 		pinctrl-names = "rockchip,camera_default", "rockchip,camera_sleep";
 		pinctrl-0 = <&cam0_default_pins &cif_clkout_a>;
@@ -163,7 +163,7 @@
 		clocks = <&cru SCLK_CIF_OUT>;
 		clock-names = "xvclk";
 
-		reset-gpios = <&gpio0 8 GPIO_ACTIVE_HIGH>;
+		reset-gpios = <&gpio0 8 GPIO_ACTIVE_LOW>;
 		pwdn-gpios = <&gpio0 12 GPIO_ACTIVE_HIGH>;
 		pinctrl-names = "rockchip,camera_default", "rockchip,camera_sleep";
 		pinctrl-0 = <&cam1_default_pins &cif_clkout_a>;
