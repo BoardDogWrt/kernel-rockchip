@@ -61,3 +61,7 @@
 &pwm3 {
 	status = "okay";
 };
+
+&i2s0 {
+	pinctrl-0 = <&i2s0_2ch_bus>;
+};
