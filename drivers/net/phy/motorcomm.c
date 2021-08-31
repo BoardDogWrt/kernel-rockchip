@@ -263,14 +263,19 @@ static int yt8521_config_intr(struct phy_device *phydev)
 	return phy_write(phydev, REG_INT_MASK, val);
 }
 
-static int yt8521_ack_interrupt(struct phy_device *phydev)
+static irqreturn_t yt8521_ack_interrupt(struct phy_device *phydev)
 {
 	int val;
 
 	val = phy_read(phydev, REG_INT_STATUS);
 	phydev_dbg(phydev, "intr status 0x04%x\n", val);
+	if (val < 0) {
+		phy_error(phydev);
+		return IRQ_NONE;
+	}
 
-	return (val < 0) ? val : 0;
+	phy_trigger_machine(phydev);
+	return IRQ_HANDLED;
 }
 
 static struct phy_driver ytphy_drvs[] = {
@@ -319,7 +324,7 @@ static struct phy_driver ytphy_drvs[] = {
 		.phy_id_mask	= MOTORCOMM_PHY_ID_MASK,
 		/* PHY_GBIT_FEATURES */
 		.config_init	= yt8521_config_init,
-		.ack_interrupt	= yt8521_ack_interrupt,
+		.handle_interrupt = yt8521_ack_interrupt,
 		.config_intr	= yt8521_config_intr,
 		.suspend	= genphy_suspend,
 		.resume		= genphy_resume,
