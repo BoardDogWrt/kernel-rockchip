@@ -5445,9 +5445,6 @@ regulator_register(const struct regulator_desc *regulator_desc,
 		dangling_of_gpiod = false;
 	}
 
-	if (rdev->desc->off_on_delay)
-		rdev->last_off_jiffy = jiffies;
-
 	/* register with sysfs */
 	rdev->dev.class = &regulator_class;
 	rdev->dev.parent = dev;
