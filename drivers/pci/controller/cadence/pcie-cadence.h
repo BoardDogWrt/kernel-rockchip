@@ -119,7 +119,7 @@
  * Root Port Registers (PCI configuration space for the root port function)
  */
 #define CDNS_PCIE_RP_BASE	0x00200000
-
+#define CDNS_PCIE_RP_CAP_OFFSET 0xc0
 
 /*
  * Address Translation Registers
@@ -197,6 +197,7 @@ enum cdns_pcie_rp_bar {
 };
 
 #define CDNS_PCIE_RP_MAX_IB	0x3
+#define CDNS_PCIE_MAX_OB	32
 
 struct cdns_pcie_rp_ib_bar {
 	u64 size;
@@ -262,9 +263,12 @@ struct cdns_pcie_ops {
  * struct cdns_pcie - private data for Cadence PCIe controller drivers
  * @reg_base: IO mapped register base
  * @mem_res: start/end offsets in the physical system memory to map PCI accesses
+ * @dev: PCIe controller
  * @is_rc: tell whether the PCIe controller mode is Root Complex or Endpoint.
- * @bus: In Root Complex mode, the bus number
- * @ops: Platform specific ops to control various inputs from Cadence PCIe
+ * @phy_count: number of supported PHY devices
+ * @phy: list of pointers to specific PHY control blocks
+ * @link: list of pointers to corresponding device link representations
+ * @ops: Platform-specific ops to control various inputs from Cadence PCIe
  *       wrapper
  */
 struct cdns_pcie {
@@ -290,6 +294,7 @@ struct cdns_pcie {
  * @device_id: PCI device ID
  * @avail_ib_bar: Satus of RP_BAR0, RP_BAR1 and	RP_NO_BAR if it's free or
  *                available
+ * @quirk_retrain_flag: Retrain link as quirk for PCIe Gen2
  */
 struct cdns_pcie_rc {
 	struct cdns_pcie	pcie;
@@ -298,6 +303,7 @@ struct cdns_pcie_rc {
 	u32			vendor_id;
 	u32			device_id;
 	bool			avail_ib_bar[CDNS_PCIE_RP_MAX_IB];
+	bool                    quirk_retrain_flag;
 };
 
 /**
@@ -411,6 +417,13 @@ static inline void cdns_pcie_rp_writew(struct cdns_pcie *pcie,
 	void __iomem *addr = pcie->reg_base + CDNS_PCIE_RP_BASE + reg;
 
 	cdns_pcie_write_sz(addr, 0x2, value);
+}
+
+static inline u16 cdns_pcie_rp_readw(struct cdns_pcie *pcie, u32 reg)
+{
+	void __iomem *addr = pcie->reg_base + CDNS_PCIE_RP_BASE + reg;
+
+	return cdns_pcie_read_sz(addr, 0x2);
 }
 
 /* Endpoint Function register access */

@@ -6,6 +6,10 @@
  * (http://www.friendlyarm.com)
  *
  * Copyright (c) 2018 Collabora Ltd.
+ *
+ * Copyright (c) 2020 Jensen Huang <jensenhuang@friendlyarm.com>
+ * Copyright (c) 2020 Marty Jones <mj8263788@gmail.com>
+ * Copyright (c) 2021 Tianling Shen <cnsztl@gmail.com>
  */
 
 /dts-v1/;
@@ -68,6 +72,10 @@
 };
 
 &fusb0 {
+	status = "disabled";
+};
+
+&i2c4 {
 	status = "disabled";
 };
 
@@ -136,15 +144,15 @@
 	status = "disabled";
 };
 
-&sdmmc {
-	host-index-min = <1>;
-};
-
 &u2phy0_host {
 	phy-supply = <&vdd_5v>;
 };
 
 &u2phy1_host {
+	status = "disabled";
+};
+
+&uart0 {
 	status = "disabled";
 };
 

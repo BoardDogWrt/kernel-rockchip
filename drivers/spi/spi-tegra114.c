@@ -966,6 +966,7 @@ static int tegra_spi_setup(struct spi_device *spi)
 
 	ret = pm_runtime_get_sync(tspi->dev);
 	if (ret < 0) {
+		pm_runtime_put_noidle(tspi->dev);
 		dev_err(tspi->dev, "pm runtime failed, e = %d\n", ret);
 		if (cdata)
 			tegra_spi_cleanup(spi);
@@ -1070,8 +1071,7 @@ static int tegra_spi_transfer_one_message(struct spi_master *master,
 		ret = wait_for_completion_timeout(&tspi->xfer_completion,
 						SPI_DMA_TIMEOUT);
 		if (WARN_ON(ret == 0)) {
-			dev_err(tspi->dev,
-				"spi transfer timeout, err %d\n", ret);
+			dev_err(tspi->dev, "spi transfer timeout\n");
 			if (tspi->is_curr_dma_xfer &&
 			    (tspi->cur_direction & DATA_DIR_TX))
 				dmaengine_terminate_all(tspi->tx_dma_chan);
@@ -1474,6 +1474,7 @@ static int tegra_spi_resume(struct device *dev)
 
 	ret = pm_runtime_get_sync(dev);
 	if (ret < 0) {
+		pm_runtime_put_noidle(dev);
 		dev_err(dev, "pm runtime failed, e = %d\n", ret);
 		return ret;
 	}
