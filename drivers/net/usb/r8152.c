@@ -1699,9 +1699,8 @@ static int determine_ethernet_addr(struct r8152 *tp, struct sockaddr *sa)
 		netif_err(tp, probe, dev, "Get ether addr fail\n");
 	} else if (!is_valid_ether_addr(sa->sa_data)) {
 		/* try to get MAC address from DT */
-		const u8 *mac = of_get_mac_address(tp->udev->dev.of_node);
-		if (mac) {
-			ether_addr_copy(sa->sa_data, mac);
+		ret = of_get_mac_address(tp->udev->dev.of_node, sa->sa_data);
+		if (!ret) {
 			netif_info(tp, probe, dev, "DT mac addr %pM\n",
 				   sa->sa_data);
 			return 0;
