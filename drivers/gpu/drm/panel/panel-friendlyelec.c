@@ -224,6 +224,7 @@ static struct {
 	{ "G101E",	&hd101,	         0  },
 	{ "079L1JY41",	&hd079,	         0  },
 	{ "LC116LF1L01",&k116e,	CTP_FT5526_KR },
+	{ "LC116LF1L02",&k116e,	CTP_FT5526_KR },
 
 	{ "EDID",	NULL,	CTP_AUTO    },
 };
