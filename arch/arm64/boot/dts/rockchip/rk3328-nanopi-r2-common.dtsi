@@ -46,10 +46,6 @@
 
 	gpio_keys: gpio-keys {
 		compatible = "gpio-keys";
-		#address-cells = <1>;
-		#size-cells = <0>;
-		autorepeat;
-
 		pinctrl-names = "default";
 		pinctrl-0 = <&gpio_key1>;
 
@@ -58,8 +54,8 @@
 			label = "K1";
 			linux,code = <BTN_1>;
 			linux,input-type = <1>;
-			gpio-key,wakeup = <1>;
-			debounce-interval = <100>;
+			debounce-interval = <20>;
+			wakeup-source;
 		};
 	};
 
