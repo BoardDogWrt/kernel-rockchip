@@ -252,7 +252,6 @@
 	/delete-node/ gpio-keys;
 	gpio_keys: gpio-keys {
 		compatible = "gpio-keys";
-		autorepeat;
 		pinctrl-names = "default";
 		pinctrl-0 = <&power_key>;
 
@@ -261,6 +260,7 @@
 			gpios = <&gpio0 5 GPIO_ACTIVE_LOW>;
 			label = "GPIO Key Power";
 			linux,code = <KEY_POWER>;
+			debounce-interval = <20>;
 			wakeup-source;
 		};
 	};
