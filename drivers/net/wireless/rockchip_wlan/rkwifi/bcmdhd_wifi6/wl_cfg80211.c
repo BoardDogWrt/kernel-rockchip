@@ -11560,7 +11560,7 @@ static s32 wl_cfg80211_hostapd_sec(
 			}
 		}
 	} else {
-		WL_ERR(("No WPSIE in beacon \n"));
+		WL_DBG(("No WPSIE in beacon \n"));
 	}
 	return 0;
 }
@@ -17275,7 +17275,7 @@ wl_cfg80211_netdev_notifier_call(struct notifier_block * nb,
 
 	wdev = ndev_to_wdev(dev);
 	if (!wdev) {
-		WL_ERR(("wdev null. Do nothing\n"));
+		WL_DBG(("wdev null. Do nothing\n"));
 		return NOTIFY_DONE;
 	}
 
