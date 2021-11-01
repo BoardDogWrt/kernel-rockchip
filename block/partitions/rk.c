@@ -280,13 +280,13 @@ static void rkpart_bootmode_fixup(void)
 int rkpart_partition(struct parsed_partitions *state)
 {
 	int num_parts = 0, i;
-	sector_t n = get_capacity(state->bdev->bd_disk);
+	sector_t n = get_capacity(state->disk);
 	struct rk_partition *parts = NULL;
 
 	if (n < SECTOR_1G)
 		return 0;
 
-	if (!(state->bdev->bd_disk->flags & GENHD_FL_RKPART))
+	if (!(state->disk->flags & GENHD_FL_RKPART))
 		return 0;
 
 	/* reserved for backup GPT, align to 4M */
