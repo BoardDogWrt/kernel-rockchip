@@ -37,3 +37,7 @@
 	status = "okay";
 	pinctrl-0 = <&uart1_xfer>;
 };
+
+&usb20_otg {
+	dr_mode = "host";
+};
