@@ -3128,7 +3128,8 @@ static void phy_shutdown(struct device *dev)
 	if (phydev->state == PHY_READY || !phydev->attached_dev)
 		return;
 
-	phy_disable_interrupts(phydev);
+	if (phydev->interrupts)
+		phy_disable_interrupts(phydev);
 }
 
 /**
