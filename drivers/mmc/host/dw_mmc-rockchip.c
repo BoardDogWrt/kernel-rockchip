@@ -11,6 +11,7 @@
 #include <linux/mmc/slot-gpio.h>
 #include <linux/pm_runtime.h>
 #include <linux/slab.h>
+#include <linux/regulator/consumer.h>
 
 #include "dw_mmc.h"
 #include "dw_mmc-pltfm.h"
@@ -22,6 +23,7 @@ struct dw_mci_rockchip_priv_data {
 	struct clk		*sample_clk;
 	int			default_sample_phase;
 	int			num_phases;
+	int			vqmmc_off_uV;
 };
 
 static void dw_mci_rk3288_set_ios(struct dw_mci *host, struct mmc_ios *ios)
@@ -30,6 +32,15 @@ static void dw_mci_rk3288_set_ios(struct dw_mci *host, struct mmc_ios *ios)
 	int ret;
 	unsigned int cclkin;
 	u32 bus_hz;
+
+	if (ios->power_mode == MMC_POWER_OFF &&
+	    priv->vqmmc_off_uV > 0) {
+		struct mmc_host *mmc = host->slot->mmc;
+		if (!IS_ERR(mmc->supply.vqmmc)) {
+			regulator_set_voltage(mmc->supply.vqmmc,
+					      priv->vqmmc_off_uV, 3300000);
+		}
+	}
 
 	if (ios->clock == 0)
 		return;
@@ -282,6 +293,10 @@ static int dw_mci_rk3288_parse_dt(struct dw_mci *host)
 	priv->sample_clk = devm_clk_get(host->dev, "ciu-sample");
 	if (IS_ERR(priv->sample_clk))
 		dev_dbg(host->dev, "ciu-sample not available\n");
+
+	if (of_property_read_u32(np, "vqmmc-off-microvolt",
+					&priv->vqmmc_off_uV))
+		priv->vqmmc_off_uV= 0;
 
 	host->priv = priv;
 
