@@ -1,0 +1,22 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/*
+ * Copyright (c) 2021 FriendlyElec Computer Tech. Co., Ltd.
+ * (http://www.friendlyarm.com)
+ */
+
+/dts-v1/;
+#include "rk3328-nanopi-r2-rev06.dts"
+
+/ {
+	model = "FriendlyElec NanoPi R2C Plus";
+	compatible = "friendlyelec,nanopi-r2", "rockchip,rk3328";
+};
+
+&mach {
+	hwrev = <0x22>;
+	model = "NanoPi R2C Plus";
+};
+
+&emmc {
+	status = "okay";
+};
