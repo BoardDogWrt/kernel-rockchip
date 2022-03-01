@@ -694,6 +694,7 @@
 	sd-uhs-sdr104;
 	vmmc-supply = <&vcc3v0_sd>;
 	vqmmc-supply = <&vcc_sdio>;
+	vqmmc-off-microvolt = <3000000>;
 	status = "okay";
 };
 
