@@ -75,6 +75,26 @@
 	status = "disabled";
 };
 
+&i2c2 {
+	clock-frequency = <200000>;
+	i2c-scl-rising-time-ns = <150>;
+	i2c-scl-falling-time-ns = <30>;
+	status = "okay";
+
+	eeprom@51 {
+		compatible = "microchip,24c02", "atmel,24c02";
+		reg = <0x51>;
+		#address-cells = <2>;
+		#size-cells = <0>;
+		pagesize = <16>;
+		size = <256>;
+
+		eui_48: eui-48@fa {
+			reg = <0xfa 0x06>;
+		};
+	};
+};
+
 &i2c4 {
 	status = "disabled";
 };
