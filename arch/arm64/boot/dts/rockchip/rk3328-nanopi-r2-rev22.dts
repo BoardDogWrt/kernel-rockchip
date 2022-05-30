@@ -146,3 +146,7 @@
 	status = "okay";
 	pinctrl-0 = <&uart1_xfer>;
 };
+
+&r8153 {
+	realtek,ledsel = <0x78>;
+};
