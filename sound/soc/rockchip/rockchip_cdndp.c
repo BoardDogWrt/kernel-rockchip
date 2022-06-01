@@ -73,7 +73,7 @@ static struct snd_soc_jack cdn_dp_card_jack;
 static int rockchip_sound_cdndp_init(struct snd_soc_pcm_runtime *runtime)
 {
 	struct snd_soc_card *card = runtime->card;
-	struct snd_soc_codec *codec = runtime->codec;
+	struct snd_soc_dai *codec_dai = runtime->codec_dai;
 	int ret;
 
 	/* enable jack detection */
@@ -84,7 +84,8 @@ static int rockchip_sound_cdndp_init(struct snd_soc_pcm_runtime *runtime)
 		return ret;
 	}
 
-	return hdmi_codec_set_jack_detect(codec, &cdn_dp_card_jack);
+	return snd_soc_component_set_jack(codec_dai->component,
+					  &cdn_dp_card_jack, NULL);
 }
 
 static struct snd_soc_ops rockchip_sound_cdndp_ops = {

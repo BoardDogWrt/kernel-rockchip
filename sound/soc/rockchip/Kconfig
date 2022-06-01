@@ -133,3 +133,12 @@ config SND_SOC_RK3399_GRU_SOUND
 	help
 	  Say Y or M here if you want to add support multiple codecs for SoC
 	  audio on Rockchip RK3399 GRU boards.
+
+config SND_SOC_ROCKCHIP_CDNDP
+	tristate "ASoC support for Rockchip CDN DP common codec"
+	default n
+	depends on SND_SOC_ROCKCHIP && CLKDEV_LOOKUP
+	select SND_SOC_ROCKCHIP_I2S
+	help
+	  Say Y or M here if you want to add support for SoC audio on Rockchip
+	  boards using CDN DP, such as RK3399 boards.
