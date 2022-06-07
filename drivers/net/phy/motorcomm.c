@@ -273,6 +273,50 @@ static int yt8521_ack_interrupt(struct phy_device *phydev)
 	return (val < 0) ? val : 0;
 }
 
+static int yt8531a_xtal_init(struct phy_device *phydev)
+{
+	int retry_cnt = 20;
+	int ret;
+
+	do {
+		ret = ytphy_write_ext(phydev, 0xa012, 0x88);
+		if (ret < 0)
+			return ret;
+
+		msleep(20);
+
+		ret = ytphy_read_ext(phydev, 0xa012);
+		if (ret < 0) {
+			return ret;
+		} else if (ret == 0x88) {
+			/* enable SyncE clock output */
+			return ytphy_write_ext(phydev, 0xa012, 0xc8);
+		}
+
+		usleep_range(10000, 20000);
+	} while (--retry_cnt > 0);
+
+	return -ETIMEDOUT;
+}
+
+static int yt8531_config_init(struct phy_device *phydev)
+{
+	int ret;
+
+	ret = yt8531a_xtal_init(phydev);
+	if (ret < 0)
+		return ret;
+
+	/* LED0: Unused/Off, LED1: Link, LED2: Activity, 8Hz */
+	ytphy_write_ext(phydev, 0xa00b, 0xe004);
+	ytphy_write_ext(phydev, 0xa00c, 0);
+	ytphy_write_ext(phydev, 0xa00d, 0x2600);
+	ytphy_write_ext(phydev, 0xa00e, 0x0070);
+	ytphy_write_ext(phydev, 0xa00f, 0x000a);
+
+	return 0;
+}
+
 static struct phy_driver ytphy_drvs[] = {
 	{
 		.phy_id		= PHY_ID_YT8010,
@@ -323,6 +367,16 @@ static struct phy_driver ytphy_drvs[] = {
 		.config_intr	= yt8521_config_intr,
 		.suspend	= genphy_suspend,
 		.resume		= genphy_resume,
+	}, {
+		.phy_id		= PHY_ID_YT8531,
+		.name		= "YT8531 Gigabit Ethernet",
+		.phy_id_mask	= MOTORCOMM_PHY_ID_MASK,
+		/* PHY_GBIT_FEATURES */
+		.config_init	= yt8531_config_init,
+		.ack_interrupt	= yt8521_ack_interrupt,
+		.config_intr	= yt8521_config_intr,
+		.suspend	= genphy_suspend,
+		.resume		= genphy_resume,
 	},
 };
 
@@ -339,6 +393,7 @@ static struct mdio_device_id __maybe_unused motorcomm_tbl[] = {
 	{ PHY_ID_YT8512, MOTORCOMM_PHY_ID_MASK },
 	{ PHY_ID_YT8512B, MOTORCOMM_PHY_ID_MASK },
 	{ PHY_ID_YT8521, MOTORCOMM_PHY_ID_MASK },
+	{ PHY_ID_YT8531, 0xffffffff },
 	{ }
 };
 
