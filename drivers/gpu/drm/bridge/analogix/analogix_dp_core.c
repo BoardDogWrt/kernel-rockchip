@@ -917,6 +917,156 @@ static int analogix_dp_enable_scramble(struct analogix_dp_device *dp,
 	return ret < 0 ? ret : 0;
 }
 
+static u8 analogix_dp_autotest_phy_pattern(struct analogix_dp_device *dp)
+{
+	struct drm_dp_phy_test_params *data = &dp->compliance.phytest;
+
+	if (drm_dp_get_phy_test_pattern(&dp->aux, data)) {
+		dev_err(dp->dev, "DP Phy Test pattern AUX read failure\n");
+		return DP_TEST_NAK;
+	}
+
+	if (data->link_rate > drm_dp_bw_code_to_link_rate(dp->video_info.max_link_rate)) {
+		dev_err(dp->dev, "invalid link rate = 0x%x\n", data->link_rate);
+		return DP_TEST_NAK;
+	}
+
+	/* Set test active flag here so userspace doesn't interrupt things */
+	dp->compliance.test_active = true;
+
+	return DP_TEST_ACK;
+}
+
+static void analogix_dp_handle_test_request(struct analogix_dp_device *dp)
+{
+	u8 response = DP_TEST_NAK;
+	u8 request = 0;
+	int ret;
+
+	ret = drm_dp_dpcd_readb(&dp->aux, DP_TEST_REQUEST, &request);
+	if (ret < 0) {
+		dev_err(dp->dev, "Could not read test request from sink\n");
+		goto update_status;
+	}
+
+	switch (request) {
+	case DP_TEST_LINK_PHY_TEST_PATTERN:
+		dev_info(dp->dev, "PHY_PATTERN test requested\n");
+		response = analogix_dp_autotest_phy_pattern(dp);
+		break;
+	default:
+		dev_err(dp->dev, "Invalid test request '%02x'\n", request);
+		break;
+	}
+
+	if (response & DP_TEST_ACK)
+		dp->compliance.test_type = request;
+
+update_status:
+	ret = drm_dp_dpcd_writeb(&dp->aux, DP_TEST_RESPONSE, response);
+	if (ret < 0)
+		dev_err(dp->dev, "Could not write test response to sink\n");
+}
+
+void analogix_dp_check_device_service_irq(struct analogix_dp_device *dp)
+{
+	u8 val;
+	int ret;
+
+	ret = drm_dp_dpcd_readb(&dp->aux, DP_DEVICE_SERVICE_IRQ_VECTOR, &val);
+	if (ret < 0 || !val)
+		return;
+
+	ret = drm_dp_dpcd_writeb(&dp->aux, DP_DEVICE_SERVICE_IRQ_VECTOR, val);
+	if (ret < 0)
+		return;
+
+	if (val & DP_AUTOMATED_TEST_REQUEST)
+		analogix_dp_handle_test_request(dp);
+}
+EXPORT_SYMBOL_GPL(analogix_dp_check_device_service_irq);
+
+static void analogix_dp_process_phy_request(struct analogix_dp_device *dp)
+{
+	struct drm_dp_phy_test_params *data = &dp->compliance.phytest;
+	u8 spread, adjust_request[2];
+	int ret;
+
+	dp->link_train.link_rate = drm_dp_link_rate_to_bw_code(data->link_rate);
+	dp->link_train.lane_count = data->num_lanes;
+
+	ret = drm_dp_dpcd_readb(&dp->aux, DP_MAX_DOWNSPREAD, &spread);
+	if (ret < 0) {
+		dev_err(dp->dev, "Could not read ssc from sink\n");
+		return;
+	}
+
+	dp->link_train.ssc = !!(spread & DP_MAX_DOWNSPREAD_0_5);
+
+	ret = drm_dp_dpcd_read(&dp->aux, DP_ADJUST_REQUEST_LANE0_1,
+			       adjust_request, 2);
+	if (ret < 0) {
+		dev_err(dp->dev, "Could not read swing/pre-emphasis\n");
+		return;
+	}
+
+	analogix_dp_set_link_bandwidth(dp, dp->link_train.link_rate);
+	analogix_dp_set_lane_count(dp, dp->link_train.lane_count);
+	analogix_dp_get_adjust_training_lane(dp, adjust_request);
+	analogix_dp_set_lane_link_training(dp);
+
+	switch (data->phy_pattern) {
+	case DP_PHY_TEST_PATTERN_NONE:
+		dev_info(dp->dev, "Disable Phy Test Pattern\n");
+		analogix_dp_set_training_pattern(dp, DP_NONE);
+		break;
+	case DP_PHY_TEST_PATTERN_D10_2:
+		dev_info(dp->dev, "Set D10.2 Phy Test Pattern\n");
+		analogix_dp_set_training_pattern(dp, D10_2);
+		break;
+	case DP_PHY_TEST_PATTERN_PRBS7:
+		dev_info(dp->dev, "Set PRBS7 Phy Test Pattern\n");
+		analogix_dp_set_training_pattern(dp, PRBS7);
+		break;
+	case DP_PHY_TEST_PATTERN_80BIT_CUSTOM:
+		dev_info(dp->dev, "Set 80Bit Custom Phy Test Pattern\n");
+		analogix_dp_set_training_pattern(dp, TEST_PATTREN_80BIT);
+		break;
+	case DP_PHY_TEST_PATTERN_CP2520:
+		dev_info(dp->dev, "Set HBR2 compliance Phy Test Pattern\n");
+		analogix_dp_set_training_pattern(dp, TEST_PATTREN_HBR2);
+		break;
+	default:
+		dev_err(dp->dev, "Invalid Phy Test Pattern: %d\n", data->phy_pattern);
+		return;
+	}
+
+	drm_dp_set_phy_test_pattern(&dp->aux, data, 0x11);
+}
+
+void analogix_dp_phy_test(struct analogix_dp_device *dp)
+{
+	struct drm_device *dev = dp->drm_dev;
+	struct drm_modeset_acquire_ctx ctx;
+	int ret;
+
+	DRM_DEV_INFO(dp->dev, "PHY test\n");
+
+	drm_modeset_acquire_init(&ctx, 0);
+	for (;;) {
+		ret = drm_modeset_lock(&dev->mode_config.connection_mutex, &ctx);
+		if (ret != -EDEADLK)
+			break;
+
+		drm_modeset_backoff(&ctx);
+	}
+
+	analogix_dp_process_phy_request(dp);
+	drm_modeset_drop_locks(&ctx);
+	drm_modeset_acquire_fini(&ctx);
+}
+EXPORT_SYMBOL_GPL(analogix_dp_phy_test);
+
 static irqreturn_t analogix_dp_hpd_irq_handler(int irq, void *arg)
 {
 	struct analogix_dp_device *dp = arg;
@@ -1316,23 +1466,37 @@ static int analogix_dp_bridge_attach(struct drm_bridge *bridge,
 	struct drm_connector *connector = NULL;
 	int ret = 0;
 
-	if (flags & DRM_BRIDGE_ATTACH_NO_CONNECTOR)
-		return 0;
-
 	if (!bridge->encoder) {
 		DRM_ERROR("Parent encoder object not found");
 		return -ENODEV;
 	}
 
+	if (dp->plat_data->bridge) {
+		ret = drm_bridge_attach(bridge->encoder, dp->plat_data->bridge, bridge,
+					dp->plat_data->skip_connector ?
+					0 : DRM_BRIDGE_ATTACH_NO_CONNECTOR);
+		if (ret) {
+			DRM_ERROR("Failed to attach external bridge: %d\n", ret);
+			return ret;
+		}
+	}
+
+	if (flags & DRM_BRIDGE_ATTACH_NO_CONNECTOR)
+		return 0;
+
 	if (!dp->plat_data->skip_connector) {
+		int connector_type = DRM_MODE_CONNECTOR_eDP;
+
+		if (dp->plat_data->bridge &&
+		    dp->plat_data->bridge->type != DRM_MODE_CONNECTOR_Unknown)
+			connector_type = dp->plat_data->bridge->type;
+
 		connector = &dp->connector;
 		connector->polled = DRM_CONNECTOR_POLL_HPD;
 
 		ret = drm_connector_init(dp->drm_dev, connector,
 					 &analogix_dp_connector_funcs,
-					 dp->plat_data->bridge ?
-					 dp->plat_data->bridge->type :
-					 DRM_MODE_CONNECTOR_eDP);
+					 connector_type);
 		if (ret) {
 			DRM_ERROR("Failed to initialize connector with drm\n");
 			return ret;
@@ -2082,6 +2246,7 @@ int analogix_dp_bind(struct analogix_dp_device *dp, struct drm_device *drm_dev)
 err_disable_pm_runtime:
 	pm_runtime_put(dp->dev);
 	pm_runtime_disable(dp->dev);
+	drm_dp_aux_unregister(&dp->aux);
 
 	return ret;
 }

@@ -415,9 +415,9 @@ static void mpp_session_deinit_default(struct mpp_session *session)
 		mpp_session_clear_pending(session);
 
 		if (session->dma) {
-			mpp_iommu_down_write(mpp->iommu_info);
+			mpp_iommu_down_read(mpp->iommu_info);
 			mpp_dma_session_destroy(session->dma);
-			mpp_iommu_up_write(mpp->iommu_info);
+			mpp_iommu_up_read(mpp->iommu_info);
 			session->dma = NULL;
 		}
 	}
@@ -1905,9 +1905,9 @@ int mpp_task_finalize(struct mpp_session *session,
 				 &task->mem_region_list,
 				 reg_link) {
 		if (!mem_region->is_dup) {
-			mpp_iommu_down_write(mpp->iommu_info);
+			mpp_iommu_down_read(mpp->iommu_info);
 			mpp_dma_release(session->dma, mem_region->hdl);
-			mpp_iommu_up_write(mpp->iommu_info);
+			mpp_iommu_up_read(mpp->iommu_info);
 		}
 		list_del_init(&mem_region->reg_link);
 	}
@@ -1996,6 +1996,15 @@ static int mpp_iommu_handle(struct iommu_domain *iommu,
 		mpp->iommu_info->hdl(iommu, iommu_dev, iova, status, arg);
 
 	return 0;
+}
+
+void mpp_reg_show(struct mpp_dev *mpp, u32 offset)
+{
+	if (!mpp)
+		return;
+
+	dev_err(mpp->dev, "reg[%03d]: %04x: 0x%08x\n",
+		offset >> 2, offset, mpp_read_relaxed(mpp, offset));
 }
 
 /* The device will do more probing work after this */

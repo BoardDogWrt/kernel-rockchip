@@ -297,15 +297,15 @@ static const struct snd_kcontrol_new rv1106_codec_dapm_controls[] = {
 	/* ADC ALC */
 	SOC_SINGLE_RANGE_TLV("ADC ALC Left Volume",
 			     ACODEC_ADC_ANA_CTL4,
-			     ACODEC_ADC_L_DIG_VOL_SFT,
-			     ACODEC_ADC_L_DIG_VOL_MIN,
-			     ACODEC_ADC_L_DIG_VOL_MAX,
+			     ACODEC_ADC_L_ALC_GAIN_SFT,
+			     ACODEC_ADC_L_ALC_GAIN_MIN,
+			     ACODEC_ADC_L_ALC_GAIN_MAX,
 			     0, rv1106_codec_adc_alc_gain_tlv),
 	SOC_SINGLE_RANGE_TLV("ADC ALC Right Volume",
 			     ACODEC_ADC_ANA_CTL5,
-			     ACODEC_ADC_R_DIG_VOL_SFT,
-			     ACODEC_ADC_R_DIG_VOL_MIN,
-			     ACODEC_ADC_R_DIG_VOL_MAX,
+			     ACODEC_ADC_R_ALC_GAIN_SFT,
+			     ACODEC_ADC_R_ALC_GAIN_MIN,
+			     ACODEC_ADC_R_ALC_GAIN_MAX,
 			     0, rv1106_codec_adc_alc_gain_tlv),
 
 	/* ADC Digital Volume */
@@ -1636,7 +1636,7 @@ static struct snd_soc_dai_driver rv1106_dai[] = {
 		.capture = {
 			.stream_name = "HiFi Capture",
 			.channels_min = 1,
-			.channels_max = 2,
+			.channels_max = 4,
 			.rates = SNDRV_PCM_RATE_8000_192000,
 			.formats = (SNDRV_PCM_FMTBIT_S16_LE |
 				    SNDRV_PCM_FMTBIT_S20_3LE |
@@ -1720,8 +1720,8 @@ static int rv1106_codec_check_micbias(struct rv1106_codec_priv *rv1106,
 	rv1106->micbias_used =
 		of_property_read_bool(np, "acodec,micbias");
 
-	/* Using 0.975*AVDD by default */
-	rv1106->micbias_volt = ACODEC_ADC_MICBIAS_VOLT_0_975;
+	/* Using 0.9*AVDD by default */
+	rv1106->micbias_volt = ACODEC_ADC_MICBIAS_VOLT_0_9;
 
 	return 0;
 }
