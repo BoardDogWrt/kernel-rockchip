@@ -680,5 +680,6 @@
 		compatible = "usbbda:8153";
 		reg = <2>;
 		local-mac-address = [00 00 00 00 00 00];
+		realtek,ledsel = <0x87>;
 	};
 };
