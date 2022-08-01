@@ -167,3 +167,33 @@
 &pmu_io_domains {
 	uboot-set = <RK3399_PMU1830_VDD_3V0>;
 };
+
+&pcie0 {
+	ep-gpios = <&gpio2 9 GPIO_ACTIVE_HIGH>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&pcie_gpios>;
+};
+
+&pcie_gpios {
+	rockchip,pins =
+		<2 9 RK_FUNC_GPIO &pcfg_output_high>;
+};
+
+&leds {
+	lan_led: led-2 {
+		gpios = <&gpio1 RK_PA1 GPIO_ACTIVE_HIGH>;
+		label = "lan_led";
+	};
+
+	wan_len: led-3 {
+		gpios = <&gpio1 RK_PA0 GPIO_ACTIVE_HIGH>;
+		label = "wan_led";
+	};
+};
+
+&leds_gpio {
+	rockchip,pins =
+		<0 RK_PB5 RK_FUNC_GPIO &pcfg_pull_none>,
+		<1 RK_PA0 RK_FUNC_GPIO &pcfg_pull_none>,
+		<1 RK_PA1 RK_FUNC_GPIO &pcfg_pull_none>;
+};
