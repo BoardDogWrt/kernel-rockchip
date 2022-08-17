@@ -61,6 +61,32 @@ static struct lcd_desc hd700 = {
 	},
 };
 
+static struct lcd_desc hd703 = {
+	.width = 800,
+	.height = 1280,
+	.p_width = 94,
+	.p_height = 151,
+	.bpp = 24,
+	.freq = 60,
+
+	.timing = {
+		.h_fp = 80,
+		.h_bp = 70,
+		.h_sw = 10,
+		.v_fp = 18,
+		.v_fpe = 1,
+		.v_bp = 13,
+		.v_bpe = 1,
+		.v_sw = 10,
+	},
+	.polarity = {
+		.rise_vclk = 0,
+		.inv_hsync = 1,
+		.inv_vsync = 1,
+		.inv_vden = 0,
+	},
+};
+
 static struct lcd_desc s70 = {
 	.width = 800,
 	.height = 480,
@@ -218,6 +244,7 @@ static struct {
 	{ "HDMI",	&hdmi_def,       0  },
 
 	{ "HD702E",	&hd700,	CTP_GOODIX  },
+	{ "HD703E",	&hd703,	CTP_GOODIX  },
 	{ "HD101B",	&hd101,	CTP_GOODIX  },
 	{ "S701",	&s70,	CTP_GOODIX  },
 
