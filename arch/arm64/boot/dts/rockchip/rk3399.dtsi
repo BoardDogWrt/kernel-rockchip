@@ -1490,6 +1490,7 @@
 			clock-names = "emmcclk";
 			drive-impedance-ohm = <50>;
 			#phy-cells = <0>;
+			rockchip,enable-strobe-pulldown;
 			status = "disabled";
 		};
 
