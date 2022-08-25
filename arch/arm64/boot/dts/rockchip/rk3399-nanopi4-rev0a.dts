@@ -91,6 +91,18 @@
 	status = "disabled";
 };
 
+&edp {
+	status = "disabled";
+};
+
+&panel {
+	status = "disabled";
+};
+
+&route_edp {
+	status = "disabled";
+};
+
 &sdhci {
 	status = "disabled";
 };
