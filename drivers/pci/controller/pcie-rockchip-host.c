@@ -300,6 +300,7 @@ static int rockchip_pcie_host_init_port(struct rockchip_pcie *rockchip)
 	u32 status;
 
 	gpiod_set_value_cansleep(rockchip->ep_gpio, 0);
+	usleep_range(5000, 6000);
 
 	err = rockchip_pcie_init_port(rockchip);
 	if (err)
