@@ -600,10 +600,9 @@ static __init int rockchip_dfi_init(struct platform_device *pdev,
 		return PTR_ERR(data->regs);
 
 	data->clk = devm_clk_get(dev, "pclk_ddr_mon");
-	if (IS_ERR(data->clk)) {
-		dev_err(dev, "Cannot get the clk dmc_clk\n");
-		return PTR_ERR(data->clk);
-	}
+	if (IS_ERR(data->clk))
+		return dev_err_probe(dev, PTR_ERR(data->clk),
+				     "Cannot get the clk pclk_ddr_mon\n");
 
 	/* try to find the optional reference to the pmu syscon */
 	node = of_parse_phandle(np, "rockchip,pmu", 0);
