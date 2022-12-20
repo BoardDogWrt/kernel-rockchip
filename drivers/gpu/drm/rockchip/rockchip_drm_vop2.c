@@ -4292,7 +4292,7 @@ static void vop2_crtc_disable_line_flag_event(struct drm_crtc *crtc)
 }
 
 
-static int vop2_crtc_loader_protect(struct drm_crtc *crtc, bool on)
+static int vop2_crtc_loader_protect(struct drm_crtc *crtc, bool on, void *data)
 {
 	struct vop2_video_port *vp = to_vop2_video_port(crtc);
 	struct vop2 *vop2 = vp->vop2;

@@ -50,7 +50,7 @@ struct rockchip_drm_sub_dev {
  * @bandwidth: report present crtc bandwidth consume.
  */
 struct rockchip_crtc_funcs {
-	int (*loader_protect)(struct drm_crtc *crtc, bool on);
+	int (*loader_protect)(struct drm_crtc *crtc, bool on, void *data);
 	int (*enable_vblank)(struct drm_crtc *crtc);
 	void (*disable_vblank)(struct drm_crtc *crtc);
 	size_t (*bandwidth)(struct drm_crtc *crtc,
