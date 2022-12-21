@@ -1063,6 +1063,7 @@ static int rkvdec2_link_power_on(struct mpp_dev *mpp)
 		mpp_clk_set_rate(&dec->cabac_clk_info, CLK_MODE_ADVANCED);
 		mpp_clk_set_rate(&dec->hevc_cabac_clk_info, CLK_MODE_ADVANCED);
 		mpp_devfreq_set_core_rate(mpp, CLK_MODE_ADVANCED);
+		mpp_iommu_dev_activate(mpp->iommu_info, mpp);
 	}
 	return 0;
 }
@@ -1086,6 +1087,7 @@ static void rkvdec2_link_power_off(struct mpp_dev *mpp)
 		mpp_clk_set_rate(&dec->cabac_clk_info, CLK_MODE_NORMAL);
 		mpp_clk_set_rate(&dec->hevc_cabac_clk_info, CLK_MODE_NORMAL);
 		mpp_devfreq_set_core_rate(mpp, CLK_MODE_NORMAL);
+		mpp_iommu_dev_deactivate(mpp->iommu_info, mpp);
 	}
 }
 
@@ -1608,6 +1610,8 @@ static int rkvdec2_ccu_power_on(struct mpp_taskqueue *queue,
 			pm_stay_awake(mpp->dev);
 			if (mpp->hw_ops->clk_on)
 				mpp->hw_ops->clk_on(mpp);
+
+			mpp_iommu_dev_activate(mpp->iommu_info, mpp);
 		}
 		mpp_debug(DEBUG_CCU, "power on\n");
 	}
@@ -1636,6 +1640,7 @@ static int rkvdec2_ccu_power_off(struct mpp_taskqueue *queue,
 			pm_relax(mpp->dev);
 			pm_runtime_mark_last_busy(mpp->dev);
 			pm_runtime_put_autosuspend(mpp->dev);
+			mpp_iommu_dev_deactivate(mpp->iommu_info, mpp);
 		}
 		mpp_debug(DEBUG_CCU, "power off\n");
 	}
@@ -1791,7 +1796,7 @@ int rkvdec2_ccu_iommu_fault_handle(struct iommu_domain *iommu,
 
 	atomic_inc(&mpp->queue->reset_request);
 	for (i = 0; i < mpp->queue->core_count; i++)
-		rk_iommu_mask_irq(mpp->queue->cores[i]->dev);
+		rockchip_iommu_mask_irq(mpp->queue->cores[i]->dev);
 
 	kthread_queue_work(&mpp->queue->worker, &mpp->work);
 
