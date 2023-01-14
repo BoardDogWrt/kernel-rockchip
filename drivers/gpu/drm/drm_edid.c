@@ -85,6 +85,8 @@
 #define EDID_QUIRK_FORCE_10BPC			(1 << 11)
 /* Non desktop display (i.e. HMD) */
 #define EDID_QUIRK_NON_DESKTOP			(1 << 12)
+/* Prefer hight clock mode */
+#define EDID_QUIRK_PREFER_HIGH_CLOCK		(1 << 13)
 
 struct detailed_mode_closure {
 	struct drm_connector *connector;
@@ -151,7 +153,7 @@ static const struct edid_quirk {
 	{ "SAM", 638, EDID_QUIRK_PREFER_LARGE_60 },
 
 	/* Skyworth */
-	{ "SKW", 1, EDID_QUIRK_PREFER_LARGE_60 },
+	{ "SKW", 1, (EDID_QUIRK_PREFER_LARGE_60 | EDID_QUIRK_PREFER_HIGH_CLOCK) },
 
 	/* Sony PVM-2541A does up to 12 bpc, but only reports max 8 bpc */
 	{ "SNY", 0x2541, EDID_QUIRK_FORCE_12BPC },
@@ -2198,6 +2200,14 @@ static void edid_fixup_preferred(struct drm_connector *connector,
 		if ((MODE_SIZE(cur_mode) == MODE_SIZE(preferred_mode)) &&
 		    MODE_REFRESH_DIFF(cur_vrefresh, target_refresh) <
 		    MODE_REFRESH_DIFF(preferred_vrefresh, target_refresh)) {
+			preferred_mode = cur_mode;
+		}
+
+		/* Consider the clock like drm_mode_compare() */
+		if ((quirks & EDID_QUIRK_PREFER_HIGH_CLOCK) &&
+		    (MODE_SIZE(cur_mode) == MODE_SIZE(preferred_mode)) &&
+		    (cur_vrefresh == preferred_vrefresh) &&
+		    (cur_mode->clock > preferred_mode->clock)) {
 			preferred_mode = cur_mode;
 		}
 	}
