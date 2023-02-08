@@ -18,12 +18,14 @@
 #include <linux/pagemap.h>
 #include <linux/vmalloc.h>
 #include <linux/rockchip/rockchip_sip.h>
+#include <linux/rockchip/cpu.h>
 
 #include "rockchip_drm_drv.h"
 #include "rockchip_drm_gem.h"
 
 static u32 bank_bit_first = 12;
 static u32 bank_bit_mask = 0x7;
+static bool soc_force_dma32 = false;
 
 struct page_info {
 	struct page *page;
@@ -113,6 +115,11 @@ void rockchip_gem_get_ddr_info(void)
 		bank_bit_first = ddr_map_info->bank_bit_first;
 		bank_bit_mask = ddr_map_info->bank_bit_mask;
 	}
+
+#if defined(CONFIG_CPU_RK3568)
+	/* Ugly fixes to force DMA32 for rk3568 rga_mm */
+	soc_force_dma32 = cpu_is_rk3568();
+#endif
 }
 
 static int rockchip_gem_get_pages(struct rockchip_gem_object *rk_obj)
@@ -617,10 +624,10 @@ rockchip_gem_alloc_object(struct drm_device *drm, unsigned int size,
 	gfp_t gfp_mask = GFP_HIGHUSER | __GFP_RECLAIMABLE | __GFP_DMA32;
 #else
 	gfp_t gfp_mask = GFP_HIGHUSER | __GFP_RECLAIMABLE;
-#endif
 
-	if (flags & ROCKCHIP_BO_DMA32)
+	if (soc_force_dma32 || (flags & ROCKCHIP_BO_DMA32))
 		gfp_mask |= __GFP_DMA32;
+#endif
 
 	size = round_up(size, PAGE_SIZE);
 
