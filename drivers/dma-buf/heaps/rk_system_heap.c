@@ -23,6 +23,7 @@
 #include <linux/swiotlb.h>
 #include <linux/vmalloc.h>
 #include <linux/rockchip/rockchip_sip.h>
+#include <linux/rockchip/cpu.h>
 
 #include "page_pool.h"
 #include "deferred-free-helper.h"
@@ -31,6 +32,7 @@ static struct dma_heap *sys_heap;
 static struct dma_heap *sys_dma32_heap;
 static struct dma_heap *sys_uncached_heap;
 static struct dma_heap *sys_uncached_dma32_heap;
+static bool soc_need_dma32 = false;
 
 /* Default setting */
 static u32 bank_bit_first = 12;
@@ -512,7 +514,7 @@ static struct dma_buf *system_heap_do_allocate(struct dma_heap *heap,
 					       unsigned long len,
 					       unsigned long fd_flags,
 					       unsigned long heap_flags,
-					       bool uncached)
+					       bool uncached, bool dma32)
 {
 	struct system_heap_buffer *buffer;
 	DEFINE_DMA_BUF_EXPORT_INFO(exp_info);
@@ -540,7 +542,7 @@ static struct dma_buf *system_heap_do_allocate(struct dma_heap *heap,
 	buffer->heap = heap;
 	buffer->len = len;
 	buffer->uncached = uncached;
-	buffer->pools = strstr(dma_heap_get_name(heap), "dma32") ? dma32_pools : pools;
+	buffer->pools = dma32 ? dma32_pools : pools;
 
 	INIT_LIST_HEAD(&pages);
 	for (i = 0; i < 8; i++)
@@ -651,7 +653,7 @@ static struct dma_buf *system_heap_allocate(struct dma_heap *heap,
 					    unsigned long fd_flags,
 					    unsigned long heap_flags)
 {
-	return system_heap_do_allocate(heap, len, fd_flags, heap_flags, false);
+	return system_heap_do_allocate(heap, len, fd_flags, heap_flags, false, soc_need_dma32);
 }
 
 static long system_get_pool_size(struct dma_heap *heap)
@@ -674,12 +676,33 @@ static const struct dma_heap_ops system_heap_ops = {
 	.get_pool_size = system_get_pool_size,
 };
 
+static struct dma_buf *system_heap_dma32_allocate(struct dma_heap *heap,
+						  unsigned long len,
+						  unsigned long fd_flags,
+						  unsigned long heap_flags)
+{
+	return system_heap_do_allocate(heap, len, fd_flags, heap_flags, false, true);
+}
+
+static const struct dma_heap_ops system_dma32_heap_ops = {
+	.allocate = system_heap_dma32_allocate,
+	.get_pool_size = system_get_pool_size,
+};
+
 static struct dma_buf *system_uncached_heap_allocate(struct dma_heap *heap,
 						     unsigned long len,
 						     unsigned long fd_flags,
 						     unsigned long heap_flags)
 {
-	return system_heap_do_allocate(heap, len, fd_flags, heap_flags, true);
+	return system_heap_do_allocate(heap, len, fd_flags, heap_flags, true, soc_need_dma32);
+}
+
+static struct dma_buf *system_uncached_heap_dma32_allocate(struct dma_heap *heap,
+							   unsigned long len,
+							   unsigned long fd_flags,
+							   unsigned long heap_flags)
+{
+	return system_heap_do_allocate(heap, len, fd_flags, heap_flags, true, true);
 }
 
 /* Dummy function to be used until we can call coerce_mask_and_coherent */
@@ -692,6 +715,10 @@ static struct dma_buf *system_uncached_heap_not_initialized(struct dma_heap *hea
 }
 
 static struct dma_heap_ops system_uncached_heap_ops = {
+	.allocate = system_uncached_heap_not_initialized,
+};
+
+static struct dma_heap_ops system_uncached_dma32_heap_ops = {
 	/* After system_heap_create is complete, we will swap this */
 	.allocate = system_uncached_heap_not_initialized,
 };
@@ -788,7 +815,7 @@ static int system_heap_create(void)
 		return PTR_ERR(sys_heap);
 
 	exp_info.name = "system-dma32";
-	exp_info.ops = &system_heap_ops;
+	exp_info.ops = &system_dma32_heap_ops;
 	exp_info.priv = NULL;
 
 	sys_dma32_heap = dma_heap_add(&exp_info);
@@ -808,8 +835,13 @@ static int system_heap_create(void)
 		return err;
 
 	exp_info.name = "system-uncached-dma32";
-	exp_info.ops = &system_uncached_heap_ops;
+	exp_info.ops = &system_uncached_dma32_heap_ops;
 	exp_info.priv = NULL;
+
+#if defined(CONFIG_CPU_RK3568)
+	/* force uncached heap to DMA32 for rk3568 rga_mm */
+	soc_need_dma32 = cpu_is_rk3568();
+#endif
 
 	sys_uncached_dma32_heap = dma_heap_add(&exp_info);
 	if (IS_ERR(sys_uncached_dma32_heap))
@@ -822,6 +854,7 @@ static int system_heap_create(void)
 
 	mb(); /* make sure we only set allocate after dma_mask is set */
 	system_uncached_heap_ops.allocate = system_uncached_heap_allocate;
+	system_uncached_dma32_heap_ops.allocate = system_uncached_heap_dma32_allocate;
 
 	ddr_map_info = sip_smc_get_dram_map();
 	if (ddr_map_info) {
