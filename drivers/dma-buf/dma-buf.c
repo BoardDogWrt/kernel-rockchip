@@ -719,7 +719,9 @@ struct dma_buf *dma_buf_export(const struct dma_buf_export_info *exp_info)
 	mutex_init(&dmabuf->lock);
 	spin_lock_init(&dmabuf->name_lock);
 	INIT_LIST_HEAD(&dmabuf->attachments);
-
+#ifdef CONFIG_DMABUF_CACHE
+	mutex_init(&dmabuf->cache_lock);
+#endif
 #ifdef CONFIG_ARCH_ROCKCHIP
 	mutex_init(&dmabuf->release_lock);
 	INIT_LIST_HEAD(&dmabuf->release_callbacks);
