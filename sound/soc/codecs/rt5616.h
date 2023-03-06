@@ -617,10 +617,10 @@
 #define RT5616_PWR_LDO				(0x1 << 2)
 #define RT5616_PWR_LDO_BIT			2
 #define RT5616_PWR_LDO_DVO_MASK			(0x3)
-#define RT5616_PWR_LDO_DVO_1_0V			0
-#define RT5616_PWR_LDO_DVO_1_1V			1
-#define RT5616_PWR_LDO_DVO_1_2V			2
-#define RT5616_PWR_LDO_DVO_1_3V			3
+#define RT5616_PWR_LDO_DVO_1_1V			0
+#define RT5616_PWR_LDO_DVO_1_2V			1
+#define RT5616_PWR_LDO_DVO_1_3V			2
+#define RT5616_PWR_LDO_DVO_1_4V			3
 
 /* Power Management for Analog 2 (0x64) */
 #define RT5616_PWR_BST1				(0x1 << 15)
