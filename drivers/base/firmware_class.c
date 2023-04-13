@@ -53,6 +53,7 @@ static bool fw_get_builtin_firmware(struct firmware *fw, const char *name)
 
 	for (b_fw = __start_builtin_fw; b_fw != __end_builtin_fw; b_fw++) {
 		if (strcmp(name, b_fw->name) == 0) {
+			pr_info("firmware: Builtin firmware found: %s\n", name);
 			fw->size = b_fw->size;
 			fw->data = b_fw->data;
 			return true;
@@ -358,9 +359,11 @@ static int fw_get_filesystem_firmware(struct device *device,
 			break;
 		}
 
+		dev_info(device, "firmware: Try to open firmware file: %s\n", path);
+		
 		file = filp_open(path, O_RDONLY, 0);
 		if (IS_ERR(file)) {
-			dev_warn(device, "firmware: Can't open firmware file: %s\n", path);
+			//dev_warn(device, "firmware: Can't open firmware file: %s\n", path);
 			continue;
 		}
 
