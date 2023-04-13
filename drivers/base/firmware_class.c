@@ -6,6 +6,7 @@
  * Please see Documentation/firmware_class/ for more information.
  *
  */
+#include <generated/autoconf.h>
 
 #include <linux/capability.h>
 #include <linux/device.h>
@@ -281,7 +282,14 @@ static const char * const fw_path[] = {
 	"/lib/firmware/updates/" UTS_RELEASE,
 	"/lib/firmware/updates",
 	"/lib/firmware/" UTS_RELEASE,
-	"/lib/firmware"
+	"/lib/firmware",
+	/* Android layout specific */
+	"/etc/firmware/" UTS_RELEASE,
+	"/etc/firmware",
+	"/system/etc/firmware/" UTS_RELEASE,
+	"/system/etc/firmware",
+	"/system/vendor/firmware/" UTS_RELEASE,
+	"/system/vendor/firmware"
 };
 
 /*
@@ -334,6 +342,7 @@ static int fw_get_filesystem_firmware(struct device *device,
 	if (!path)
 		return -ENOMEM;
 
+	/* iterate predefined firmware path locations */
 	for (i = 0; i < ARRAY_SIZE(fw_path); i++) {
 		struct file *file;
 
@@ -341,13 +350,9 @@ static int fw_get_filesystem_firmware(struct device *device,
 		if (!fw_path[i][0])
 			continue;
 
-		if (strstr(fw_path[i], "firmware") != NULL) {
-			len = snprintf(path, PATH_MAX, "%s/%s",
-			       fw_path[i], buf->fw_id);
-		} else {
-			len = snprintf(path, PATH_MAX, "/lib/firmware/%s/%s",
-				   fw_path[i], buf->fw_id);
-		}
+		len = snprintf(path, PATH_MAX, "%s/%s",
+				fw_path[i], buf->fw_id);
+
 		if (len >= PATH_MAX) {
 			rc = -ENAMETOOLONG;
 			break;
