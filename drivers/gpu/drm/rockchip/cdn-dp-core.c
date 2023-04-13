@@ -1235,6 +1235,8 @@ static int cdn_dp_request_firmware(struct cdn_dp_device *dp)
 	/* Drop the lock before getting the firmware to avoid blocking boot */
 	mutex_unlock(&dp->lock);
 
+	DRM_DEV_INFO(dp->dev, "Loading firmware: %s\n", CDN_DP_FIRMWARE);
+
 	while (time_before(jiffies, timeout)) {
 		ret = request_firmware(&dp->fw, CDN_DP_FIRMWARE, dp->dev);
 		if (ret == -ENOENT) {
