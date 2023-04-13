@@ -25,6 +25,7 @@
 #include <linux/list.h>
 #include <linux/async.h>
 #include <linux/pm.h>
+#include <linux/fs.h>
 #include <linux/suspend.h>
 #include <linux/syscore_ops.h>
 #include <linux/reboot.h>
@@ -340,20 +341,28 @@ static int fw_get_filesystem_firmware(struct device *device,
 		if (!fw_path[i][0])
 			continue;
 
-		len = snprintf(path, PATH_MAX, "%s/%s",
+		if (strstr(fw_path[i], "firmware") != NULL) {
+			len = snprintf(path, PATH_MAX, "%s/%s",
 			       fw_path[i], buf->fw_id);
+		} else {
+			len = snprintf(path, PATH_MAX, "/lib/firmware/%s/%s",
+				   fw_path[i], buf->fw_id);
+		}
 		if (len >= PATH_MAX) {
 			rc = -ENAMETOOLONG;
 			break;
 		}
 
 		file = filp_open(path, O_RDONLY, 0);
-		if (IS_ERR(file))
+		if (IS_ERR(file)) {
+			dev_warn(device, "firmware: Can't open firmware file: %s\n", path);
 			continue;
+		}
+
 		rc = fw_read_file_contents(file, buf);
 		fput(file);
 		if (rc)
-			dev_warn(device, "firmware, attempted to load %s, but failed with error %d\n",
+			dev_warn(device, "firmware: Attempted to load '%s', but failed with error %d\n",
 				path, rc);
 		else
 			break;
@@ -361,7 +370,7 @@ static int fw_get_filesystem_firmware(struct device *device,
 	__putname(path);
 
 	if (!rc) {
-		dev_dbg(device, "firmware: direct-loading firmware %s\n",
+		dev_dbg(device, "firmware: Direct loading firmware: %s\n",
 			buf->fw_id);
 		mutex_lock(&fw_lock);
 		set_bit(FW_STATUS_DONE, &buf->status);
