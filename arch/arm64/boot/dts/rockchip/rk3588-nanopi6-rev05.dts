@@ -31,7 +31,3 @@
 &pcie2x1l2 {
 	/delete-node/ pcie@40;
 };
-
-&sdhci {
-	status = "disabled";
-};
