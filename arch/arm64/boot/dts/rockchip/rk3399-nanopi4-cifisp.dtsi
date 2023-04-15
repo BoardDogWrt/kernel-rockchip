@@ -39,7 +39,7 @@
 
 &i2c1 {
 	ov13850p0: ov13850@10 {
-		status = "okay";
+		status = "disabled"; //EOF:FIXED:unused
 		compatible = "omnivision,ov13850-v4l2-i2c-subdev";
 		reg = <0x10>;
 		device_type = "v4l2-i2c-subdev";
@@ -73,7 +73,7 @@
 	};
 
 	ov4689p0: ov4689@36 {
-		status = "okay";
+		status = "disabled"; //EOF:FIXED:unused
 		compatible = "omnivision,ov4689-v4l2-i2c-subdev";
 		reg = <0x36>;
 		device_type = "v4l2-i2c-subdev";
@@ -107,7 +107,7 @@
 
 &i2c2 {
 	ov13850p1: ov13850@10 {
-		status = "okay";
+		status = "disabled"; //EOF:FIXED:unused
 		compatible = "omnivision,ov13850-v4l2-i2c-subdev";
 		reg = <0x10>;
 		device_type = "v4l2-i2c-subdev";
@@ -141,7 +141,7 @@
 	};
 
 	ov4689p1: ov4689@36 {
-		status = "okay";
+		status = "disabled"; //EOF:FIXED:unused
 		compatible = "omnivision,ov4689-v4l2-i2c-subdev";
 		reg = <0x36>;
 		device_type = "v4l2-i2c-subdev";
