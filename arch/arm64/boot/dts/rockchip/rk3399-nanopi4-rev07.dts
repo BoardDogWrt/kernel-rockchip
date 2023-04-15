@@ -21,7 +21,7 @@
 #include <dt-bindings/sensor-dev.h>
 
 / {
-	model = "FriendlyElec SOM-RK3399";
+	model = "FriendlyElec SOM-RK3399 Rev. 7";
 	compatible = "friendlyelec,som-rk3399", "rockchip,rk3399";
 };
 
@@ -37,7 +37,7 @@
 	clock-frequency = <400000>;
 
 	sensor@18 {
-		status = "okay";
+		status = "disabled"; //EOF:FIXED: does not work in kernel
 		compatible = "gs_lis3dh";
 		reg = <0x18>;
 		type = <SENSOR_TYPE_ACCEL>;
