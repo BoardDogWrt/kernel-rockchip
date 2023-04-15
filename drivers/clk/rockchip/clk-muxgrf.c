@@ -9,6 +9,8 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  */
+//EOF:FIXED
+#define DEBUG 1
 
 #include <linux/slab.h>
 #include <linux/bitops.h>
@@ -76,6 +78,9 @@ struct clk *rockchip_clk_register_muxgrf(const char *name,
 		pr_err("%s: regmap not available\n", __func__);
 		return ERR_PTR(-ENOTSUPP);
 	}
+
+	pr_debug("%s: register muxgrf for: %s num_parents: %d\n", 
+			__func__, name, num_parents);
 
 	muxgrf_clock = kmalloc(sizeof(*muxgrf_clock), GFP_KERNEL);
 	if (!muxgrf_clock)

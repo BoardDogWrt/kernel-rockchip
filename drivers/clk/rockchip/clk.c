@@ -24,7 +24,7 @@
  */
 
 //EOF:DEBUG
-//#define DEBUG 1
+#define DEBUG 1
 
 #include <linux/slab.h>
 #include <linux/clk.h>
@@ -260,6 +260,9 @@ static struct clk *rockchip_clk_register_frac_branch(
 		       __func__, name);
 		return ERR_PTR(-EINVAL);
 	}
+
+	pr_debug("%s: register frac_branch for: %s num_parents: %d\n", 
+			__func__, name, num_parents);
 
 	frac = kzalloc(sizeof(*frac), GFP_KERNEL);
 	if (!frac)
