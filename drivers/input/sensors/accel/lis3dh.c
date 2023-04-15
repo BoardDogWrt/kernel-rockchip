@@ -130,6 +130,8 @@ static int sensor_active(struct i2c_client *client, int enable, int rate/*ms*/)
 		return -1;
 	}
 
+	dev_info(&client->dev, "%s:lis3dh: activate sensor.", __func__);
+
 	sensor->ops->ctrl_data = sensor_read_reg(client, sensor->ops->ctrl_reg);
 	result = lis3dh_select_odr(odr_rate);
 	sensor->ops->ctrl_data |= result;
@@ -174,6 +176,8 @@ static int sensor_init(struct i2c_client *client)
 		{LIS3DH_CTRL_REG6, 0x40},
 	};
 
+	dev_info(&client->dev, "%s:lis3dh: initialize sensor.", __func__);
+
 	for (i = 0; i < (sizeof(reg_data) / sizeof(struct sensor_reg_data)); i++) {
 		result = sensor_write_reg(client, reg_data[i].reg, reg_data[i].data);
 		if (result) {
@@ -196,6 +200,8 @@ static int gsensor_report_value(struct i2c_client *client, struct sensor_axis *a
 		input_report_abs(sensor->input_dev, ABS_Y, axis->y);
 		input_report_abs(sensor->input_dev, ABS_Z, axis->z);
 		input_sync(sensor->input_dev);
+	} else {
+		dev_err(&client->dev, "%s:lis3dh: sensor is offline\n", __func__);
 	}
 
 	return 0;
@@ -235,6 +241,9 @@ static int sensor_report_value(struct i2c_client *client)
 	axis.x = (pdata->orientation[0]) * x + (pdata->orientation[1]) * y + (pdata->orientation[2]) * z;
 	axis.y = (pdata->orientation[3]) * x + (pdata->orientation[4]) * y + (pdata->orientation[5]) * z;
 	axis.z = (pdata->orientation[6]) * x + (pdata->orientation[7]) * y + (pdata->orientation[8]) * z;
+
+	dev_info(&client->dev, "%s:lis3dh: report x=%d y=%d z=%d", 
+				__func__, axis.x, axis.y, axis.z);
 
 	gsensor_report_value(client, &axis);
 
