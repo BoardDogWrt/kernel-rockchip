@@ -265,10 +265,8 @@ PNAME(mux_aclk_gmac_p)			= { "cpll_aclk_gmac_src",
 					    "gpll_aclk_gmac_src" };
 #endif
 
-PNAME(mux_dclk_vop0_p)			= { "dclk_vop0_div",
-					    "dummy_dclk_vop0_frac" };
-PNAME(mux_dclk_vop1_p)			= { "dclk_vop1_div",
-					    "dummy_dclk_vop1_frac" };
+PNAME(mux_dclk_vop0_p)			= { "dclk_vop0_div", "dclk_vop0_frac" }; //EOF:FIXED:renamed
+PNAME(mux_dclk_vop1_p)			= { "dclk_vop1_div", "dclk_vop1_frac" }; //EOF:FIXED:renamed
 
 PNAME(mux_clk_cif_p)			= { "clk_cifout_src", "xin24m" };
 
