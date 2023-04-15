@@ -23,6 +23,9 @@
  * GNU General Public License for more details.
  */
 
+//EOF:DEBUG
+//#define DEBUG 1
+
 #include <linux/slab.h>
 #include <linux/clk.h>
 #include <linux/clk-provider.h>
@@ -101,6 +104,9 @@ static struct clk *rockchip_clk_register_branch(const char *name,
 						? &clk_divider_ro_ops
 						: &clk_divider_ops;
 	}
+
+	pr_debug("%s: register composite '%s' with num_parents=%d\n",
+			__func__, name, num_parents);
 
 	clk = clk_register_composite(NULL, name, parent_names, num_parents,
 				     mux ? &mux->hw : NULL, mux_ops,
@@ -208,7 +214,7 @@ static void rockchip_fractional_approximation(struct clk_hw *hw,
 		}
 
 		if (*parent_rate < rate * 20) {
-			pr_warn("%s p_rate(%ld) is low than rate(%ld)*20, use integer or half-div\n",
+			pr_debug("%s p_rate(%ld) is low than rate(%ld)*20, use integer or half-div\n",
 				clk_hw_get_name(hw), *parent_rate, rate);
 			*m = 0;
 			*n = 1;
@@ -281,6 +287,9 @@ static struct clk *rockchip_clk_register_frac_branch(
 	div->approximation = rockchip_fractional_approximation;
 	div->max_prate = max_prate;
 	div_ops = &clk_fractional_divider_ops;
+
+	pr_debug("%s: register composite '%s' with num_parents=%d\n",
+			__func__, name, num_parents);
 
 	clk = clk_register_composite(NULL, name, parent_names, num_parents,
 				     NULL, NULL,
