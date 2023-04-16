@@ -286,20 +286,16 @@ static struct sensor_operate *gsensor_get_ops(void)
 
 static int __init gsensor_lis3dh_init(void)
 {
-#ifdef CONFIG_GS_LIS3DH
 	struct sensor_operate *ops = gsensor_get_ops();
 	int type = ops->type;
 	return sensor_register_slave(type, NULL, NULL, gsensor_get_ops);
-#endif
 }
 
 static void __exit gsensor_lis3dh_exit(void)
 {
-#ifdef CONFIG_GS_LIS3DH
 	struct sensor_operate *ops = gsensor_get_ops();
 	int type = ops->type;
 	sensor_unregister_slave(type, NULL, NULL, gsensor_get_ops);
-#endif
 }
 
 module_init(gsensor_lis3dh_init);
