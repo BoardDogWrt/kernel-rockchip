@@ -1607,7 +1607,7 @@ static int vop_plane_atomic_check(struct drm_plane *plane,
 	return 0;
 
 out_disable:
-	DRM_INFO("%s: vop plane state disabled.\n", __func__);
+	//DRM_INFO("%s: vop plane state disabled.\n", __func__);
 	vop_plane_state->enable = false;
 	return 0;
 }
