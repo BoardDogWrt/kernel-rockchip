@@ -181,7 +181,8 @@ static int sensor_init(struct i2c_client *client)
 	for (i = 0; i < (sizeof(reg_data) / sizeof(struct sensor_reg_data)); i++) {
 		result = sensor_write_reg(client, reg_data[i].reg, reg_data[i].data);
 		if (result) {
-			dev_err(&client->dev, "%s:lis3dh: line=%d,i=%d,error\n", __func__, __LINE__, i);
+			dev_err(&client->dev, "%s:lis3dh: failed to write register[%d]=0x%x data=0x%x\n",
+			 	__func__, i, reg_data[i].reg, reg_data[i].data);
 			return result;
 		}
 	}
