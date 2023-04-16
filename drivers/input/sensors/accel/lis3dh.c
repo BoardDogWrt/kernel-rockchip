@@ -126,7 +126,7 @@ static int sensor_active(struct i2c_client *client, int enable, int rate/*ms*/)
 	int odr_rate = 0;
 
 	if (rate == 0) {
-		dev_err(&client->dev, "%s: rate == 0!!!\n", __func__);
+		dev_err(&client->dev, "%s:lis3dh: rate == 0!!!\n", __func__);
 		return -1;
 	}
 
@@ -147,7 +147,7 @@ static int sensor_active(struct i2c_client *client, int enable, int rate/*ms*/)
 
 	result = sensor_write_reg(client, sensor->ops->ctrl_reg, sensor->ops->ctrl_data);
 	if (result)
-		dev_err(&client->dev, "%s:fail to active sensor\n", __func__);
+		dev_err(&client->dev, "%s:lis3dh: fail to active sensor\n", __func__);
 
 	return result;
 }
@@ -181,7 +181,7 @@ static int sensor_init(struct i2c_client *client)
 	for (i = 0; i < (sizeof(reg_data) / sizeof(struct sensor_reg_data)); i++) {
 		result = sensor_write_reg(client, reg_data[i].reg, reg_data[i].data);
 		if (result) {
-			dev_err(&client->dev, "%s:line=%d,i=%d,error\n", __func__, __LINE__, i);
+			dev_err(&client->dev, "%s:lis3dh: line=%d,i=%d,error\n", __func__, __LINE__, i);
 			return result;
 		}
 	}
@@ -218,7 +218,8 @@ static int sensor_report_value(struct i2c_client *client)
 	char buffer[6] = {0};
 
 	if (sensor->ops->read_len < 6) {
-		dev_err(&client->dev, "%s:lenth is error,len=%d\n", __func__, sensor->ops->read_len);
+		dev_err(&client->dev, "%s:lis3dh: lenth is error,len=%d\n", 
+				__func__, sensor->ops->read_len);
 		return -1;
 	}
 
@@ -229,7 +230,8 @@ static int sensor_report_value(struct i2c_client *client)
 		*buffer = sensor->ops->read_reg | 0x80;
 		ret = sensor_rx_data(client, buffer, sensor->ops->read_len);
 		if (ret < 0) {
-			dev_err(&client->dev, "lis3dh read data failed, ret = %d\n", ret);
+			dev_err(&client->dev, "%s:lis3dh: read data failed, ret = %d\n", 
+					__func__, ret);
 			return ret;
 		}
 	} while (0);
@@ -261,17 +263,17 @@ struct sensor_operate gsensor_lis3dh_ops = {
 	.name				= "lis3dh",
 	.type				= SENSOR_TYPE_ACCEL,
 	.id_i2c				= ACCEL_ID_LIS3DH,
-	.read_reg				= LIS3DH_OUT_X_L,
-	.read_len				= 6,
+	.read_reg			= LIS3DH_OUT_X_L,
+	.read_len			= 6,
 	.id_reg				= LIS3DH_WHO_AM_I,
-	.id_data 				= LIS3DH_DEVID,
-	.precision				= LIS3DH_PRECISION,
-	.ctrl_reg 				= LIS3DH_CTRL_REG1,
-	.int_status_reg 		= LIS3DH_INT1_SRC,
+	.id_data 			= LIS3DH_DEVID,
+	.precision			= LIS3DH_PRECISION,
+	.ctrl_reg 			= LIS3DH_CTRL_REG1,
+	.int_status_reg 	= LIS3DH_INT1_SRC,
 	.range				= {-32768, +32768},
-	.trig					= (IRQF_TRIGGER_LOW | IRQF_ONESHOT),
+	.trig				= (IRQF_TRIGGER_LOW | IRQF_ONESHOT),
 	.active				= sensor_active,
-	.init					= sensor_init,
+	.init				= sensor_init,
 	.report				= sensor_report_value,
 };
 
@@ -283,18 +285,20 @@ static struct sensor_operate *gsensor_get_ops(void)
 
 static int __init gsensor_lis3dh_init(void)
 {
+#ifdef CONFIG_GS_LIS3DH
 	struct sensor_operate *ops = gsensor_get_ops();
 	int type = ops->type;
-
 	return sensor_register_slave(type, NULL, NULL, gsensor_get_ops);
+#endif
 }
 
 static void __exit gsensor_lis3dh_exit(void)
 {
+#ifdef CONFIG_GS_LIS3DH
 	struct sensor_operate *ops = gsensor_get_ops();
 	int type = ops->type;
-
 	sensor_unregister_slave(type, NULL, NULL, gsensor_get_ops);
+#endif
 }
 
 module_init(gsensor_lis3dh_init);
