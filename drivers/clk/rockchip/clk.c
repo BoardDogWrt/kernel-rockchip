@@ -24,7 +24,7 @@
  */
 
 //EOF:DEBUG
-#define DEBUG 1
+//#define DEBUG 1
 
 #include <linux/slab.h>
 #include <linux/clk.h>
