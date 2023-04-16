@@ -84,7 +84,7 @@
 };
 
 &dmc {
-	status = "disabled";
+	status = "okay";
 	system-status-freq = <
 		/*system status         freq(KHz)*/
 		SYS_STATUS_NORMAL       856000
