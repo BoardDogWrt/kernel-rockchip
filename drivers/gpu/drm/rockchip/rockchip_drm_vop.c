@@ -1504,7 +1504,8 @@ static int vop_plane_atomic_check(struct drm_plane *plane,
 	 * Both crtc or plane->state->crtc can be null.
 	 */
 	if (!crtc || !fb) {
-		DRM_ERROR("crtc or fb is null.\n");
+		if (vop_plane_state->enable)
+			DRM_ERROR("crtc and/or fb is null, disable plane.\n");
 		goto out_disable;
 	}
 
