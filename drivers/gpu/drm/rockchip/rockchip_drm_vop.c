@@ -12,6 +12,9 @@
  * GNU General Public License for more details.
  */
 
+//EOF:DEBUG
+//#define DEBUG 1
+
 #include <drm/drm.h>
 #include <drm/drmP.h>
 #include <drm/drm_atomic.h>
@@ -80,9 +83,9 @@
 		if (VOP_REG_SUPPORT(vop, reg)) \
 			__REG_SET(vop, off + reg.offset, mask, reg.shift, \
 				  v, reg.write_mask, relaxed); \
-		else \
-			dev_dbg(vop->dev, "Warning: not support "#name"\n"); \
 	} while(0)
+/*else \*/
+	/*dev_dbg(vop->dev, "Warning: not support "#name"\n");*/ \
 
 #define REG_SET(x, name, off, reg, v, relaxed) \
 		_REG_SET(x, name, off, reg, reg.mask, v, relaxed)
@@ -1495,16 +1498,22 @@ static int vop_plane_atomic_check(struct drm_plane *plane,
 	u16 vdisplay;
 
 	crtc = crtc ? crtc : plane->state->crtc;
+	fb = fb ? fb : plane->state->fb;
+
 	/*
 	 * Both crtc or plane->state->crtc can be null.
 	 */
-	if (!crtc || !fb)
+	if (!crtc || !fb) {
+		DRM_ERROR("crtc or fb is null.\n");
 		goto out_disable;
+	}
 
 	adjusted_mode = &crtc->state->adjusted_mode;
 	crtc_state = drm_atomic_get_crtc_state(state->state, crtc);
-	if (IS_ERR(crtc_state))
+	if (IS_ERR(crtc_state)) {
+		DRM_ERROR("drm_atomic_get_crtc_state() failed.\n");
 		return PTR_ERR(crtc_state);
+	}
 
 	src->x1 = state->src_x;
 	src->y1 = state->src_y;
@@ -1529,15 +1538,21 @@ static int vop_plane_atomic_check(struct drm_plane *plane,
 					    min_scale,
 					    max_scale,
 					    true, true, &visible);
-	if (ret)
+	if (ret) {
+		DRM_ERROR("drm_plane_helper_check_update() failed.\n");
 		return ret;
+	}
 
-	if (!visible)
+	if (!visible) {
+		DRM_ERROR("drm_plane_helper_check_update() returned not visible.\n");
 		goto out_disable;
+	}
 
 	vop_plane_state->format = vop_convert_format(fb->pixel_format);
-	if (vop_plane_state->format < 0)
+	if (vop_plane_state->format < 0) {
+		DRM_ERROR("vop_convert_format() failed.\n");
 		return vop_plane_state->format;
+	}
 
 	vop = to_vop(crtc);
 	vop_data = vop->data;
@@ -1592,6 +1607,7 @@ static int vop_plane_atomic_check(struct drm_plane *plane,
 	return 0;
 
 out_disable:
+	DRM_INFO("%s: vop plane state disabled.\n", __func__);
 	vop_plane_state->enable = false;
 	return 0;
 }
@@ -3041,19 +3057,25 @@ static int vop_crtc_atomic_check(struct drm_crtc *crtc,
 #endif
 
 	ret = vop_afbdc_atomic_check(crtc, crtc_state);
-	if (ret)
+	if (ret) {
+		DRM_ERROR("vop_afbdc_atomic_check() failed.");
 		return ret;
+	}
 
 	s->yuv_overlay = 0;
 	if (VOP_CTRL_SUPPORT(vop, overlay_mode))
 		s->yuv_overlay = is_yuv_output(s->bus_format);
 
 	ret = vop_hdr_atomic_check(crtc, crtc_state);
-	if (ret)
+	if (ret) {
+		DRM_ERROR("vop_hdr_atomic_check() failed.");
 		return ret;
-	ret = vop_csc_atomic_check(crtc, crtc_state);
-	if (ret)
+	}
+	ret = vop_csc_atomic_check(crtc, crtc_state); 
+	if (ret) {
+		DRM_ERROR("vop_csc_atomic_check() failed.");
 		return ret;
+	}
 
 	pzpos = kmalloc_array(vop_data->win_size, sizeof(*pzpos), GFP_KERNEL);
 	if (!pzpos)
@@ -3950,8 +3972,10 @@ static irqreturn_t vop_isr(int irq, void *data)
 		 * we config this register at frame start.
 		 */
 		spin_lock_irqsave(&vop->irq_lock, flags);
+
 		VOP_CTRL_SET(vop, level2_overlay_en, vop->pre_overlay);
 		VOP_CTRL_SET(vop, alpha_hard_calc, vop->pre_overlay);
+
 		spin_unlock_irqrestore(&vop->irq_lock, flags);
 		drm_crtc_handle_vblank(crtc);
 		vop_handle_vblank(vop);

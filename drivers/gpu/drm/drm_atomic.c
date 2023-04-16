@@ -25,7 +25,10 @@
  * Daniel Vetter <daniel.vetter@ffwll.ch>
  */
 
+//EOF:DEBUG
+#define DEBUG 1
 
+#include <linux/kernel.h>
 #include <drm/drmP.h>
 #include <drm/drm_atomic.h>
 #include <drm/drm_mode.h>
@@ -589,7 +592,7 @@ static int drm_atomic_crtc_check(struct drm_crtc *crtc,
 	 */
 
 	if (state->active && !state->enable) {
-		DRM_DEBUG_ATOMIC("[CRTC:%d] active without enabled\n",
+		DRM_ERROR("[CRTC:%d] active without enabled\n",
 				 crtc->base.id);
 		return -EINVAL;
 	}
@@ -599,14 +602,14 @@ static int drm_atomic_crtc_check(struct drm_crtc *crtc,
 	 * be able to trigger. */
 	if (drm_core_check_feature(crtc->dev, DRIVER_ATOMIC) &&
 	    WARN_ON(state->enable && !state->mode_blob)) {
-		DRM_DEBUG_ATOMIC("[CRTC:%d] enabled without mode blob\n",
+		DRM_ERROR("[CRTC:%d] enabled without mode blob\n",
 				 crtc->base.id);
 		return -EINVAL;
 	}
 
 	if (drm_core_check_feature(crtc->dev, DRIVER_ATOMIC) &&
 	    WARN_ON(!state->enable && state->mode_blob)) {
-		DRM_DEBUG_ATOMIC("[CRTC:%d] disabled with mode blob\n",
+		DRM_ERROR("[CRTC:%d] disabled with mode blob\n",
 				 crtc->base.id);
 		return -EINVAL;
 	}
@@ -810,10 +813,10 @@ static int drm_atomic_plane_check(struct drm_plane *plane,
 
 	/* either *both* CRTC and FB must be set, or neither */
 	if (WARN_ON(state->crtc && !state->fb)) {
-		DRM_DEBUG_ATOMIC("CRTC set but no FB\n");
+		DRM_ERROR("CRTC set but no FB\n");
 		return -EINVAL;
 	} else if (WARN_ON(state->fb && !state->crtc)) {
-		DRM_DEBUG_ATOMIC("FB set but no CRTC\n");
+		DRM_ERROR("FB set but no CRTC\n");
 		return -EINVAL;
 	}
 
@@ -823,14 +826,14 @@ static int drm_atomic_plane_check(struct drm_plane *plane,
 
 	/* Check whether this plane is usable on this CRTC */
 	if (!(plane->possible_crtcs & drm_crtc_mask(state->crtc))) {
-		DRM_DEBUG_ATOMIC("Invalid crtc for plane\n");
+		DRM_ERROR("Invalid crtc for plane\n");
 		return -EINVAL;
 	}
 
 	/* Check whether this plane supports the fb pixel format. */
 	ret = drm_plane_check_pixel_format(plane, state->fb->pixel_format);
 	if (ret) {
-		DRM_DEBUG_ATOMIC("Invalid pixel format %s\n",
+		DRM_ERROR("Invalid pixel format %s\n",
 				 drm_get_format_name(state->fb->pixel_format));
 		return ret;
 	}
@@ -840,7 +843,7 @@ static int drm_atomic_plane_check(struct drm_plane *plane,
 	    state->crtc_x > INT_MAX - (int32_t) state->crtc_w ||
 	    state->crtc_h > INT_MAX ||
 	    state->crtc_y > INT_MAX - (int32_t) state->crtc_h) {
-		DRM_DEBUG_ATOMIC("Invalid CRTC coordinates %ux%u+%d+%d\n",
+		DRM_ERROR("Invalid CRTC coordinates %ux%u+%d+%d\n",
 				 state->crtc_w, state->crtc_h,
 				 state->crtc_x, state->crtc_y);
 		return -ERANGE;
@@ -854,19 +857,19 @@ static int drm_atomic_plane_check(struct drm_plane *plane,
 	    state->src_x > fb_width - state->src_w ||
 	    state->src_h > fb_height ||
 	    state->src_y > fb_height - state->src_h) {
-		DRM_DEBUG_ATOMIC("Invalid source coordinates "
+		DRM_ERROR("Invalid source coordinates "
 				 "%u.%06ux%u.%06u+%u.%06u+%u.%06u\n",
 				 state->src_w >> 16, ((state->src_w & 0xffff) * 15625) >> 10,
 				 state->src_h >> 16, ((state->src_h & 0xffff) * 15625) >> 10,
 				 state->src_x >> 16, ((state->src_x & 0xffff) * 15625) >> 10,
 				 state->src_y >> 16, ((state->src_y & 0xffff) * 15625) >> 10);
-		DRM_DEBUG_ATOMIC("framebuffer size[%dx%d]\n",
+		DRM_ERROR("framebuffer size[%dx%d]\n",
 				 fb_width >> 16, fb_height >> 16);
 		return -ENOSPC;
 	}
 
 	if (plane_switching_crtc(state->state, plane, state)) {
-		DRM_DEBUG_ATOMIC("[PLANE:%d] switching CRTC directly\n",
+		DRM_ERROR("[PLANE:%d] switching CRTC directly\n",
 				 plane->base.id);
 		return -EINVAL;
 	}
@@ -1406,7 +1409,7 @@ int drm_atomic_check_only(struct drm_atomic_state *state)
 	for_each_plane_in_state(state, plane, plane_state, i) {
 		ret = drm_atomic_plane_check(plane, plane_state);
 		if (ret) {
-			DRM_DEBUG_ATOMIC("[PLANE:%d] atomic core check failed\n",
+			DRM_ERROR("[PLANE:%d] atomic core plane check failed\n",
 					 plane->base.id);
 			return ret;
 		}
@@ -1415,22 +1418,25 @@ int drm_atomic_check_only(struct drm_atomic_state *state)
 	for_each_crtc_in_state(state, crtc, crtc_state, i) {
 		ret = drm_atomic_crtc_check(crtc, crtc_state);
 		if (ret) {
-			DRM_DEBUG_ATOMIC("[CRTC:%d] atomic core check failed\n",
+			DRM_ERROR("[CRTC:%d] atomic core crtc check failed\n",
 					 crtc->base.id);
 			return ret;
 		}
 	}
 
-	if (config->funcs->atomic_check)
+	if (config->funcs->atomic_check) {
 		ret = config->funcs->atomic_check(state->dev, state);
-
-	if (ret)
-		return ret;
+		if (ret) {
+			DRM_ERROR("atomic check callback function @%p failed\n", 
+						config->funcs->atomic_check);
+			return ret;
+		}
+	}
 
 	if (!state->allow_modeset) {
 		for_each_crtc_in_state(state, crtc, crtc_state, i) {
 			if (drm_atomic_crtc_needs_modeset(crtc_state)) {
-				DRM_DEBUG_ATOMIC("[CRTC:%d] requires full modeset\n",
+				DRM_ERROR("[CRTC:%d] requires full modeset\n",
 						 crtc->base.id);
 				return -EINVAL;
 			}
@@ -1463,8 +1469,10 @@ int drm_atomic_commit(struct drm_atomic_state *state)
 	int ret;
 
 	ret = drm_atomic_check_only(state);
-	if (ret)
+	if (ret) {
+		DRM_ERROR("drm atomic check only failed for state %p\n", state);
 		return ret;
+	}
 
 	DRM_DEBUG_ATOMIC("commiting %p\n", state);
 

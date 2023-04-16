@@ -13,6 +13,8 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  */
+//EOF:DEBUG
+#define DEBUG 1
 
 #include <drm/drmP.h>
 #include <drm/drm_atomic.h>
@@ -469,8 +471,11 @@ static int setup_initial_state(struct drm_device *drm_dev,
 		is_crtc_enabled = false;
 
 	conn_state = drm_atomic_get_connector_state(state, connector);
-	if (IS_ERR(conn_state))
+	if (IS_ERR(conn_state)) {
+		dev_err(drm_dev->dev, "%s: connector[%s] failed to get state\n",
+			__func__, connector->name);
 		return PTR_ERR(conn_state);
+	}
 
 	funcs = connector->helper_private;
 	conn_state->best_encoder = funcs->best_encoder(connector);
@@ -483,8 +488,8 @@ static int setup_initial_state(struct drm_device *drm_dev,
 	conn_state->best_encoder->loader_protect = true;
 	num_modes = connector->funcs->fill_modes(connector, 4096, 4096);
 	if (!num_modes) {
-		dev_err(drm_dev->dev, "connector[%s] can't found any modes\n",
-			connector->name);
+		dev_err(drm_dev->dev, "%s: connector[%s] can't find any modes\n",
+			__func__, connector->name);
 		ret = -EINVAL;
 		goto error_conn;
 	}
@@ -510,6 +515,8 @@ static int setup_initial_state(struct drm_device *drm_dev,
 	set->mode = mode;
 	crtc_state = drm_atomic_get_crtc_state(state, crtc);
 	if (IS_ERR(crtc_state)) {
+		dev_err(drm_dev->dev, "%s: connector[%s] failed to get crtc state.\n",
+			__func__, connector->name);
 		ret = PTR_ERR(crtc_state);
 		goto error_conn;
 	}
@@ -519,12 +526,18 @@ static int setup_initial_state(struct drm_device *drm_dev,
 		set->mode_changed = true;
 	} else {
 		ret = drm_atomic_set_crtc_for_connector(conn_state, crtc);
-		if (ret)
+		if (ret) {
+			dev_err(drm_dev->dev, "%s: connector[%s] failed to set crtc.\n",
+					__func__, connector->name);
 			goto error_conn;
+		}
 
 		ret = drm_atomic_set_mode_for_crtc(crtc_state, mode);
-		if (ret)
+		if (ret) {
+			dev_err(drm_dev->dev, "%s: connector[%s] failed to set mode for crtc.\n",
+					__func__, connector->name);
 			goto error_conn;
+		}
 
 		crtc_state->active = true;
 
@@ -535,10 +548,14 @@ static int setup_initial_state(struct drm_device *drm_dev,
 
 	if (!set->fb) {
 		ret = 0;
+		dev_warn(drm_dev->dev, "%s: connector[%s] FB device not available.\n",
+					__func__, connector->name);
 		goto error_crtc;
 	}
 	primary_state = drm_atomic_get_plane_state(state, crtc->primary);
 	if (IS_ERR(primary_state)) {
+		dev_err(drm_dev->dev, "%s: connector[%s] failed to get plane state.\n",
+				__func__, connector->name);
 		ret = PTR_ERR(primary_state);
 		goto error_crtc;
 	}
@@ -706,12 +723,12 @@ static void show_loader_logo(struct drm_device *drm_dev)
 
 	root = of_get_child_by_name(np, "route");
 	if (!root) {
-		dev_warn(drm_dev->dev, "failed to parse display resources\n");
+		dev_warn(drm_dev->dev, "%s: failed to parse display resources\n", __func__);
 		return;
 	}
 
 	if (init_loader_memory(drm_dev)) {
-		dev_warn(drm_dev->dev, "failed to parse loader memory\n");
+		dev_warn(drm_dev->dev, "%s: failed to parse loader memory\n", __func__);
 		return;
 	}
 
@@ -720,20 +737,30 @@ static void show_loader_logo(struct drm_device *drm_dev)
 	drm_modeset_lock_all(drm_dev);
 	state = drm_atomic_state_alloc(drm_dev);
 	if (!state) {
-		dev_err(drm_dev->dev, "failed to alloc atomic state\n");
+		dev_err(drm_dev->dev, "%s: failed to alloc atomic state\n", __func__);
 		ret = -ENOMEM;
 		goto err_unlock;
 	}
 
 	state->acquire_ctx = mode_config->acquire_ctx;
 
+	ret = 0;
 	for_each_child_of_node(root, route) {
 		if (!of_device_is_available(route))
 			continue;
 
+		dev_dbg(drm_dev->dev, "%s: check display resource: %s\n",
+				__func__, route->name);
+
+		if (!strstr(route->name, "route-edp"))
+			continue;
+			
 		set = of_parse_display_resource(drm_dev, route);
 		if (!set)
 			continue;
+
+		dev_dbg(drm_dev->dev, "%s: try to init connector: %s\n",
+				__func__, set->connector->name);
 
 		if (setup_initial_state(drm_dev, state, set)) {
 			drm_framebuffer_unreference(set->fb);
@@ -741,14 +768,19 @@ static void show_loader_logo(struct drm_device *drm_dev)
 			list_add_tail(&set->head, &mode_unset_list);
 			continue;
 		}
+
 		INIT_LIST_HEAD(&set->head);
 		list_add_tail(&set->head, &mode_set_list);
+
+		dev_dbg(drm_dev->dev, "%s: connector[%s] added to mode set list.\n",
+				__func__, set->connector->name);
 	}
 
 	/*
 	 * the mode_unset_list store the unconnected route, if route's crtc
 	 * isn't used, we should close it.
 	 */
+	ret = 0;
 	list_for_each_entry_safe(unset, tmp, &mode_unset_list, head) {
 		struct rockchip_drm_mode_set *tmp_set;
 		int found_used_crtc = 0;
@@ -773,7 +805,7 @@ static void show_loader_logo(struct drm_device *drm_dev)
 	}
 
 	if (list_empty(&mode_set_list)) {
-		dev_warn(drm_dev->dev, "can't not find any loader display\n");
+		dev_warn(drm_dev->dev, "%s: can't find any loader display\n", __func__);
 		ret = -ENXIO;
 		goto err_free_state;
 	}
@@ -788,15 +820,16 @@ static void show_loader_logo(struct drm_device *drm_dev)
 	old_state = drm_atomic_helper_duplicate_state(drm_dev,
 						      mode_config->acquire_ctx);
 	if (IS_ERR(old_state)) {
-		dev_err(drm_dev->dev, "failed to duplicate atomic state\n");
+		dev_err(drm_dev->dev, "%s: failed to duplicate atomic state\n", __func__);
 		ret = PTR_ERR_OR_ZERO(old_state);
 		goto err_free_state;
 	}
 
+	ret = 0;
 	state = drm_atomic_helper_duplicate_state(drm_dev,
 						  mode_config->acquire_ctx);
 	if (IS_ERR(state)) {
-		dev_err(drm_dev->dev, "failed to duplicate atomic state\n");
+		dev_err(drm_dev->dev, "%s: failed to duplicate atomic state\n", __func__);
 		ret = PTR_ERR_OR_ZERO(state);
 		goto err_free_old_state;
 	}
@@ -806,6 +839,9 @@ static void show_loader_logo(struct drm_device *drm_dev)
 		 * We don't want to see any fail on update_state.
 		 */
 		WARN_ON(update_state(drm_dev, state, set, &plane_mask));
+
+	dev_dbg(drm_dev->dev, "%s: try to drm atomic commit.\n",
+			__func__);
 
 	ret = drm_atomic_commit(state);
 	drm_atomic_clean_old_fb(drm_dev, plane_mask, ret);
@@ -825,6 +861,8 @@ static void show_loader_logo(struct drm_device *drm_dev)
 		 * restore display status if atomic commit failed.
 		 */
 		drm_atomic_helper_swap_state(drm_dev, old_state);
+		dev_err(drm_dev->dev, "%s: failed to drm atomic commit. ret=%d\n", 
+				__func__, ret);
 		goto err_free_old_state;
 	}
 
@@ -841,7 +879,7 @@ err_free_state:
 err_unlock:
 	drm_modeset_unlock_all(drm_dev);
 	if (ret)
-		dev_err(drm_dev->dev, "failed to show loader logo\n");
+		dev_err(drm_dev->dev, "%s: failed to show loader logo\n", __func__);
 	rockchip_free_loader_memory(drm_dev);
 }
 
@@ -1488,9 +1526,11 @@ static int rockchip_drm_bind(struct device *dev)
 	drm_dev->vblank_disable_allowed = true;
 
 	rockchip_gem_pool_init(drm_dev);
-#ifndef MODULE
-	show_loader_logo(drm_dev);
-#endif
+
+//#ifndef MODULE
+//	show_loader_logo(drm_dev);
+//#endif
+
 	ret = of_reserved_mem_device_init(drm_dev->dev);
 	if (ret)
 		DRM_DEBUG_KMS("No reserved memory region assign to drm\n");
@@ -1518,6 +1558,10 @@ static int rockchip_drm_bind(struct device *dev)
 	ret = drm_dev_register(drm_dev, 0);
 	if (ret)
 		goto err_fbdev_fini;
+
+#ifndef MODULE
+	show_loader_logo(drm_dev);
+#endif
 
 	return 0;
 err_fbdev_fini:
