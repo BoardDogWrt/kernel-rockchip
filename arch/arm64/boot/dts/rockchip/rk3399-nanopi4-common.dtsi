@@ -320,7 +320,7 @@
 		autorepeat;
 
 		pinctrl-names = "default";
-		pinctrl-0 = <&power_key>;
+		pinctrl-0 = <&pcb_buttons>;
 
 		button@0 {
 			gpios = <&gpio0 5 GPIO_ACTIVE_LOW>;
@@ -331,7 +331,7 @@
 			debounce-interval = <100>;
 		};
 
-		/* ---------------------------------------------------
+		/* --------------------------------------------------- */
 		button@1 {
 			gpios = <&gpio1 1 GPIO_ACTIVE_LOW>; // GPIO1_A1
 			linux,code = <KEY_F1>;
@@ -358,7 +358,7 @@
 			gpio-key,wakeup = <1>;
 			debounce-interval = <100>;
 		};
-		---------------------------------------------------- */
+		/* ---------------------------------------------------- */
 	};
 
 	adc_keys: adc-keys {
@@ -1214,8 +1214,11 @@
 	};
 
 	rockchip-key {
-		power_key: power-key {
-			rockchip,pins = <0 5 RK_FUNC_GPIO &pcfg_pull_up>;
+		pcb_buttons: pcb-buttons {
+			rockchip,pins = <0 5 RK_FUNC_GPIO &pcfg_pull_up>,
+							<1 1 RK_FUNC_GPIO &pcfg_pull_up>,
+							<1 3 RK_FUNC_GPIO &pcfg_pull_up>,
+							<1 4 RK_FUNC_GPIO &pcfg_pull_up>;
 		};
 	};
 
