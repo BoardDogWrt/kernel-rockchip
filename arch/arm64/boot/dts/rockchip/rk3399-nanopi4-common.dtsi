@@ -313,7 +313,7 @@
 		};
 	};
 
-	gpio-keys {
+	gpio_keys: gpio-keys {
 		compatible = "gpio-keys";
 		#address-cells = <1>;
 		#size-cells = <0>;
@@ -332,12 +332,13 @@
 		};
 	};
 
-	adc-keys {
+	adc_keys: adc-keys {
 		compatible = "adc-keys";
 		io-channels = <&saradc 1>;
 		io-channel-names = "buttons";
 		poll-interval = <100>;
 		keyup-threshold-microvolt = <1800000>;
+		autorepeat = 1;
 
 		button-up {
 			label = "Volume Up";
@@ -954,6 +955,19 @@
 	enable-gpios = <&gpio4 29 GPIO_ACTIVE_HIGH>;
 };
 
+&saradc {
+	status = "okay";
+	vref-supply = <&vccadc_ref>; /* TBD */
+};
+
+&adc_keys {
+	status = "okay";
+};
+
+&gpio_keys {
+	status = "okay";
+};
+
 &pwm0 {
 	status = "okay";
 };
@@ -995,11 +1009,6 @@
 		rockchip,power-ctrl =
 		<&gpio1 17 GPIO_ACTIVE_HIGH>,
 		<&gpio1 14 GPIO_ACTIVE_HIGH>;
-};
-
-&saradc {
-	status = "okay";
-	vref-supply = <&vccadc_ref>; /* TBD */
 };
 
 &sdhci {
