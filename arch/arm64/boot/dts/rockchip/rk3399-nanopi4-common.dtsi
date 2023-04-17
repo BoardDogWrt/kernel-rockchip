@@ -331,8 +331,9 @@
 			debounce-interval = <100>;
 		};
 
+		/* ---------------------------------------------------
 		button@1 {
-			gpios = <&gpio1 1 GPIO_ACTIVE_LOW>; /* GPIO1_A1 */
+			gpios = <&gpio1 1 GPIO_ACTIVE_LOW>; // GPIO1_A1
 			linux,code = <KEY_F1>;
 			label = "GPIO Button 1";
 			linux,input-type = <1>;
@@ -341,7 +342,7 @@
 		};
 
 		button@2 {
-			gpios = <&gpio1 3 GPIO_ACTIVE_LOW>; /* GPIO1_A3 */
+			gpios = <&gpio1 3 GPIO_ACTIVE_LOW>; // GPIO1_A3
 			linux,code = <KEY_F2>;
 			label = "GPIO Button 2";
 			linux,input-type = <1>;
@@ -350,13 +351,14 @@
 		};
 
 		button@3 {
-			gpios = <&gpio1 4 GPIO_ACTIVE_LOW>; /* GPIO1_A4 */
+			gpios = <&gpio1 4 GPIO_ACTIVE_LOW>; // GPIO1_A4
 			linux,code = <KEY_F3>;
 			label = "GPIO Button 3";
 			linux,input-type = <1>;
 			gpio-key,wakeup = <1>;
 			debounce-interval = <100>;
 		};
+		---------------------------------------------------- */
 	};
 
 	adc_keys: adc-keys {
