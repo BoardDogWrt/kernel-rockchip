@@ -338,7 +338,7 @@
 		io-channel-names = "buttons";
 		poll-interval = <100>;
 		keyup-threshold-microvolt = <1800000>;
-		autorepeat = 1;
+		autorepeat = <1>;
 
 		button-up {
 			label = "Volume Up";
