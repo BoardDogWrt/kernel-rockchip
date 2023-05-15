@@ -204,6 +204,7 @@
 };
 
 &hdmi0 {
+	cec-enable;
 	enable-gpios = <&gpio4 RK_PB6 GPIO_ACTIVE_HIGH>;
 	status = "okay";
 };
