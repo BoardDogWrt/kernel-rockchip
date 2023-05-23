@@ -689,6 +689,7 @@
 
 &usbdrd_dwc3_1 {
 	dr_mode = "host";
+	snps,xhci-trb-ent-quirk;
 	status = "okay";
 };
 
