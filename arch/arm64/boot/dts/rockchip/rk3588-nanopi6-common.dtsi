@@ -459,7 +459,7 @@
 			<0xed	KEY_RIGHT>,
 			<0xf2	KEY_UP>,
 			<0xea	KEY_DOWN>,
-			<0xee	KEY_ENTER>,
+			<0xee	232>,
 			<0xe9	KEY_MUTE>,
 			<0xf1	KEY_VOLUMEDOWN>,
 			<0xf3	KEY_VOLUMEUP>,
@@ -674,6 +674,7 @@
 &vop {
 	assigned-clocks = <&cru ACLK_VOP>;
 	assigned-clock-rates = <800000000>;
+	support-multi-area;
 	status = "okay";
 };
 

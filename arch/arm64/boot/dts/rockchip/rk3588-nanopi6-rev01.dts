@@ -460,6 +460,7 @@
 
 &pcie2x1l1 {
 	reset-gpios = <&gpio4 RK_PA2 GPIO_ACTIVE_HIGH>;
+	rockchip,init-delay-ms = <500>;
 	vpcie3v3-supply = <&vdd_mpcie_3v3>;
 	status = "okay";
 };
