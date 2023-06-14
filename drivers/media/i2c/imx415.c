@@ -1216,9 +1216,7 @@ static int imx415_g_frame_interval(struct v4l2_subdev *sd,
 	struct imx415 *imx415 = to_imx415(sd);
 	const struct imx415_mode *mode = imx415->cur_mode;
 
-	mutex_lock(&imx415->mutex);
 	fi->interval = mode->max_fps;
-	mutex_unlock(&imx415->mutex);
 
 	return 0;
 }
@@ -2131,7 +2129,7 @@ static void __imx415_power_off(struct imx415 *imx415)
 	regulator_bulk_disable(IMX415_NUM_SUPPLIES, imx415->supplies);
 }
 
-static int imx415_runtime_resume(struct device *dev)
+static int __maybe_unused imx415_runtime_resume(struct device *dev)
 {
 	struct i2c_client *client = to_i2c_client(dev);
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
@@ -2140,7 +2138,7 @@ static int imx415_runtime_resume(struct device *dev)
 	return __imx415_power_on(imx415);
 }
 
-static int imx415_runtime_suspend(struct device *dev)
+static int __maybe_unused imx415_runtime_suspend(struct device *dev)
 {
 	struct i2c_client *client = to_i2c_client(dev);
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
@@ -2303,7 +2301,7 @@ static int imx415_set_ctrl(struct v4l2_ctrl *ctrl)
 	switch (ctrl->id) {
 	case V4L2_CID_EXPOSURE:
 		if (imx415->cur_mode->hdr_mode != NO_HDR)
-			return ret;
+			goto ctrl_end;
 		shr0 = imx415->cur_vts - ctrl->val;
 		ret = imx415_write_reg(imx415->client, IMX415_LF_EXPO_REG_L,
 				       IMX415_REG_VALUE_08BIT,
@@ -2319,7 +2317,7 @@ static int imx415_set_ctrl(struct v4l2_ctrl *ctrl)
 		break;
 	case V4L2_CID_ANALOGUE_GAIN:
 		if (imx415->cur_mode->hdr_mode != NO_HDR)
-			return ret;
+			goto ctrl_end;
 		ret = imx415_write_reg(imx415->client, IMX415_LF_GAIN_REG_H,
 				       IMX415_REG_VALUE_08BIT,
 				       IMX415_FETCH_GAIN_H(ctrl->val));
@@ -2388,6 +2386,7 @@ static int imx415_set_ctrl(struct v4l2_ctrl *ctrl)
 		break;
 	}
 
+ctrl_end:
 	pm_runtime_put(&client->dev);
 
 	return ret;

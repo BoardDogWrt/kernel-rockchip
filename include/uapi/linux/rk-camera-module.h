@@ -13,7 +13,7 @@
 #define RKMODULE_API_VERSION		KERNEL_VERSION(0, 1, 0x2)
 
 /* using for rk3588 dual isp unite */
-#define RKMOUDLE_UNITE_EXTEND_PIXEL	32
+#define RKMOUDLE_UNITE_EXTEND_PIXEL	128
 /* using for rv1109 and rv1126 */
 #define RKMODULE_EXTEND_LINE		24
 
@@ -170,14 +170,20 @@
 #define RKMODULE_GET_READOUT_LINE_CNT_PER_LINE  \
 	_IOR('V', BASE_VIDIOC_PRIVATE + 36, __u32)
 
+#define RKMODULE_GET_GROUP_ID       \
+	_IOR('V', BASE_VIDIOC_PRIVATE + 37, __u32)
+
+#define RKMODULE_SET_GROUP_ID       \
+	_IOW('V', BASE_VIDIOC_PRIVATE + 38, __u32)
+
 struct rkmodule_i2cdev_info {
-	u8 slave_addr;
+	__u8 slave_addr;
 } __attribute__ ((packed));
 
 struct rkmodule_dev_info {
 	union {
 		struct rkmodule_i2cdev_info i2c_dev;
-		u32 reserved[8];
+		__u32 reserved[8];
 	};
 } __attribute__ ((packed));
 
@@ -687,10 +693,10 @@ enum rkmodule_sync_mode {
 };
 
 struct rkmodule_mclk_data {
-	u32 enable;
-	u32 mclk_index;
-	u32 mclk_rate;
-	u32 reserved[8];
+	__u32 enable;
+	__u32 mclk_index;
+	__u32 mclk_rate;
+	__u32 reserved[8];
 };
 
 /*
@@ -740,14 +746,14 @@ enum csi2_dphy_vendor {
 };
 
 struct rkmodule_csi_dphy_param {
-	u32 vendor;
-	u32 lp_vol_ref;
-	u32 lp_hys_sw[DPHY_MAX_LANE];
-	u32 lp_escclk_pol_sel[DPHY_MAX_LANE];
-	u32 skew_data_cal_clk[DPHY_MAX_LANE];
-	u32 clk_hs_term_sel;
-	u32 data_hs_term_sel[DPHY_MAX_LANE];
-	u32 reserved[32];
+	__u32 vendor;
+	__u32 lp_vol_ref;
+	__u32 lp_hys_sw[DPHY_MAX_LANE];
+	__u32 lp_escclk_pol_sel[DPHY_MAX_LANE];
+	__u32 skew_data_cal_clk[DPHY_MAX_LANE];
+	__u32 clk_hs_term_sel;
+	__u32 data_hs_term_sel[DPHY_MAX_LANE];
+	__u32 reserved[32];
 };
 
 struct rkmodule_sensor_fmt {

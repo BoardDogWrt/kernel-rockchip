@@ -7,7 +7,10 @@
  */
 
 #include <linux/clk.h>
+#include <linux/interrupt.h>
 #include <linux/io.h>
+#include <linux/iopoll.h>
+#include <linux/irq.h>
 #include <linux/module.h>
 #include <linux/of.h>
 #include <linux/of_device.h>
@@ -15,12 +18,19 @@
 #include <linux/platform_device.h>
 #include <linux/pwm.h>
 #include <linux/time.h>
+#include "pwm-rockchip.h"
+
+#define PWM_MAX_CHANNEL_NUM	4
 
 #define PWM_CTRL_TIMER_EN	(1 << 0)
 #define PWM_CTRL_OUTPUT_EN	(1 << 3)
 
 #define PWM_ENABLE		(1 << 0)
-#define PWM_CONTINUOUS		(1 << 1)
+#define PWM_MODE_SHIFT		1
+#define PWM_MODE_MASK		(0x3 << PWM_MODE_SHIFT)
+#define PWM_ONESHOT		(0 << PWM_MODE_SHIFT)
+#define PWM_CONTINUOUS		(1 << PWM_MODE_SHIFT)
+#define PWM_CAPTURE		(2 << PWM_MODE_SHIFT)
 #define PWM_DUTY_POSITIVE	(1 << 3)
 #define PWM_DUTY_NEGATIVE	(0 << 3)
 #define PWM_INACTIVE_NEGATIVE	(0 << 4)
@@ -32,7 +42,13 @@
 #define PWM_LP_DISABLE		(0 << 8)
 
 #define PWM_ONESHOT_COUNT_SHIFT	24
+#define PWM_ONESHOT_COUNT_MASK	(0xff << PWM_ONESHOT_COUNT_SHIFT)
 #define PWM_ONESHOT_COUNT_MAX	256
+
+#define PWM_REG_INTSTS(n)	((3 - (n)) * 0x10 + 0x10)
+#define PWM_REG_INT_EN(n)	((3 - (n)) * 0x10 + 0x14)
+
+#define PWM_CH_INT(n)		BIT(n)
 
 struct rockchip_pwm_chip {
 	struct pwm_chip chip;
@@ -45,7 +61,9 @@ struct rockchip_pwm_chip {
 	unsigned long clk_rate;
 	bool vop_pwm_en; /* indicate voppwm mirror register state */
 	bool center_aligned;
-	bool oneshot;
+	bool oneshot_en;
+	int channel_id;
+	int irq;
 };
 
 struct rockchip_pwm_regs {
@@ -80,9 +98,11 @@ static void rockchip_pwm_get_state(struct pwm_chip *chip,
 	u32 val;
 	int ret;
 
-	ret = clk_enable(pc->pclk);
-	if (ret)
-		return;
+	if (!pc->oneshot_en) {
+		ret = clk_enable(pc->pclk);
+		if (ret)
+			return;
+	}
 
 	tmp = readl_relaxed(pc->base + pc->data->regs.period);
 	tmp *= pc->data->prescaler * NSEC_PER_SEC;
@@ -93,6 +113,8 @@ static void rockchip_pwm_get_state(struct pwm_chip *chip,
 	state->duty_cycle =  DIV_ROUND_CLOSEST_ULL(tmp, pc->clk_rate);
 
 	val = readl_relaxed(pc->base + pc->data->regs.ctrl);
+	if (pc->oneshot_en)
+		enable_conf &= ~PWM_CONTINUOUS;
 	state->enabled = (val & enable_conf) == enable_conf;
 
 	if (pc->data->supports_polarity && !(val & PWM_DUTY_POSITIVE))
@@ -100,7 +122,36 @@ static void rockchip_pwm_get_state(struct pwm_chip *chip,
 	else
 		state->polarity = PWM_POLARITY_NORMAL;
 
-	clk_disable(pc->pclk);
+	if (!pc->oneshot_en)
+		clk_disable(pc->pclk);
+}
+
+static irqreturn_t rockchip_pwm_oneshot_irq(int irq, void *data)
+{
+	struct rockchip_pwm_chip *pc = data;
+	struct pwm_state state;
+	unsigned int id = pc->channel_id;
+	int val;
+
+	if (id > 3)
+		return IRQ_NONE;
+	val = readl_relaxed(pc->base + PWM_REG_INTSTS(id));
+
+	if ((val & PWM_CH_INT(id)) == 0)
+		return IRQ_NONE;
+
+	writel_relaxed(PWM_CH_INT(id), pc->base + PWM_REG_INTSTS(id));
+
+	/*
+	 * Set pwm state to disabled when the oneshot mode finished.
+	 */
+	pwm_get_state(&pc->chip.pwms[0], &state);
+	state.enabled = false;
+	pwm_apply_state(&pc->chip.pwms[0], &state);
+
+	rockchip_pwm_oneshot_callback(&pc->chip.pwms[0], &state);
+
+	return IRQ_HANDLED;
 }
 
 static void rockchip_pwm_config(struct pwm_chip *chip, struct pwm_device *pwm,
@@ -138,15 +189,34 @@ static void rockchip_pwm_config(struct pwm_chip *chip, struct pwm_device *pwm,
 	}
 
 #ifdef CONFIG_PWM_ROCKCHIP_ONESHOT
-	if (state->oneshot_count > PWM_ONESHOT_COUNT_MAX) {
-		pc->oneshot = false;
-		dev_err(chip->dev, "Oneshot_count value overflow.\n");
-	} else if (state->oneshot_count > 0) {
-		pc->oneshot = true;
+	if (state->oneshot_count > 0 && state->oneshot_count <= PWM_ONESHOT_COUNT_MAX) {
+		u32 int_ctrl;
+
+		pc->oneshot_en = true;
+		ctrl &= ~PWM_MODE_MASK;
+		ctrl |= PWM_ONESHOT;
+
+		ctrl &= ~PWM_ONESHOT_COUNT_MASK;
 		ctrl |= (state->oneshot_count - 1) << PWM_ONESHOT_COUNT_SHIFT;
+
+		int_ctrl = readl_relaxed(pc->base + PWM_REG_INT_EN(pc->channel_id));
+		int_ctrl |= PWM_CH_INT(pc->channel_id);
+		writel_relaxed(int_ctrl, pc->base + PWM_REG_INT_EN(pc->channel_id));
 	} else {
-		pc->oneshot = false;
+		u32 int_ctrl;
+
+		if (state->oneshot_count)
+			dev_err(chip->dev, "Oneshot_count must be between 1 and 256.\n");
+
+		pc->oneshot_en = false;
+		ctrl &= ~PWM_MODE_MASK;
 		ctrl |= PWM_CONTINUOUS;
+
+		ctrl &= ~PWM_ONESHOT_COUNT_MASK;
+
+		int_ctrl = readl_relaxed(pc->base + PWM_REG_INT_EN(pc->channel_id));
+		int_ctrl &= ~PWM_CH_INT(pc->channel_id);
+		writel_relaxed(int_ctrl, pc->base + PWM_REG_INT_EN(pc->channel_id));
 	}
 #endif
 
@@ -203,7 +273,7 @@ static int rockchip_pwm_enable(struct pwm_chip *chip,
 
 	if (enable) {
 		val |= enable_conf;
-		if (pc->oneshot)
+		if (pc->oneshot_en)
 			val &= ~PWM_CONTINUOUS;
 	} else {
 		val &= ~enable_conf;
@@ -227,9 +297,11 @@ static int rockchip_pwm_apply(struct pwm_chip *chip, struct pwm_device *pwm,
 	bool enabled;
 	int ret = 0;
 
-	ret = clk_enable(pc->pclk);
-	if (ret)
-		return ret;
+	if (!pc->oneshot_en) {
+		ret = clk_enable(pc->pclk);
+		if (ret)
+			return ret;
+	}
 
 	pwm_get_state(pwm, &curstate);
 	enabled = curstate.enabled;
@@ -252,7 +324,8 @@ static int rockchip_pwm_apply(struct pwm_chip *chip, struct pwm_device *pwm,
 	if (state->enabled)
 		ret = pinctrl_select_state(pc->pinctrl, pc->active_state);
 out:
-	clk_disable(pc->pclk);
+	if (!pc->oneshot_en)
+		clk_disable(pc->pclk);
 
 	return ret;
 }
@@ -335,6 +408,13 @@ static const struct of_device_id rockchip_pwm_dt_ids[] = {
 };
 MODULE_DEVICE_TABLE(of, rockchip_pwm_dt_ids);
 
+static int rockchip_pwm_get_channel_id(const char *name)
+{
+	int len = strlen(name);
+
+	return name[len - 2] - '0';
+}
+
 static int rockchip_pwm_probe(struct platform_device *pdev)
 {
 	const struct of_device_id *id;
@@ -392,16 +472,42 @@ static int rockchip_pwm_probe(struct platform_device *pdev)
 		goto err_clk;
 	}
 
+	pc->channel_id = rockchip_pwm_get_channel_id(pdev->dev.of_node->full_name);
+	if (pc->channel_id < 0 || pc->channel_id >= PWM_MAX_CHANNEL_NUM) {
+		dev_err(&pdev->dev, "Channel id is out of range: %d\n", pc->channel_id);
+		ret = -EINVAL;
+		goto err_pclk;
+	}
+
+	if (IS_ENABLED(CONFIG_PWM_ROCKCHIP_ONESHOT)) {
+		pc->irq = platform_get_irq(pdev, 0);
+		if (pc->irq < 0) {
+			dev_err(&pdev->dev, "Get oneshot mode irq failed\n");
+			ret = pc->irq;
+			goto err_pclk;
+		}
+
+		ret = devm_request_irq(&pdev->dev, pc->irq, rockchip_pwm_oneshot_irq,
+				       IRQF_NO_SUSPEND | IRQF_SHARED,
+				       "rk_pwm_oneshot_irq", pc);
+		if (ret) {
+			dev_err(&pdev->dev, "Claim oneshot IRQ failed\n");
+			goto err_pclk;
+		}
+	}
+
 	pc->pinctrl = devm_pinctrl_get(&pdev->dev);
 	if (IS_ERR(pc->pinctrl)) {
 		dev_err(&pdev->dev, "Get pinctrl failed!\n");
-		return PTR_ERR(pc->pinctrl);
+		ret = PTR_ERR(pc->pinctrl);
+		goto err_pclk;
 	}
 
 	pc->active_state = pinctrl_lookup_state(pc->pinctrl, "active");
 	if (IS_ERR(pc->active_state)) {
 		dev_err(&pdev->dev, "No active pinctrl state\n");
-		return PTR_ERR(pc->active_state);
+		ret = PTR_ERR(pc->active_state);
+		goto err_pclk;
 	}
 
 	platform_set_drvdata(pdev, pc);
@@ -450,7 +556,27 @@ err_clk:
 static int rockchip_pwm_remove(struct platform_device *pdev)
 {
 	struct rockchip_pwm_chip *pc = platform_get_drvdata(pdev);
+	struct pwm_state state;
+	u32 val;
 
+	/*
+	 * For oneshot mode, it is needed to wait for bit PWM_ENABLE
+	 * to 0, which is automatic if all periods have been sent.
+	 */
+	pwm_get_state(&pc->chip.pwms[0], &state);
+	if (state.enabled) {
+		if (pc->oneshot_en) {
+			if (readl_poll_timeout(pc->base + pc->data->regs.ctrl,
+					       val, !(val & PWM_ENABLE), 1000, 10 * 1000))
+				dev_err(&pdev->dev, "Wait for oneshot to complete failed\n");
+		} else {
+			state.enabled = false;
+			pwm_apply_state(&pc->chip.pwms[0], &state);
+		}
+	}
+
+	if (pc->oneshot_en)
+		clk_disable(pc->pclk);
 	clk_unprepare(pc->pclk);
 	clk_unprepare(pc->clk);
 
