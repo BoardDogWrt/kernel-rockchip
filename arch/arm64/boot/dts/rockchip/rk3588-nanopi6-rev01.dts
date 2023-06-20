@@ -108,17 +108,11 @@
 
 	hdmi1_sound: hdmi1-sound {
 		status = "disabled";
-		compatible = "simple-audio-card";
-		simple-audio-card,format = "i2s";
-		simple-audio-card,mclk-fs = <128>;
-		simple-audio-card,name = "rockchip,hdmi1";
-
-		simple-audio-card,cpu {
-			sound-dai = <&i2s6_8ch>;
-		};
-		simple-audio-card,codec {
-			sound-dai = <&hdmi1>;
-		};
+		compatible = "rockchip,hdmi";
+		rockchip,mclk-fs = <128>;
+		rockchip,card-name = "rockchip,hdmi1";
+		rockchip,cpu = <&i2s6_8ch>;
+		rockchip,codec = <&hdmi1>;
 	};
 
 	hdmiin_sound: hdmiin-sound {
@@ -387,9 +381,9 @@
 		#sound-dai-cells = <0>;
 		compatible = "rt5616";
 		reg = <0x1b>;
-		clocks = <&cru I2S0_8CH_MCLKOUT>;
+		clocks = <&mclkout_i2s0>;
 		clock-names = "mclk";
-		assigned-clocks = <&cru I2S0_8CH_MCLKOUT>;
+		assigned-clocks = <&mclkout_i2s0>;
 		assigned-clock-rates = <12288000>;
 		pinctrl-names = "default";
 		pinctrl-0 = <&i2s0_mclk>;
