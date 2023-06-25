@@ -32,6 +32,7 @@ static bool disable_scofix;
 static bool force_scofix;
 static bool enable_autosuspend = IS_ENABLED(CONFIG_BT_HCIBTUSB_AUTOSUSPEND);
 static bool reset = true;
+static bool ignore_mediatek = true;
 
 static struct usb_driver btusb_driver;
 
@@ -4153,6 +4154,13 @@ static int btusb_probe(struct usb_interface *intf,
 	if (id->driver_info == BTUSB_IGNORE)
 		return -ENODEV;
 
+	if (ignore_mediatek &&
+	    (id->driver_info & BTUSB_MEDIATEK)) {
+		dev_warn(&intf->dev, "MediaTek bluetooth device %04x:%04x ignored\n",
+			 id->idVendor, id->idProduct);
+		return -ENODEV;
+	}
+
 	if (id->driver_info & BTUSB_ATH3012) {
 		struct usb_device *udev = interface_to_usbdev(intf);
 
@@ -4700,6 +4708,9 @@ MODULE_PARM_DESC(enable_autosuspend, "Enable USB autosuspend by default");
 
 module_param(reset, bool, 0644);
 MODULE_PARM_DESC(reset, "Send HCI reset command on initialization");
+
+module_param(ignore_mediatek, bool, 0644);
+MODULE_PARM_DESC(ignore_mediatek, "Ignore all MediaTek bluetooth devices");
 
 MODULE_AUTHOR("Marcel Holtmann <marcel@holtmann.org>");
 MODULE_DESCRIPTION("Generic Bluetooth USB driver ver " VERSION);
