@@ -945,8 +945,7 @@ static int sc031gs_enum_frame_interval(struct v4l2_subdev *sd,
 	if (fie->index >= ARRAY_SIZE(supported_modes))
 		return -EINVAL;
 
-	if (fie->code != PIX_FORMAT)
-		return -EINVAL;
+	fie->code = PIX_FORMAT;
 
 	fie->width = supported_modes[fie->index].width;
 	fie->height = supported_modes[fie->index].height;
@@ -999,8 +998,8 @@ static void sc031gs_modify_fps_info(struct sc031gs *sc031gs)
 {
 	const struct sc031gs_mode *mode = sc031gs->cur_mode;
 
-	sc031gs->cur_fps.denominator = mode->max_fps.denominator * sc031gs->cur_vts /
-				       mode->vts_def;
+	sc031gs->cur_fps.denominator = mode->max_fps.denominator * mode->vts_def /
+				       sc031gs->cur_vts;
 }
 
 static int sc031gs_set_ctrl(struct v4l2_ctrl *ctrl)
