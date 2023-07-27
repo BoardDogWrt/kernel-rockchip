@@ -584,7 +584,9 @@ void rkisp_trigger_read_back(struct rkisp_device *dev, u8 dma2frm, u32 mode, boo
 	rkisp_params_cfgsram(params_vdev);
 	params_vdev->rdbk_times = dma2frm + 1;
 
-	/* read 3d lut at frame end */
+	/* disable isp force update to read 3dlut
+	 * 3dlut auto update at frame end for single sensor
+	 */
 	if (hw->is_single && is_upd &&
 	    rkisp_read_reg_cache(dev, ISP_3DLUT_UPDATE) & 0x1) {
 		rkisp_write(dev, ISP_3DLUT_UPDATE, 0, true);
@@ -3003,9 +3005,11 @@ void rkisp_isp_isr(unsigned int isp_mis,
 		else
 			dev->filt_state[RDBK_F_VS]--;
 		if (IS_HDR_RDBK(dev->hdr.op_mode)) {
-			/* read 3d lut at isp readback */
+			/* disabled frame end to read 3dlut for multi sensor
+			 * 3dlut will update at isp readback
+			 */
 			if (!dev->hw_dev->is_single)
-				rkisp_write(dev, ISP_3DLUT_UPDATE, 0, true);
+				writel(0, base + ISP_3DLUT_UPDATE);
 			rkisp_stats_rdbk_enable(&dev->stats_vdev, true);
 			goto vs_skip;
 		}
