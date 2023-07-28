@@ -119,18 +119,22 @@
 
 	opp-328000000 {
 		opp-hz = /bits/ 64 <328000000>;
-		opp-microvolt = <900000>;
+		opp-microvolt = <930000>;
 	};
 	opp-416000000 {
 		opp-hz = /bits/ 64 <416000000>;
-		opp-microvolt = <900000>;
+		opp-microvolt = <930000>;
 	};
 	opp-666000000 {
 		opp-hz = /bits/ 64 <666000000>;
-		opp-microvolt = <900000>;
+		opp-microvolt = <930000>;
 	};
 	opp-856000000 {
 		opp-hz = /bits/ 64 <856000000>;
-		opp-microvolt = <900000>;
+		opp-microvolt = <930000>;
 	};
+};
+
+&vdd_center {
+	regulator-init-microvolt = <930000>;
 };
