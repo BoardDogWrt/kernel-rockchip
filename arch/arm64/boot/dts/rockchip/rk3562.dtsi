@@ -1854,13 +1854,13 @@
 		phys = <&combphy_pu PHY_TYPE_PCIE>;
 		phy-names = "pcie-phy";
 		power-domains = <&power RK3562_PD_PHP>;
-		ranges = <0x00000800 0x0 0xfc000000 0x0 0xfc000000 0x0 0x100000
-			  0x81000000 0x0 0xfc100000 0x0 0xfc100000 0x0 0x100000
+		ranges = <0x81000000 0x0 0xfc100000 0x0 0xfc100000 0x0 0x100000
 			  0x82000000 0x0 0xfc200000 0x0 0xfc200000 0x0 0x1e00000
 			  0xc3000000 0x3 0x00000000 0x3 0x00000000 0x0 0x40000000>;
 		reg = <0x0 0xfe000000 0x0 0x400000>,
-		      <0x0 0xff500000 0x0 0x10000>;
-		reg-names = "pcie-dbi", "pcie-apb";
+		      <0x0 0xff500000 0x0 0x10000>,
+		      <0x0 0xfc000000 0x0 0x100000>;
+		reg-names = "pcie-dbi", "pcie-apb", "config";
 		resets = <&cru SRST_PCIE20_POWERUP>;
 		reset-names = "pipe";
 		status = "disabled";
@@ -2459,6 +2459,19 @@
 		gpu_leakage: gpu-leakage@1d {
 			reg = <0x1d 0x1>;
 		};
+		cpu_tsadc_trim_l: cpu-tsadc-trim-l@2a {
+			reg = <0x2a 0x1>;
+		};
+		cpu_tsadc_trim_h: cpu-tsadc-trim-h@2b {
+			reg = <0x2b 0x1>;
+		};
+		tsadc_trim_base_frac: tsadc-trim-base-frac@2c {
+			reg = <0x2c 0x1>;
+			bits = <4 4>;
+		};
+		tsadc_trim_base: tsadc-trim-base@2d {
+			reg = <0x2d 0x1>;
+		};
 		cpu_opp_info: cpu-opp-info@2e {
 			reg = <0x2e 0x6>;
 		};
@@ -2609,6 +2622,8 @@
 		rockchip,hw-tshut-temp = <120000>;
 		rockchip,hw-tshut-mode = <0>; /* tshut mode 0:CRU 1:GPIO */
 		rockchip,hw-tshut-polarity = <0>; /* tshut polarity 0:LOW 1:HIGH */
+		nvmem-cells = <&cpu_tsadc_trim_l>, <&cpu_tsadc_trim_h>, <&tsadc_trim_base>, <&tsadc_trim_base_frac>;
+		nvmem-cell-names = "trim_l", "trim_h", "trim_base", "trim_base_frac";
 		status = "disabled";
 	};
 

@@ -16,9 +16,9 @@
 
 #include <video/of_display_timing.h>
 
+#include <drm/display/drm_dp_helper.h>
 #include <drm/drm_atomic_helper.h>
 #include <drm/drm_crtc_helper.h>
-#include <drm/drm_dp_helper.h>
 #include <drm/drm_of.h>
 #include <drm/drm_panel.h>
 #include <drm/drm_probe_helper.h>
@@ -275,6 +275,15 @@ rockchip_rgb_encoder_atomic_check(struct drm_encoder *encoder,
 		break;
 	case MEDIA_BUS_FMT_RGB565_1X16:
 		s->output_mode = ROCKCHIP_OUT_MODE_P565;
+		s->output_if = VOP_OUTPUT_IF_RGB;
+		break;
+	case MEDIA_BUS_FMT_RGB565_2X8_LE:
+	case MEDIA_BUS_FMT_BGR565_2X8_LE:
+		s->output_mode = ROCKCHIP_OUT_MODE_S565;
+		s->output_if = VOP_OUTPUT_IF_RGB;
+		break;
+	case MEDIA_BUS_FMT_RGB666_3X6:
+		s->output_mode = ROCKCHIP_OUT_MODE_S666;
 		s->output_if = VOP_OUTPUT_IF_RGB;
 		break;
 	case MEDIA_BUS_FMT_RGB888_3X8:

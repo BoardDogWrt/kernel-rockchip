@@ -720,13 +720,13 @@ static struct v4l2_subdev *get_remote_sensor(struct v4l2_subdev *sd)
 	struct media_entity *sensor_me;
 
 	local = &sd->entity.pads[MIPI_DPHY_RX_PAD_SINK];
-	remote = media_entity_remote_pad(local);
+	remote = media_pad_remote_pad_first(local);
 	if (!remote) {
 		v4l2_warn(sd, "No link between dphy and sensor\n");
 		return NULL;
 	}
 
-	sensor_me = media_entity_remote_pad(local)->entity;
+	sensor_me = media_pad_remote_pad_first(local)->entity;
 	return media_entity_to_v4l2_subdev(sensor_me);
 }
 
@@ -794,22 +794,11 @@ static int mipidphy_update_sensor_mbus(struct v4l2_subdev *sd)
 		return ret;
 
 	sensor->mbus = mbus;
-	switch (mbus.flags & V4L2_MBUS_CSI2_LANES) {
-	case V4L2_MBUS_CSI2_1_LANE:
-		sensor->lanes = 1;
-		break;
-	case V4L2_MBUS_CSI2_2_LANE:
-		sensor->lanes = 2;
-		break;
-	case V4L2_MBUS_CSI2_3_LANE:
-		sensor->lanes = 3;
-		break;
-	case V4L2_MBUS_CSI2_4_LANE:
-		sensor->lanes = 4;
-		break;
-	default:
-		return -EINVAL;
-	}
+	if (mbus.type == V4L2_MBUS_CSI2_DPHY ||
+	    mbus.type == V4L2_MBUS_CSI2_CPHY)
+		sensor->lanes = mbus.bus.mipi_csi2.num_data_lanes;
+	else if (mbus.type == V4L2_MBUS_CCP2)
+		sensor->lanes = mbus.bus.mipi_csi1.data_lane;
 
 	return 0;
 }
@@ -975,7 +964,7 @@ err:
 
 /* dphy accepts all fmt/size from sensor */
 static int mipidphy_get_set_fmt(struct v4l2_subdev *sd,
-				struct v4l2_subdev_pad_config *cfg,
+				struct v4l2_subdev_state *sd_state,
 				struct v4l2_subdev_format *fmt)
 {
 	struct mipidphy_priv *priv = to_dphy_priv(sd);
@@ -998,7 +987,7 @@ static int mipidphy_get_set_fmt(struct v4l2_subdev *sd,
 }
 
 static int mipidphy_get_selection(struct v4l2_subdev *sd,
-				  struct v4l2_subdev_pad_config *cfg,
+				  struct v4l2_subdev_state *sd_state,
 				  struct v4l2_subdev_selection *sel)
 {
 	struct v4l2_subdev *sensor = get_remote_sensor(sd);
@@ -1414,10 +1403,10 @@ static int csi_mipidphy_stream_on(struct mipidphy_priv *priv,
 		write_csiphy_reg(priv, CSIPHY_CTRL_DIG_RST, 0x1e);
 		write_csiphy_reg(priv, CSIPHY_CTRL_DIG_RST, 0x1f);
 		if (drv_data->chip_id == CHIP_ID_RK3326S) {
-			if (sensor->mbus.flags & V4L2_MBUS_CSI2_CONTINUOUS_CLOCK)
-				clk_mode = 0x03;
-			else if (sensor->mbus.flags & V4L2_MBUS_CSI2_NONCONTINUOUS_CLOCK)
+			if (sensor->mbus.bus.mipi_csi2.flags & V4L2_MBUS_CSI2_NONCONTINUOUS_CLOCK)
 				clk_mode = 0;
+			else
+				clk_mode = 0x03;
 			write_csiphy_reg(priv, CSIPHY_CLK_MODE, clk_mode);
 		}
 	} else {
@@ -1708,7 +1697,7 @@ static int rockchip_mipidphy_fwnode_parse(struct device *dev,
 
 	if (vep->bus_type == V4L2_MBUS_CSI2_DPHY) {
 		config->type = V4L2_MBUS_CSI2_DPHY;
-		config->flags = vep->bus.mipi_csi2.flags;
+		config->bus.mipi_csi2.flags = vep->bus.mipi_csi2.flags;
 		s_asd->lanes = vep->bus.mipi_csi2.num_data_lanes;
 	} else if (vep->bus_type == V4L2_MBUS_CCP2) {
 		/* V4L2_MBUS_CCP2 for lvds */
@@ -1716,23 +1705,6 @@ static int rockchip_mipidphy_fwnode_parse(struct device *dev,
 		s_asd->lanes = vep->bus.mipi_csi1.data_lane;
 	} else {
 		dev_err(dev, "Only CSI2 and CCP2 bus type is currently supported\n");
-		return -EINVAL;
-	}
-
-	switch (s_asd->lanes) {
-	case 1:
-		config->flags |= V4L2_MBUS_CSI2_1_LANE;
-		break;
-	case 2:
-		config->flags |= V4L2_MBUS_CSI2_2_LANE;
-		break;
-	case 3:
-		config->flags |= V4L2_MBUS_CSI2_3_LANE;
-		break;
-	case 4:
-		config->flags |= V4L2_MBUS_CSI2_4_LANE;
-		break;
-	default:
 		return -EINVAL;
 	}
 
@@ -1753,22 +1725,22 @@ static int rockchip_mipidphy_media_init(struct mipidphy_priv *priv)
 	if (ret < 0)
 		return ret;
 
-	v4l2_async_notifier_init(&priv->notifier);
+	v4l2_async_nf_init(&priv->notifier);
 
-	ret = v4l2_async_notifier_parse_fwnode_endpoints_by_port(
+	ret = v4l2_async_nf_parse_fwnode_endpoints(
 		priv->dev, &priv->notifier,
-		sizeof(struct sensor_async_subdev), 0,
+		sizeof(struct sensor_async_subdev),
 		rockchip_mipidphy_fwnode_parse);
 	if (ret < 0)
 		return ret;
 
 	priv->sd.subdev_notifier = &priv->notifier;
 	priv->notifier.ops = &rockchip_mipidphy_async_ops;
-	ret = v4l2_async_subdev_notifier_register(&priv->sd, &priv->notifier);
+	ret = v4l2_async_subdev_nf_register(&priv->sd, &priv->notifier);
 	if (ret) {
 		dev_err(priv->dev,
 			"failed to register async notifier : %d\n", ret);
-		v4l2_async_notifier_cleanup(&priv->notifier);
+		v4l2_async_nf_cleanup(&priv->notifier);
 		return ret;
 	}
 

@@ -10,7 +10,6 @@
 #include <media/v4l2-subdev.h>
 #include <media/videobuf2-dma-contig.h>
 #include <media/videobuf2-dma-sg.h>
-#include <linux/dma-iommu.h>
 #include "dev.h"
 #include "regs.h"
 

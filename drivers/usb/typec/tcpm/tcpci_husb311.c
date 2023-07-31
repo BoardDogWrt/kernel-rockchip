@@ -13,8 +13,8 @@
 #include <linux/module.h>
 #include <linux/regmap.h>
 #include <linux/regulator/consumer.h>
+#include <linux/usb/tcpci.h>
 #include <linux/usb/tcpm.h>
-#include "tcpci.h"
 
 #define HUSB311_VID		0x2E99
 #define HUSB311_PID		0x0311
@@ -204,12 +204,11 @@ static int husb311_probe(struct i2c_client *client,
 	return 0;
 }
 
-static int husb311_remove(struct i2c_client *client)
+static void husb311_remove(struct i2c_client *client)
 {
 	struct husb311_chip *chip = i2c_get_clientdata(client);
 
 	tcpci_unregister_port(chip->tcpci);
-	return 0;
 }
 
 static int husb311_pm_suspend(struct device *dev)

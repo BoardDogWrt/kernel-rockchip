@@ -322,7 +322,7 @@ static const struct sc3338_mode supported_modes[] = {
 		.bus_fmt = MEDIA_BUS_FMT_SBGGR10_1X10,
 		.reg_list = sc3338_linear_10_2304x1296_regs,
 		.hdr_mode = NO_HDR,
-		.vc[PAD0] = V4L2_MBUS_CSI2_CHANNEL_0,
+		.vc[PAD0] = 0,
 	}
 };
 
@@ -515,7 +515,7 @@ sc3338_find_best_fit(struct v4l2_subdev_format *fmt)
 }
 
 static int sc3338_set_fmt(struct v4l2_subdev *sd,
-			   struct v4l2_subdev_pad_config *cfg,
+			   struct v4l2_subdev_state *sd_state,
 			   struct v4l2_subdev_format *fmt)
 {
 	struct sc3338 *sc3338 = to_sc3338(sd);
@@ -531,7 +531,7 @@ static int sc3338_set_fmt(struct v4l2_subdev *sd,
 	fmt->format.field = V4L2_FIELD_NONE;
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
 #ifdef CONFIG_VIDEO_V4L2_SUBDEV_API
-		*v4l2_subdev_get_try_format(sd, cfg, fmt->pad) = fmt->format;
+		*v4l2_subdev_get_try_format(sd, sd_state, fmt->pad) = fmt->format;
 #else
 		mutex_unlock(&sc3338->mutex);
 		return -ENOTTY;
@@ -554,7 +554,7 @@ static int sc3338_set_fmt(struct v4l2_subdev *sd,
 }
 
 static int sc3338_get_fmt(struct v4l2_subdev *sd,
-			   struct v4l2_subdev_pad_config *cfg,
+			   struct v4l2_subdev_state *sd_state,
 			   struct v4l2_subdev_format *fmt)
 {
 	struct sc3338 *sc3338 = to_sc3338(sd);
@@ -563,7 +563,7 @@ static int sc3338_get_fmt(struct v4l2_subdev *sd,
 	mutex_lock(&sc3338->mutex);
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
 #ifdef CONFIG_VIDEO_V4L2_SUBDEV_API
-		fmt->format = *v4l2_subdev_get_try_format(sd, cfg, fmt->pad);
+		fmt->format = *v4l2_subdev_get_try_format(sd, sd_state, fmt->pad);
 #else
 		mutex_unlock(&sc3338->mutex);
 		return -ENOTTY;
@@ -585,7 +585,7 @@ static int sc3338_get_fmt(struct v4l2_subdev *sd,
 }
 
 static int sc3338_enum_mbus_code(struct v4l2_subdev *sd,
-				  struct v4l2_subdev_pad_config *cfg,
+				  struct v4l2_subdev_state *sd_state,
 				  struct v4l2_subdev_mbus_code_enum *code)
 {
 	struct sc3338 *sc3338 = to_sc3338(sd);
@@ -598,7 +598,7 @@ static int sc3338_enum_mbus_code(struct v4l2_subdev *sd,
 }
 
 static int sc3338_enum_frame_sizes(struct v4l2_subdev *sd,
-				    struct v4l2_subdev_pad_config *cfg,
+				    struct v4l2_subdev_state *sd_state,
 				    struct v4l2_subdev_frame_size_enum *fse)
 {
 	if (fse->index >= ARRAY_SIZE(supported_modes))
@@ -650,20 +650,8 @@ static int sc3338_g_mbus_config(struct v4l2_subdev *sd,
 				unsigned int pad_id,
 				struct v4l2_mbus_config *config)
 {
-	struct sc3338 *sc3338 = to_sc3338(sd);
-	const struct sc3338_mode *mode = sc3338->cur_mode;
-
-	u32 val = 1 << (SC3338_LANES - 1) |
-		V4L2_MBUS_CSI2_CHANNEL_0 |
-		V4L2_MBUS_CSI2_CONTINUOUS_CLOCK;
-
-	if (mode->hdr_mode != NO_HDR)
-		val |= V4L2_MBUS_CSI2_CHANNEL_1;
-	if (mode->hdr_mode == HDR_X3)
-		val |= V4L2_MBUS_CSI2_CHANNEL_2;
-
 	config->type = V4L2_MBUS_CSI2_DPHY;
-	config->flags = val;
+	config->bus.mipi_csi2.num_data_lanes = SC3338_LANES;
 
 	return 0;
 }
@@ -1061,7 +1049,7 @@ static int sc3338_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 {
 	struct sc3338 *sc3338 = to_sc3338(sd);
 	struct v4l2_mbus_framefmt *try_fmt =
-				v4l2_subdev_get_try_format(sd, fh->pad, 0);
+				v4l2_subdev_get_try_format(sd, fh->state, 0);
 	const struct sc3338_mode *def_mode = &supported_modes[0];
 
 	mutex_lock(&sc3338->mutex);
@@ -1079,7 +1067,7 @@ static int sc3338_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 #endif
 
 static int sc3338_enum_frame_interval(struct v4l2_subdev *sd,
-				       struct v4l2_subdev_pad_config *cfg,
+				       struct v4l2_subdev_state *sd_state,
 				       struct v4l2_subdev_frame_interval_enum *fie)
 {
 	if (fie->index >= ARRAY_SIZE(supported_modes))
@@ -1202,8 +1190,7 @@ static int sc3338_set_ctrl(struct v4l2_ctrl *ctrl)
 					 (ctrl->val + sc3338->cur_mode->height)
 					 & 0xff);
 		sc3338->cur_vts = ctrl->val + sc3338->cur_mode->height;
-		if (sc3338->cur_vts != sc3338->cur_mode->vts_def)
-			sc3338_modify_fps_info(sc3338);
+		sc3338_modify_fps_info(sc3338);
 		break;
 	case V4L2_CID_TEST_PATTERN:
 		ret = sc3338_enable_test_pattern(sc3338, ctrl->val);
@@ -1464,7 +1451,7 @@ static int sc3338_probe(struct i2c_client *client,
 	snprintf(sd->name, sizeof(sd->name), "m%02d_%s_%s %s",
 		 sc3338->module_index, facing,
 		 SC3338_NAME, dev_name(sd->dev));
-	ret = v4l2_async_register_subdev_sensor_common(sd);
+	ret = v4l2_async_register_subdev_sensor(sd);
 	if (ret) {
 		dev_err(dev, "v4l2 async register subdev failed\n");
 		goto err_clean_entity;
@@ -1493,7 +1480,7 @@ err_destroy_mutex:
 	return ret;
 }
 
-static int sc3338_remove(struct i2c_client *client)
+static void sc3338_remove(struct i2c_client *client)
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct sc3338 *sc3338 = to_sc3338(sd);
@@ -1509,8 +1496,6 @@ static int sc3338_remove(struct i2c_client *client)
 	if (!pm_runtime_status_suspended(&client->dev))
 		__sc3338_power_off(sc3338);
 	pm_runtime_set_suspended(&client->dev);
-
-	return 0;
 }
 
 #if IS_ENABLED(CONFIG_OF)

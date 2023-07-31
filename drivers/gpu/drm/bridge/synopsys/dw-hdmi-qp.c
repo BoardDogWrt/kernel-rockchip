@@ -22,15 +22,16 @@
 #include <drm/drm_atomic.h>
 #include <drm/drm_atomic_helper.h>
 #include <drm/drm_crtc_helper.h>
-#include <drm/drm_dsc.h>
 #include <drm/drm_edid.h>
 #include <drm/drm_encoder_slave.h>
 #include <drm/drm_of.h>
 #include <drm/drm_panel.h>
 #include <drm/drm_print.h>
 #include <drm/drm_probe_helper.h>
-#include <drm/drm_scdc_helper.h>
 #include <drm/bridge/dw_hdmi.h>
+#include <drm/display/drm_dsc.h>
+#include <drm/display/drm_hdmi_helper.h>
+#include <drm/display/drm_scdc_helper.h>
 
 #include <uapi/linux/media-bus-format.h>
 #include <uapi/linux/videodev2.h>
@@ -1273,7 +1274,7 @@ static bool is_hdmi2_sink(const struct drm_connector *connector)
 		return true;
 
 	return connector->display_info.hdmi.scdc.supported ||
-		connector->display_info.color_formats & DRM_COLOR_FORMAT_YCRCB420;
+		connector->display_info.color_formats & DRM_COLOR_FORMAT_YCBCR420;
 }
 
 static void hdmi_config_AVI(struct dw_hdmi_qp *hdmi,
@@ -2218,7 +2219,8 @@ static int dw_hdmi_connector_get_modes(struct drm_connector *connector)
 			list_for_each_entry(mode, &connector->probed_modes, head)
 				hdmi->plat_data->convert_to_split_mode(mode);
 		}
-		info->edid_hdmi_dc_modes = 0;
+		info->edid_hdmi_rgb444_dc_modes = 0;
+		info->edid_hdmi_ycbcr444_dc_modes = 0;
 		info->hdmi.y420_dc_modes = 0;
 		info->color_formats = 0;
 
@@ -2479,7 +2481,7 @@ static int dw_hdmi_connector_atomic_check(struct drm_connector *connector,
 	if (hdmi->plat_data->get_vp_id)
 		hdmi->vp_id = hdmi->plat_data->get_vp_id(crtc_state);
 
-	memcpy(&mode, &crtc_state->mode, sizeof(mode));
+	drm_mode_copy(&mode, &crtc_state->mode);
 	/*
 	 * If HDMI is enabled in uboot, it's need to record
 	 * drm_display_mode and set phy status to enabled.
@@ -2512,7 +2514,7 @@ static int dw_hdmi_connector_atomic_check(struct drm_connector *connector,
 			hdmi->plat_data->convert_to_origin_mode(&mode);
 			mode.crtc_clock /= 2;
 		}
-		memcpy(&hdmi->previous_mode, &mode, sizeof(hdmi->previous_mode));
+		drm_mode_copy(&hdmi->previous_mode, &mode);
 		vmode->mpixelclock = mode.crtc_clock * 1000;
 		vmode->previous_pixelclock = mode.clock;
 		vmode->previous_tmdsclock = mode.clock;
@@ -2592,7 +2594,7 @@ static int dw_hdmi_connector_atomic_check(struct drm_connector *connector,
 }
 
 static void dw_hdmi_connector_atomic_commit(struct drm_connector *connector,
-					    struct drm_connector_state *state)
+					    struct drm_atomic_state *state)
 {
 	struct dw_hdmi_qp *hdmi =
 		container_of(connector, struct dw_hdmi_qp, connector);
@@ -2745,7 +2747,7 @@ static void dw_hdmi_qp_bridge_mode_set(struct drm_bridge *bridge,
 	if (!drm_mode_equal(orig_mode, mode))
 		hdmi->frl_switch = false;
 	/* Store the display mode for plugin/DKMS poweron events */
-	memcpy(&hdmi->previous_mode, mode, sizeof(hdmi->previous_mode));
+	drm_mode_copy(&hdmi->previous_mode, mode);
 	if (hdmi->plat_data->split_mode)
 		hdmi->plat_data->convert_to_origin_mode(&hdmi->previous_mode);
 

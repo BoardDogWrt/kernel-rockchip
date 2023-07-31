@@ -18,6 +18,7 @@
 *.c.[012]*.*
 *.dt.yaml
 *.dtb
+*.dtbo
 *.dtb.S
 *.dwo
 *.elf
@@ -37,6 +38,8 @@
 *.o
 *.o.*
 *.patch
+*.rmeta
+*.rsi
 *.s
 *.so
 *.so.dbg
@@ -45,10 +48,10 @@
 *.symversions
 *.tab.[ch]
 *.tar
+*.usyms
 *.xz
 *.zst
 Module.symvers
-modules.builtin
 modules.order
 
 #
@@ -56,17 +59,17 @@ modules.order
 #
 /*.img
 /out/
-/tags
-/TAGS
 /linux
 /modules-only.symvers
 /vmlinux
 /vmlinux.32
+/vmlinux.map
 /vmlinux.symvers
 /vmlinux-gdb.py
 /vmlinuz
 /System.map
 /Module.markers
+/modules.builtin
 /modules.builtin.modinfo
 /modules.nsdeps
 
@@ -99,6 +102,7 @@ modules.order
 !.gitattributes
 !.gitignore
 !.mailmap
+!.rustfmt.toml
 
 #
 # Generated include files
@@ -114,6 +118,10 @@ patches-*
 # quilt's files
 patches
 series
+
+# ctags files
+tags
+TAGS
 
 # cscope files
 cscope.*
@@ -160,3 +168,6 @@ x509.genkey
 
 # Documentation toolchain
 sphinx_*/
+
+# Rust analyzer configuration
+/rust-project.json

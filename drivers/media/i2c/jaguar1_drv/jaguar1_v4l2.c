@@ -468,7 +468,7 @@ unlock:
 }
 
 static int jaguar1_enum_mbus_code(struct v4l2_subdev *sd,
-				 struct v4l2_subdev_pad_config *cfg,
+				 struct v4l2_subdev_state *sd_state,
 				 struct v4l2_subdev_mbus_code_enum *code)
 {
 	if (code->index >= ARRAY_SIZE(jaguar1_formats))
@@ -480,7 +480,7 @@ static int jaguar1_enum_mbus_code(struct v4l2_subdev *sd,
 }
 
 static int jaguar1_enum_frame_sizes(struct v4l2_subdev *sd,
-				   struct v4l2_subdev_pad_config *cfg,
+				   struct v4l2_subdev_state *sd_state,
 				   struct v4l2_subdev_frame_size_enum *fse)
 {
 	struct i2c_client *client = v4l2_get_subdevdata(sd);
@@ -509,14 +509,13 @@ static int jaguar1_g_mbus_config(struct v4l2_subdev *sd, unsigned int pad,
 				 struct v4l2_mbus_config *cfg)
 {
 	cfg->type = V4L2_MBUS_CSI2_DPHY;
-	cfg->flags = V4L2_MBUS_CSI2_4_LANE |
-		     V4L2_MBUS_CSI2_CHANNELS;
+	cfg->bus.mipi_csi2.num_data_lanes = 4;
 
 	return 0;
 }
 
 static int jaguar1_enum_frame_interval(struct v4l2_subdev *sd,
-		struct v4l2_subdev_pad_config *cfg,
+		struct v4l2_subdev_state *sd_state,
 		struct v4l2_subdev_frame_interval_enum *fie)
 {
 	if (fie->index >= ARRAY_SIZE(jaguar1_framesizes))
@@ -532,7 +531,7 @@ static int jaguar1_enum_frame_interval(struct v4l2_subdev *sd,
 }
 
 static int jaguar1_get_fmt(struct v4l2_subdev *sd,
-			  struct v4l2_subdev_pad_config *cfg,
+			  struct v4l2_subdev_state *sd_state,
 			  struct v4l2_subdev_format *fmt)
 {
 	struct i2c_client *client = v4l2_get_subdevdata(sd);
@@ -542,7 +541,7 @@ static int jaguar1_get_fmt(struct v4l2_subdev *sd,
 #ifdef CONFIG_VIDEO_V4L2_SUBDEV_API
 		struct v4l2_mbus_framefmt *mf;
 
-		mf = v4l2_subdev_get_try_format(sd, cfg, 0);
+		mf = v4l2_subdev_get_try_format(sd, sd_state, 0);
 		mutex_lock(&jaguar1->mutex);
 		fmt->format = *mf;
 		mutex_unlock(&jaguar1->mutex);
@@ -592,7 +591,7 @@ static void __jaguar1_try_frame_size(struct v4l2_mbus_framefmt *mf,
 }
 
 static int jaguar1_set_fmt(struct v4l2_subdev *sd,
-			  struct v4l2_subdev_pad_config *cfg,
+			  struct v4l2_subdev_state *sd_state,
 			  struct v4l2_subdev_format *fmt)
 {
 	int index = ARRAY_SIZE(jaguar1_formats);
@@ -618,7 +617,7 @@ static int jaguar1_set_fmt(struct v4l2_subdev *sd,
 
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
 #ifdef CONFIG_VIDEO_V4L2_SUBDEV_API
-		mf = v4l2_subdev_get_try_format(sd, cfg, fmt->pad);
+		mf = v4l2_subdev_get_try_format(sd, sd_state, fmt->pad);
 		*mf = fmt->format;
 #else
 		return -ENOTTY;
@@ -1023,7 +1022,7 @@ static int jaguar1_probe(struct i2c_client *client,
 		 jaguar1->module_index, facing,
 		 JAGUAR1_NAME, dev_name(sd->dev));
 
-	ret = v4l2_async_register_subdev_sensor_common(sd);
+	ret = v4l2_async_register_subdev_sensor(sd);
 	if (ret) {
 		dev_err(dev, "v4l2 async register subdev failed\n");
 		goto err_clean_entity;
@@ -1047,7 +1046,7 @@ err_clean_entity:
 	return ret;
 }
 
-static int jaguar1_remove(struct i2c_client *client)
+static void jaguar1_remove(struct i2c_client *client)
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct jaguar1 *jaguar1 = to_jaguar1(sd);
@@ -1060,8 +1059,6 @@ static int jaguar1_remove(struct i2c_client *client)
 	if (!pm_runtime_status_suspended(&client->dev))
 		__jaguar1_power_off(jaguar1);
 	pm_runtime_set_suspended(&client->dev);
-
-	return 0;
 }
 
 #if IS_ENABLED(CONFIG_OF)

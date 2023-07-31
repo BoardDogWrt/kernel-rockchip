@@ -227,9 +227,9 @@ static int gyro_l3g20d_probe(struct i2c_client *client,
 	return sensor_register_device(client, NULL, devid, &gyro_l3g20d_ops);
 }
 
-static int gyro_l3g20d_remove(struct i2c_client *client)
+static void gyro_l3g20d_remove(struct i2c_client *client)
 {
-	return sensor_unregister_device(client, NULL, &gyro_l3g20d_ops);
+	sensor_unregister_device(client, NULL, &gyro_l3g20d_ops);
 }
 
 static const struct i2c_device_id gyro_l3g20d_id[] = {

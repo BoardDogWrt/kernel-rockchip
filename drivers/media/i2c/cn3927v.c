@@ -1349,7 +1349,7 @@ err_cleanup:
 	return ret;
 }
 
-static int cn3927v_remove(struct i2c_client *client)
+static void cn3927v_remove(struct i2c_client *client)
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct cn3927v_device *cn3927v_dev = sd_to_cn3927v_vcm(sd);
@@ -1357,8 +1357,6 @@ static int cn3927v_remove(struct i2c_client *client)
 	remove_sysfs_interfaces(&client->dev);
 	pm_runtime_disable(&client->dev);
 	cn3927v_subdev_cleanup(cn3927v_dev);
-
-	return 0;
 }
 
 static int cn3927v_init(struct i2c_client *client)

@@ -408,9 +408,9 @@ static int light_us5152_probe(struct i2c_client *client,
 	return sensor_register_device(client, NULL, devid, &light_us5152_ops);
 }
 
-static int light_us5152_remove(struct i2c_client *client)
+static void light_us5152_remove(struct i2c_client *client)
 {
-	return sensor_unregister_device(client, NULL, &light_us5152_ops);
+	sensor_unregister_device(client, NULL, &light_us5152_ops);
 }
 
 static const struct i2c_device_id light_us5152_id[] = {

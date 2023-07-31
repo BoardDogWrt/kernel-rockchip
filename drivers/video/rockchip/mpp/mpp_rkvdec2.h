@@ -9,7 +9,6 @@
 #ifndef __ROCKCHIP_MPP_RKVDEC2_H__
 #define __ROCKCHIP_MPP_RKVDEC2_H__
 
-#include <linux/dma-iommu.h>
 #include <linux/iopoll.h>
 #include <linux/of_platform.h>
 #include <linux/of_address.h>
@@ -25,6 +24,7 @@
 #include <linux/regulator/consumer.h>
 
 #include <soc/rockchip/pm_domains.h>
+#include <soc/rockchip/rockchip_opp_select.h>
 #include <soc/rockchip/rockchip_sip.h>
 
 #include "mpp_debug.h"
@@ -196,9 +196,8 @@ struct rkvdec2_dev {
 	unsigned long volt;
 	unsigned long core_rate_hz;
 	unsigned long core_last_rate_hz;
-	struct ipa_power_model_data *model_data;
-	struct thermal_cooling_device *devfreq_cooling;
 	struct monitor_dev_info *mdev_info;
+	struct rockchip_opp_info opp_info;
 #endif
 
 	/* internal rcb-memory */

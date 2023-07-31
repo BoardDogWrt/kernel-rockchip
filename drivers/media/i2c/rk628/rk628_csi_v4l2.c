@@ -1424,24 +1424,7 @@ static int rk628_csi_g_mbus_config(struct v4l2_subdev *sd, unsigned int pad,
 	struct rk628_csi *csi = to_csi(sd);
 
 	cfg->type = V4L2_MBUS_CSI2_DPHY;
-	cfg->flags = V4L2_MBUS_CSI2_CONTINUOUS_CLOCK;
-
-	switch (csi->csi_lanes_in_use) {
-	case 1:
-		cfg->flags |= V4L2_MBUS_CSI2_1_LANE;
-		break;
-	case 2:
-		cfg->flags |= V4L2_MBUS_CSI2_2_LANE;
-		break;
-	case 3:
-		cfg->flags |= V4L2_MBUS_CSI2_3_LANE;
-		break;
-	case 4:
-		cfg->flags |= V4L2_MBUS_CSI2_4_LANE;
-		break;
-	default:
-		return -EINVAL;
-	}
+	cfg->bus.mipi_csi2.num_data_lanes = csi->csi_lanes_in_use;
 
 	return 0;
 }
@@ -1459,7 +1442,7 @@ static int rk628_csi_s_stream(struct v4l2_subdev *sd, int enable)
 }
 
 static int rk628_csi_enum_mbus_code(struct v4l2_subdev *sd,
-		struct v4l2_subdev_pad_config *cfg,
+		struct v4l2_subdev_state *sd_state,
 		struct v4l2_subdev_mbus_code_enum *code)
 {
 	struct rk628_csi *csi = to_csi(sd);
@@ -1492,7 +1475,7 @@ static int rk628_csi_get_ctrl(struct v4l2_ctrl *ctrl)
 }
 
 static int rk628_csi_enum_frame_sizes(struct v4l2_subdev *sd,
-				   struct v4l2_subdev_pad_config *cfg,
+				   struct v4l2_subdev_state *sd_state,
 				   struct v4l2_subdev_frame_size_enum *fse)
 {
 	struct rk628_csi *csi = to_csi(sd);
@@ -1512,7 +1495,7 @@ static int rk628_csi_enum_frame_sizes(struct v4l2_subdev *sd,
 }
 
 static int rk628_csi_enum_frame_interval(struct v4l2_subdev *sd,
-		struct v4l2_subdev_pad_config *cfg,
+		struct v4l2_subdev_state *sd_state,
 		struct v4l2_subdev_frame_interval_enum *fie)
 {
 	struct rk628_csi *csi = to_csi(sd);
@@ -1529,7 +1512,7 @@ static int rk628_csi_enum_frame_interval(struct v4l2_subdev *sd,
 }
 
 static int rk628_csi_get_fmt(struct v4l2_subdev *sd,
-		struct v4l2_subdev_pad_config *cfg,
+		struct v4l2_subdev_state *sd_state,
 		struct v4l2_subdev_format *format)
 {
 	struct rk628_csi *csi = to_csi(sd);
@@ -1577,14 +1560,14 @@ rk628_csi_find_best_fit(struct v4l2_subdev_format *fmt)
 }
 
 static int rk628_csi_set_fmt(struct v4l2_subdev *sd,
-		struct v4l2_subdev_pad_config *cfg,
+		struct v4l2_subdev_state *sd_state,
 		struct v4l2_subdev_format *format)
 {
 	struct rk628_csi *csi = to_csi(sd);
 	const struct rk628_csi_mode *mode;
 
 	u32 code = format->format.code; /* is overwritten by get_fmt */
-	int ret = rk628_csi_get_fmt(sd, cfg, format);
+	int ret = rk628_csi_get_fmt(sd, sd_state, format);
 
 	format->format.code = code;
 
@@ -1608,7 +1591,7 @@ static int rk628_csi_set_fmt(struct v4l2_subdev *sd,
 		if (csi->plat_data->bus_fmt == MEDIA_BUS_FMT_UYVY8_2X8)
 			return 0;
 
-		*v4l2_subdev_get_try_format(sd, cfg, format->pad) = format->format;
+		*v4l2_subdev_get_try_format(sd, sd_state, format->pad) = format->format;
 	}
 
 	csi->mbus_fmt_code = format->format.code;
@@ -2331,7 +2314,7 @@ err_hdl:
 	return err;
 }
 
-static int rk628_csi_remove(struct i2c_client *client)
+static void rk628_csi_remove(struct i2c_client *client)
 {
 	struct rk628_csi *csi = i2c_get_clientdata(client);
 
@@ -2357,8 +2340,6 @@ static int rk628_csi_remove(struct i2c_client *client)
 	rk628_control_assert(csi->rk628, RGU_CLK_RX);
 	rk628_control_assert(csi->rk628, RGU_VOP);
 	rk628_control_assert(csi->rk628, RGU_CSI);
-
-	return 0;
 }
 
 static struct i2c_driver rk628_csi_i2c_driver = {

@@ -12,6 +12,7 @@
 #include <linux/of.h>
 #include <linux/of_address.h>
 #include <linux/of_irq.h>
+#include <linux/panic_notifier.h>
 #include <linux/platform_device.h>
 #include <linux/regmap.h>
 #include <linux/reset.h>
@@ -1482,6 +1483,17 @@ static int rk_tsadcv2_get_trim_code(const struct chip_tsadc_table *table,
 	return code - base_code;
 }
 
+static int rk_tsadcv3_get_trim_code(const struct chip_tsadc_table *table,
+				    int code, int trim_base, int trim_base_frac)
+{
+	int temp = trim_base * 1000 + trim_base_frac * 100;
+	u32 base_code = rk_tsadcv2_temp_to_code(table, temp);
+
+	rk_tsadcv2_temp_to_code(table, temp);
+
+	return (TSADCV3_Q_MAX_VAL - code) - base_code;
+}
+
 static int rk_tsadcv1_set_clk_rate(struct platform_device *pdev)
 {
 	struct clk *clk;
@@ -1884,6 +1896,8 @@ static const struct rockchip_tsadc_chip rk3562_tsadc_data = {
 	.set_alarm_temp = rk_tsadcv3_alarm_temp,
 	.set_tshut_temp = rk_tsadcv3_tshut_temp,
 	.set_tshut_mode = rk_tsadcv4_tshut_mode,
+	.get_trim_code = rk_tsadcv3_get_trim_code,
+	.trim_slope = 588,
 
 	.table = {
 		.id = rk3562_code_table,
@@ -2076,9 +2090,9 @@ static irqreturn_t rockchip_thermal_alarm_irq_thread(int irq, void *dev)
 	return IRQ_HANDLED;
 }
 
-static int rockchip_thermal_set_trips(void *_sensor, int low, int high)
+static int rockchip_thermal_set_trips(struct thermal_zone_device *tz, int low, int high)
 {
-	struct rockchip_thermal_sensor *sensor = _sensor;
+	struct rockchip_thermal_sensor *sensor = tz->devdata;
 	struct rockchip_thermal_data *thermal = sensor->thermal;
 	const struct rockchip_tsadc_chip *tsadc = thermal->chip;
 
@@ -2091,9 +2105,9 @@ static int rockchip_thermal_set_trips(void *_sensor, int low, int high)
 				     sensor->id, thermal->regs, high);
 }
 
-static int rockchip_thermal_get_temp(void *_sensor, int *out_temp)
+static int rockchip_thermal_get_temp(struct thermal_zone_device *tz, int *out_temp)
 {
-	struct rockchip_thermal_sensor *sensor = _sensor;
+	struct rockchip_thermal_sensor *sensor = tz->devdata;
 	struct rockchip_thermal_data *thermal = sensor->thermal;
 	const struct rockchip_tsadc_chip *tsadc = sensor->thermal->chip;
 	int retval;
@@ -2107,7 +2121,7 @@ static int rockchip_thermal_get_temp(void *_sensor, int *out_temp)
 	return retval;
 }
 
-static const struct thermal_zone_of_device_ops rockchip_of_thermal_ops = {
+static const struct thermal_zone_device_ops rockchip_of_thermal_ops = {
 	.get_temp = rockchip_thermal_get_temp,
 	.set_trips = rockchip_thermal_set_trips,
 };
@@ -2167,12 +2181,9 @@ static int rockchip_get_trim_configure(struct device *dev,
 	 * The tsadc won't to handle the error in here
 	 * since some SoCs didn't need this property.
 	 */
-	if (rockchip_get_efuse_value(np, "trim_base", &trim_base)) {
-		dev_info(dev, "Missing trim_base property\n");
-		return 0;
-	}
+	rockchip_get_efuse_value(np, "trim_base", &trim_base);
 	if (!trim_base)
-		return 0;
+		trim_base = 30;
 	rockchip_get_efuse_value(np, "trim_base_frac", &trim_base_frac);
 	/*
 	 * If the tsadc node contains trim_h and trim_l property,
@@ -2314,8 +2325,8 @@ rockchip_thermal_register_sensor(struct platform_device *pdev,
 
 	sensor->thermal = thermal;
 	sensor->id = id;
-	sensor->tzd = devm_thermal_zone_of_sensor_register(&pdev->dev, id,
-					sensor, &rockchip_of_thermal_ops);
+	sensor->tzd = devm_thermal_of_zone_register(&pdev->dev, id, sensor,
+						    &rockchip_of_thermal_ops);
 	if (IS_ERR(sensor->tzd)) {
 		error = PTR_ERR(sensor->tzd);
 		dev_err(&pdev->dev, "failed to register sensor %d: %d\n",

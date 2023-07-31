@@ -23,7 +23,8 @@
 /*				1	   Counters support */
 /*				2	   Comments support */
 /*				3	   Forceadd support */
-#define IPSET_TYPE_REV_MAX	4	/* skbinfo support  */
+/*				4	   skbinfo support */
+#define IPSET_TYPE_REV_MAX	5	/* bucketsize, initval support  */
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Jozsef Kadlecsik <kadlec@netfilter.org>");
@@ -97,11 +98,11 @@ static int
 hash_ip4_uadt(struct ip_set *set, struct nlattr *tb[],
 	      enum ipset_adt adt, u32 *lineno, u32 flags, bool retried)
 {
-	const struct hash_ip4 *h = set->data;
+	struct hash_ip4 *h = set->data;
 	ipset_adtfn adtfn = set->variant->adt[adt];
 	struct hash_ip4_elem e = { 0 };
 	struct ip_set_ext ext = IP_SET_INIT_UEXT(set);
-	u32 ip = 0, ip_to = 0, hosts;
+	u32 ip = 0, ip_to = 0, hosts, i = 0;
 	int ret = 0;
 
 	if (tb[IPSET_ATTR_LINENO])
@@ -146,14 +147,14 @@ hash_ip4_uadt(struct ip_set *set, struct nlattr *tb[],
 
 	hosts = h->netmask == 32 ? 1 : 2 << (32 - h->netmask - 1);
 
-	/* 64bit division is not allowed on 32bit */
-	if (((u64)ip_to - ip + 1) >> (32 - h->netmask) > IPSET_MAX_RANGE)
-		return -ERANGE;
-
 	if (retried)
 		ip = ntohl(h->next.ip);
-	for (; ip <= ip_to;) {
+	for (; ip <= ip_to; i++) {
 		e.ip = htonl(ip);
+		if (i > IPSET_MAX_RANGE) {
+			hash_ip4_data_next(&h->next, &e);
+			return -ERANGE;
+		}
 		ret = adtfn(set, &e, &ext, &ext, flags);
 		if (ret && !ip_set_eexist(ret, flags))
 			return ret;
@@ -282,11 +283,13 @@ static struct ip_set_type hash_ip_type __read_mostly = {
 	.family		= NFPROTO_UNSPEC,
 	.revision_min	= IPSET_TYPE_REV_MIN,
 	.revision_max	= IPSET_TYPE_REV_MAX,
+	.create_flags[IPSET_TYPE_REV_MAX] = IPSET_CREATE_FLAG_BUCKETSIZE,
 	.create		= hash_ip_create,
 	.create_policy	= {
 		[IPSET_ATTR_HASHSIZE]	= { .type = NLA_U32 },
 		[IPSET_ATTR_MAXELEM]	= { .type = NLA_U32 },
-		[IPSET_ATTR_PROBES]	= { .type = NLA_U8 },
+		[IPSET_ATTR_INITVAL]	= { .type = NLA_U32 },
+		[IPSET_ATTR_BUCKETSIZE]	= { .type = NLA_U8 },
 		[IPSET_ATTR_RESIZE]	= { .type = NLA_U8  },
 		[IPSET_ATTR_TIMEOUT]	= { .type = NLA_U32 },
 		[IPSET_ATTR_NETMASK]	= { .type = NLA_U8  },

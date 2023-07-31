@@ -436,7 +436,7 @@ static const struct gc2093_mode supported_modes[] = {
 		.reg_list = gc2093_1080p_liner_settings,
 		.reg_num = ARRAY_SIZE(gc2093_1080p_liner_settings),
 		.hdr_mode = NO_HDR,
-		.vc[PAD0] = V4L2_MBUS_CSI2_CHANNEL_0,
+		.vc[PAD0] = 0,
 	},
 	{
 		.width = 1920,
@@ -452,10 +452,10 @@ static const struct gc2093_mode supported_modes[] = {
 		.reg_list = gc2093_1080p_hdr_settings,
 		.reg_num = ARRAY_SIZE(gc2093_1080p_hdr_settings),
 		.hdr_mode = HDR_X2,
-		.vc[PAD0] = V4L2_MBUS_CSI2_CHANNEL_1,
-		.vc[PAD1] = V4L2_MBUS_CSI2_CHANNEL_0,//L->csi wr0
-		.vc[PAD2] = V4L2_MBUS_CSI2_CHANNEL_1,
-		.vc[PAD3] = V4L2_MBUS_CSI2_CHANNEL_1,//M->csi wr2
+		.vc[PAD0] = 1,
+		.vc[PAD1] = 0,//L->csi wr0
+		.vc[PAD2] = 1,
+		.vc[PAD3] = 1,//M->csi wr2
 	},
 };
 
@@ -606,8 +606,7 @@ static int gc2093_set_ctrl(struct v4l2_ctrl *ctrl)
 				       (vts >> 8) & 0x3f);
 		ret |= gc2093_write_reg(gc2093, GC2093_REG_VTS_L,
 					vts & 0xff);
-		if (gc2093->cur_vts != gc2093->cur_mode->vts_def)
-			gc2093_modify_fps_info(gc2093);
+		gc2093_modify_fps_info(gc2093);
 		dev_dbg(gc2093->dev, " set blank value 0x%x\n", ctrl->val);
 		break;
 	case V4L2_CID_HFLIP:
@@ -1159,19 +1158,14 @@ static int gc2093_g_frame_interval(struct v4l2_subdev *sd,
 static int gc2093_g_mbus_config(struct v4l2_subdev *sd, unsigned int pad_id,
 				struct v4l2_mbus_config *config)
 {
-	struct gc2093 *gc2093 = to_gc2093(sd);
-	u32 val = 1 << (GC2093_LANES - 1) | V4L2_MBUS_CSI2_CHANNEL_0 |
-		  V4L2_MBUS_CSI2_CONTINUOUS_CLOCK;
-
 	config->type = V4L2_MBUS_CSI2_DPHY;
-	config->flags = (gc2093->cur_mode->hdr_mode == NO_HDR) ?
-			val : (val | V4L2_MBUS_CSI2_CHANNEL_1);
+	config->bus.mipi_csi2.num_data_lanes = GC2093_LANES;
 
 	return 0;
 }
 
 static int gc2093_enum_mbus_code(struct v4l2_subdev *sd,
-				 struct v4l2_subdev_pad_config *cfg,
+				 struct v4l2_subdev_state *sd_state,
 				 struct v4l2_subdev_mbus_code_enum *code)
 {
 	if (code->index != 0)
@@ -1181,7 +1175,7 @@ static int gc2093_enum_mbus_code(struct v4l2_subdev *sd,
 }
 
 static int gc2093_enum_frame_sizes(struct v4l2_subdev *sd,
-				   struct v4l2_subdev_pad_config *cfg,
+				   struct v4l2_subdev_state *sd_state,
 				   struct v4l2_subdev_frame_size_enum *fse)
 {
 	struct gc2093 *gc2093 = to_gc2093(sd);
@@ -1200,7 +1194,7 @@ static int gc2093_enum_frame_sizes(struct v4l2_subdev *sd,
 }
 
 static int gc2093_enum_frame_interval(struct v4l2_subdev *sd,
-						  struct v4l2_subdev_pad_config *cfg,
+						  struct v4l2_subdev_state *sd_state,
 						  struct v4l2_subdev_frame_interval_enum *fie)
 {
 	struct gc2093 *gc2093 = to_gc2093(sd);
@@ -1217,7 +1211,7 @@ static int gc2093_enum_frame_interval(struct v4l2_subdev *sd,
 }
 
 static int gc2093_set_fmt(struct v4l2_subdev *sd,
-			  struct v4l2_subdev_pad_config *cfg,
+			  struct v4l2_subdev_state *sd_state,
 			  struct v4l2_subdev_format *fmt)
 {
 	struct gc2093 *gc2093 = to_gc2093(sd);
@@ -1237,7 +1231,7 @@ static int gc2093_set_fmt(struct v4l2_subdev *sd,
 	fmt->format.field = V4L2_FIELD_NONE;
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
 #ifdef CONFIG_VIDEO_V4L2_SUBDEV_API
-		*v4l2_subdev_get_try_format(sd, cfg, fmt->pad) = fmt->format;
+		*v4l2_subdev_get_try_format(sd, sd_state, fmt->pad) = fmt->format;
 #else
 		mutex_unlock(&gc2093->lock);
 		return -ENOTTY;
@@ -1263,7 +1257,7 @@ static int gc2093_set_fmt(struct v4l2_subdev *sd,
 }
 
 static int gc2093_get_fmt(struct v4l2_subdev *sd,
-			  struct v4l2_subdev_pad_config *cfg,
+			  struct v4l2_subdev_state *sd_state,
 			  struct v4l2_subdev_format *fmt)
 {
 	struct gc2093 *gc2093 = to_gc2093(sd);
@@ -1272,7 +1266,7 @@ static int gc2093_get_fmt(struct v4l2_subdev *sd,
 	mutex_lock(&gc2093->lock);
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
 #ifdef CONFIG_VIDEO_V4L2_SUBDEV_API
-		fmt->format = *v4l2_subdev_get_try_format(sd, cfg, fmt->pad);
+		fmt->format = *v4l2_subdev_get_try_format(sd, sd_state, fmt->pad);
 #else
 		mutex_unlock(&gc2093->lock);
 		return -ENOTTY;
@@ -1299,7 +1293,7 @@ static int gc2093_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 {
 	struct gc2093 *gc2093 = to_gc2093(sd);
 	struct v4l2_mbus_framefmt *try_fmt =
-				v4l2_subdev_get_try_format(sd, fh->pad, 0);
+				v4l2_subdev_get_try_format(sd, fh->state, 0);
 	const struct gc2093_mode *def_mode = &supported_modes[0];
 
 	mutex_lock(&gc2093->lock);
@@ -1506,7 +1500,7 @@ static int gc2093_probe(struct i2c_client *client,
 		 gc2093->module_index, facing,
 		 GC2093_NAME, dev_name(sd->dev));
 
-	ret = v4l2_async_register_subdev_sensor_common(sd);
+	ret = v4l2_async_register_subdev_sensor(sd);
 	if (ret) {
 		dev_err(dev, "Failed to register v4l2 async subdev\n");
 		goto err_clean_entity;
@@ -1535,7 +1529,7 @@ err_destroy_mutex:
 	return ret;
 }
 
-static int gc2093_remove(struct i2c_client *client)
+static void gc2093_remove(struct i2c_client *client)
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct gc2093 *gc2093 = to_gc2093(sd);
@@ -1551,7 +1545,6 @@ static int gc2093_remove(struct i2c_client *client)
 	if (!pm_runtime_status_suspended(&client->dev))
 		__gc2093_power_off(gc2093);
 	pm_runtime_set_suspended(&client->dev);
-	return 0;
 }
 
 static const struct i2c_device_id gc2093_match_id[] = {

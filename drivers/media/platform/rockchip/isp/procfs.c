@@ -1006,19 +1006,22 @@ static void rkisp_proc_dump_mem(struct rkisp_device *dev)
 
 		if (p->buf_3dnr_iir[0].mem_priv) {
 			if (!p->buf_3dnr_iir[0].is_need_vaddr)
-				p->buf_3dnr_iir[0].vaddr = g_ops->vaddr(p->buf_3dnr_iir[0].mem_priv);
+				p->buf_3dnr_iir[0].vaddr =
+					g_ops->vaddr(NULL, p->buf_3dnr_iir[0].mem_priv);
 			iir_addr = p->buf_3dnr_iir[0].vaddr;
 			iir_size = p->buf_3dnr_iir[0].size;
 		}
 		if (p->buf_3dnr_cur[0].mem_priv) {
 			if (!p->buf_3dnr_cur[0].is_need_vaddr)
-				p->buf_3dnr_cur[0].vaddr = g_ops->vaddr(p->buf_3dnr_cur[0].mem_priv);
+				p->buf_3dnr_cur[0].vaddr =
+					g_ops->vaddr(NULL, p->buf_3dnr_cur[0].mem_priv);
 			cur_addr = p->buf_3dnr_cur[0].vaddr;
 			cur_size = p->buf_3dnr_cur[0].size;
 		}
 		if (p->buf_3dnr_ds[0].mem_priv) {
 			if (!p->buf_3dnr_ds[0].is_need_vaddr)
-				p->buf_3dnr_ds[0].vaddr = g_ops->vaddr(p->buf_3dnr_ds[0].mem_priv);
+				p->buf_3dnr_ds[0].vaddr =
+					g_ops->vaddr(NULL, p->buf_3dnr_ds[0].mem_priv);
 			ds_addr = p->buf_3dnr_ds[0].vaddr;
 			ds_size = p->buf_3dnr_ds[0].size;
 		}
@@ -1060,7 +1063,7 @@ static ssize_t rkisp_proc_write(struct file *file,
 				const char __user *user_buf,
 				size_t user_len, loff_t *pos)
 {
-	struct rkisp_device *dev = PDE_DATA(file_inode(file));
+	struct rkisp_device *dev = pde_data(file_inode(file));
 	char *tmp, *buf = vmalloc(user_len + 1);
 	u32 val, reg;
 	int ret;
@@ -1120,7 +1123,7 @@ end:
 
 static int isp_open(struct inode *inode, struct file *file)
 {
-	struct rkisp_device *data = PDE_DATA(inode);
+	struct rkisp_device *data = pde_data(inode);
 
 	return single_open(file, isp_show, data);
 }

@@ -108,18 +108,13 @@ static int sditf_g_mbus_config(struct v4l2_subdev *sd, unsigned int pad_id,
 	if (cif_dev->active_sensor) {
 		sensor_sd = cif_dev->active_sensor->sd;
 		return v4l2_subdev_call(sensor_sd, pad, get_mbus_config, 0, config);
-	} else {
-		config->type = V4L2_MBUS_CSI2_DPHY;
-		config->flags = V4L2_MBUS_CSI2_CHANNEL_0 |
-				V4L2_MBUS_CSI2_CONTINUOUS_CLOCK;
-		return 0;
 	}
 
 	return -EINVAL;
 }
 
 static int sditf_get_set_fmt(struct v4l2_subdev *sd,
-			     struct v4l2_subdev_pad_config *cfg,
+			     struct v4l2_subdev_state *sd_state,
 			     struct v4l2_subdev_format *fmt)
 {
 	struct sditf_priv *priv = to_sditf_priv(sd);
@@ -301,7 +296,7 @@ static void sditf_free_buf(struct sditf_priv *priv)
 }
 
 static int sditf_get_selection(struct v4l2_subdev *sd,
-			       struct v4l2_subdev_pad_config *cfg,
+			       struct v4l2_subdev_state *sd_state,
 			       struct v4l2_subdev_selection *sel)
 {
 	return -EINVAL;
@@ -951,30 +946,13 @@ static int sditf_fwnode_parse(struct device *dev,
 	if (vep->bus_type == V4L2_MBUS_CSI2_DPHY ||
 	    vep->bus_type == V4L2_MBUS_CSI2_CPHY) {
 		config->type = vep->bus_type;
-		config->flags = vep->bus.mipi_csi2.flags;
+		config->bus.mipi_csi2.flags = vep->bus.mipi_csi2.flags;
 		s_asd->lanes = vep->bus.mipi_csi2.num_data_lanes;
 	} else if (vep->bus_type == V4L2_MBUS_CCP2) {
 		config->type = vep->bus_type;
 		s_asd->lanes = vep->bus.mipi_csi1.data_lane;
 	} else {
 		dev_err(dev, "type is not supported\n");
-		return -EINVAL;
-	}
-
-	switch (s_asd->lanes) {
-	case 1:
-		config->flags |= V4L2_MBUS_CSI2_1_LANE;
-		break;
-	case 2:
-		config->flags |= V4L2_MBUS_CSI2_2_LANE;
-		break;
-	case 3:
-		config->flags |= V4L2_MBUS_CSI2_3_LANE;
-		break;
-	case 4:
-		config->flags |= V4L2_MBUS_CSI2_4_LANE;
-		break;
-	default:
 		return -EINVAL;
 	}
 
@@ -1073,24 +1051,24 @@ static int sditf_subdev_notifier(struct sditf_priv *sditf)
 	struct v4l2_async_notifier *ntf = &sditf->notifier;
 	int ret;
 
-	v4l2_async_notifier_init(ntf);
+	v4l2_async_nf_init(ntf);
 
-	ret = v4l2_async_notifier_parse_fwnode_endpoints_by_port(
-			sditf->dev, &sditf->notifier,
-			sizeof(struct sensor_async_subdev), 0,
-			sditf_fwnode_parse);
-		if (ret < 0)
-			return ret;
+	ret = v4l2_async_nf_parse_fwnode_endpoints(sditf->dev,
+							 ntf,
+							 sizeof(struct sensor_async_subdev),
+							 sditf_fwnode_parse);
+	if (ret < 0)
+		return ret;
 
 	sditf->sd.subdev_notifier = &sditf->notifier;
 	sditf->notifier.ops = &sditf_notifier_ops;
 
-	ret = v4l2_async_subdev_notifier_register(&sditf->sd, &sditf->notifier);
+	ret = v4l2_async_subdev_nf_register(&sditf->sd, &sditf->notifier);
 	if (ret) {
 		v4l2_err(&sditf->sd,
 			 "failed to register async notifier : %d\n",
 			 ret);
-		v4l2_async_notifier_cleanup(&sditf->notifier);
+		v4l2_async_nf_cleanup(&sditf->notifier);
 		return ret;
 	}
 

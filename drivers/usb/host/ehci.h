@@ -218,13 +218,9 @@ struct ehci_hcd {			/* one per controller */
 	unsigned		frame_index_bug:1; /* MosChip (AKA NetMos) */
 	unsigned		need_oc_pp_cycle:1; /* MPC834X port power */
 	unsigned		imx28_write_fix:1; /* For Freescale i.MX28 */
-	/*
-	 * __GENKSYMS__ test is an abi workaround for commit
-	 * 7f2d73788d90 ("usb: ehci: handshake CMD_RUN * instead of STS_HALT")
-	 */
-#ifndef __GENKSYMS__
+	unsigned		spurious_oc:1;
 	unsigned		is_aspeed:1;
-#endif
+	unsigned		zx_wakeup_clear_needed:1;
 
 	/* required for usb32 quirk */
 	#define OHCI_CTRL_HCFS          (3 << 6)

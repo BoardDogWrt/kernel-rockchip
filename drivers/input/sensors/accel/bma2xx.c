@@ -2238,9 +2238,9 @@ static int gsensor_bma2x2_probe(struct i2c_client *client,
 	return sensor_register_device(client, NULL, devid, &gsensor_bma2x2_ops);
 }
 
-static int gsensor_bma2x2_remove(struct i2c_client *client)
+static void gsensor_bma2x2_remove(struct i2c_client *client)
 {
-	return sensor_unregister_device(client, NULL, &gsensor_bma2x2_ops);
+	sensor_unregister_device(client, NULL, &gsensor_bma2x2_ops);
 }
 
 static const struct i2c_device_id gsensor_bma2x2_id[] = {

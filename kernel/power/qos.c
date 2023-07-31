@@ -38,9 +38,6 @@
 #include <linux/uaccess.h>
 #include <linux/export.h>
 #include <trace/events/power.h>
-#undef CREATE_TRACE_POINT
-#include <trace/hooks/power.h>
-
 
 /*
  * locking rule: all changes to constraints or notifiers lists
@@ -534,7 +531,7 @@ int freq_qos_add_request(struct freq_constraints *qos,
 {
 	int ret;
 
-	if (IS_ERR_OR_NULL(qos) || !req)
+	if (IS_ERR_OR_NULL(qos) || !req || value < 0)
 		return -EINVAL;
 
 	if (WARN(freq_qos_request_active(req),
@@ -549,7 +546,6 @@ int freq_qos_add_request(struct freq_constraints *qos,
 		req->type = 0;
 	}
 
-	trace_android_vh_freq_qos_add_request(qos, req, type, value, ret);
 	return ret;
 }
 EXPORT_SYMBOL_GPL(freq_qos_add_request);
@@ -567,14 +563,13 @@ EXPORT_SYMBOL_GPL(freq_qos_add_request);
  */
 int freq_qos_update_request(struct freq_qos_request *req, s32 new_value)
 {
-	if (!req)
+	if (!req || new_value < 0)
 		return -EINVAL;
 
 	if (WARN(!freq_qos_request_active(req),
 		 "%s() called for unknown object\n", __func__))
 		return -EINVAL;
 
-	trace_android_vh_freq_qos_update_request(req, new_value);
 	if (req->pnode.prio == new_value)
 		return 0;
 
@@ -603,7 +598,6 @@ int freq_qos_remove_request(struct freq_qos_request *req)
 		 "%s() called for unknown object\n", __func__))
 		return -EINVAL;
 
-	trace_android_vh_freq_qos_remove_request(req);
 	ret = freq_qos_apply(req, PM_QOS_REMOVE_REQ, PM_QOS_DEFAULT_VALUE);
 	req->qos = NULL;
 	req->type = 0;

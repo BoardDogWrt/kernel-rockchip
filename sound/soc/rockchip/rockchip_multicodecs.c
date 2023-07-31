@@ -419,10 +419,10 @@ static int rk_dailink_init(struct snd_soc_pcm_runtime *rtd)
 	if (!zones)
 		return -ENOMEM;
 
-	ret = snd_soc_card_jack_new(card, "Headset",
-				    SND_JACK_HEADSET,
-				    jack_headset,
-				    pins, ARRAY_SIZE(jack_pins));
+	ret = snd_soc_card_jack_new_pins(card, "Headset",
+					 SND_JACK_HEADSET,
+					 jack_headset,
+					 pins, ARRAY_SIZE(jack_pins));
 	if (ret)
 		return ret;
 	ret = snd_soc_jack_add_zones(jack_headset, ARRAY_SIZE(headset_zones), zones);
@@ -475,12 +475,10 @@ static int rk_multicodecs_parse_daifmt(struct device_node *node,
 	struct device_node *framemaster = NULL;
 	unsigned int daifmt;
 
-	daifmt = snd_soc_of_parse_daifmt(node, prefix,
-					 &bitclkmaster, &framemaster);
+	daifmt = snd_soc_daifmt_parse_format(node, prefix);
 
-	daifmt &= ~SND_SOC_DAIFMT_MASTER_MASK;
-
-	if (strlen(prefix) && !bitclkmaster && !framemaster) {
+	snd_soc_daifmt_parse_clock_provider_as_phandle(node, prefix, &bitclkmaster, &framemaster);
+	if (!bitclkmaster && !framemaster) {
 		/*
 		 * No dai-link level and master setting was not found from
 		 * sound node level, revert back to legacy DT parsing and
@@ -488,15 +486,10 @@ static int rk_multicodecs_parse_daifmt(struct device_node *node,
 		 */
 		pr_debug("%s: Revert to legacy daifmt parsing\n", __func__);
 
-		daifmt = snd_soc_of_parse_daifmt(codec, NULL, NULL, NULL) |
-			(daifmt & ~SND_SOC_DAIFMT_CLOCK_MASK);
+		daifmt |= snd_soc_daifmt_parse_clock_provider_as_flag(codec, NULL);
 	} else {
-		if (codec == bitclkmaster)
-			daifmt |= (codec == framemaster) ?
-				SND_SOC_DAIFMT_CBM_CFM : SND_SOC_DAIFMT_CBM_CFS;
-		else
-			daifmt |= (codec == framemaster) ?
-				SND_SOC_DAIFMT_CBS_CFM : SND_SOC_DAIFMT_CBS_CFS;
+		daifmt |= snd_soc_daifmt_clock_provider_from_bitmap(
+				((codec == bitclkmaster) << 4) | (codec == framemaster));
 	}
 
 	/*

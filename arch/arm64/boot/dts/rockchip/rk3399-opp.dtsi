@@ -6,7 +6,7 @@
 #include "rk3399-sched-energy.dtsi"
 
 / {
-	cluster0_opp: opp-table0 {
+	cluster0_opp: opp-table-0 {
 		compatible = "operating-points-v2";
 		opp-shared;
 
@@ -99,7 +99,7 @@
 		};
 	};
 
-	cluster1_opp: opp-table1 {
+	cluster1_opp: opp-table-1 {
 		compatible = "operating-points-v2";
 		opp-shared;
 
@@ -219,7 +219,7 @@
 		};
 	};
 
-	gpu_opp_table: opp-table2 {
+	gpu_opp_table: opp-table-2 {
 		compatible = "operating-points-v2";
 
 		rockchip,thermal-zone = "soc-thermal";
@@ -248,47 +248,47 @@
 
 		opp-200000000 {
 			opp-hz = /bits/ 64 <200000000>;
-			opp-microvolt = <825000>;
-			opp-microvolt-L0 = <825000>;
-			opp-microvolt-L1 = <825000>;
-			opp-microvolt-L2 = <825000>;
-			opp-microvolt-L3 = <825000>;
+			opp-microvolt = <825000 825000 1150000>;
+			opp-microvolt-L0 = <825000 825000 1150000>;
+			opp-microvolt-L1 = <825000 825000 1150000>;
+			opp-microvolt-L2 = <825000 825000 1150000>;
+			opp-microvolt-L3 = <825000 825000 1150000>;
 		};
 		opp-300000000 {
 			opp-hz = /bits/ 64 <300000000>;
-			opp-microvolt = <825000>;
-			opp-microvolt-L0 = <825000>;
-			opp-microvolt-L1 = <825000>;
-			opp-microvolt-L2 = <825000>;
-			opp-microvolt-L3 = <825000>;
+			opp-microvolt = <825000 825000 1150000>;
+			opp-microvolt-L0 = <825000 825000 1150000>;
+			opp-microvolt-L1 = <825000 825000 1150000>;
+			opp-microvolt-L2 = <825000 825000 1150000>;
+			opp-microvolt-L3 = <825000 825000 1150000>;
 		};
 		opp-400000000 {
 			opp-hz = /bits/ 64 <400000000>;
-			opp-microvolt = <825000>;
-			opp-microvolt-L0 = <825000>;
-			opp-microvolt-L1 = <825000>;
-			opp-microvolt-L2 = <825000>;
-			opp-microvolt-L3 = <825000>;
+			opp-microvolt = <825000 825000 1150000>;
+			opp-microvolt-L0 = <825000 825000 1150000>;
+			opp-microvolt-L1 = <825000 825000 1150000>;
+			opp-microvolt-L2 = <825000 825000 1150000>;
+			opp-microvolt-L3 = <825000 825000 1150000>;
 		};
 		opp-600000000 {
 			opp-hz = /bits/ 64 <600000000>;
-			opp-microvolt = <925000>;
-			opp-microvolt-L0 = <925000>;
-			opp-microvolt-L1 = <925000>;
-			opp-microvolt-L2 = <900000>;
-			opp-microvolt-L3 = <900000>;
+			opp-microvolt = <925000 925000 1150000>;
+			opp-microvolt-L0 = <925000 925000 1150000>;
+			opp-microvolt-L1 = <925000 925000 1150000>;
+			opp-microvolt-L2 = <900000 900000 1150000>;
+			opp-microvolt-L3 = <900000 900000 1150000>;
 		};
 		opp-800000000 {
 			opp-hz = /bits/ 64 <800000000>;
-			opp-microvolt = <1100000>;
-			opp-microvolt-L0 = <1100000>;
-			opp-microvolt-L1 = <1075000>;
-			opp-microvolt-L2 = <1050000>;
-			opp-microvolt-L3 = <1025000>;
+			opp-microvolt = <1100000 1100000 1150000>;
+			opp-microvolt-L0 = <1100000 1100000 1150000>;
+			opp-microvolt-L1 = <1075000 1075000 1150000>;
+			opp-microvolt-L2 = <1050000 1050000 1150000>;
+			opp-microvolt-L3 = <1025000 1025000 1150000>;
 		};
 	};
 
-	dmc_opp_table: opp-table3 {
+	dmc_opp_table: opp-table-3 {
 		compatible = "operating-points-v2";
 
 		opp-200000000 {

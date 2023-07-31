@@ -662,10 +662,10 @@ static int rk628_dsi_read_from_fifo(struct rk628_dsi *dsi,
 		switch (length) {
 		case 3:
 			payload[2] = (val >> 16) & 0xff;
-			/* fallthrough */
+			fallthrough;
 		case 2:
 			payload[1] = (val >> 8) & 0xff;
-			/* fallthrough */
+			fallthrough;
 		case 1:
 			payload[0] = val & 0xff;
 			return 0;
@@ -802,10 +802,10 @@ static ssize_t rk628_dsi_transfer(struct rk628_dsi *dsi,
 	switch (packet.payload_length) {
 	case 3:
 		val |= packet.payload[2] << 16;
-		/* fallthrough */
+		fallthrough;
 	case 2:
 		val |= packet.payload[1] << 8;
-		/* fallthrough */
+		fallthrough;
 	case 1:
 		val |= packet.payload[0];
 		dsi_write(dsi, DSI_GEN_PLD_DATA, val);
@@ -896,10 +896,10 @@ static void rk628_dsi_set_vid_mode(struct rk628_dsi *dsi)
 	val = LP_HFP_EN | LP_HBP_EN | LP_VACT_EN | LP_VFP_EN | LP_VBP_EN |
 	      LP_VSA_EN;
 
-	if (dsi->mode_flags & MIPI_DSI_MODE_VIDEO_HFP)
+	if (dsi->mode_flags & MIPI_DSI_MODE_VIDEO_NO_HFP)
 		val &= ~LP_HFP_EN;
 
-	if (dsi->mode_flags & MIPI_DSI_MODE_VIDEO_HBP)
+	if (dsi->mode_flags & MIPI_DSI_MODE_VIDEO_NO_HBP)
 		val &= ~LP_HBP_EN;
 
 	if (dsi->mode_flags & MIPI_DSI_MODE_VIDEO_BURST)
@@ -1023,7 +1023,7 @@ static void rk628_dsi_pre_enable(struct rk628_dsi *dsi)
 
 	val = CRC_RX_EN | ECC_RX_EN | BTA_EN | EOTP_TX_EN;
 
-	if (dsi->mode_flags & MIPI_DSI_MODE_EOT_PACKET)
+	if (dsi->mode_flags & MIPI_DSI_MODE_NO_EOT_PACKET)
 		val &= ~EOTP_TX_EN;
 
 	dsi_write(dsi, DSI_PCKHDL_CFG, val);

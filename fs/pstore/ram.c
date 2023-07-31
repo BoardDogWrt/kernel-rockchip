@@ -21,8 +21,11 @@
 #include <linux/pstore_ram.h>
 #include <linux/of.h>
 #include <linux/of_address.h>
-#include <linux/of_reserved_mem.h>
 #include "internal.h"
+
+#if IS_REACHABLE(CONFIG_ROCKCHIP_MINIDUMP)
+#include <soc/rockchip/rk_minidump.h>
+#endif
 
 #define RAMOOPS_KERNMSG_HDR "===="
 #define MIN_MEM_SIZE 4096UL
@@ -692,7 +695,6 @@ static int ramoops_parse_dt(struct platform_device *pdev,
 {
 	struct device_node *of_node = pdev->dev.of_node;
 	struct device_node *parent_node;
-	struct reserved_mem *rmem;
 	struct resource *res;
 	u32 value;
 	int ret;
@@ -701,20 +703,13 @@ static int ramoops_parse_dt(struct platform_device *pdev,
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	if (!res) {
-		rmem = of_reserved_mem_lookup(of_node);
-		if (rmem) {
-			pdata->mem_size = rmem->size;
-			pdata->mem_address = rmem->base;
-		} else {
-			dev_err(&pdev->dev,
-				"failed to locate DT /reserved-memory resource\n");
-			return -EINVAL;
-		}
-	} else {
-		pdata->mem_size = resource_size(res);
-		pdata->mem_address = res->start;
+		dev_err(&pdev->dev,
+			"failed to locate DT /reserved-memory resource\n");
+		return -EINVAL;
 	}
 
+	pdata->mem_size = resource_size(res);
+	pdata->mem_address = res->start;
 	/*
 	 * Setting "unbuffered" is deprecated and will be ignored if
 	 * "mem_type" is also specified.
@@ -775,6 +770,49 @@ static int ramoops_parse_dt(struct platform_device *pdev,
 	return 0;
 }
 
+#if IS_REACHABLE(CONFIG_ROCKCHIP_MINIDUMP)
+static void _ramoops_register_ram_zone_info_to_minidump(struct persistent_ram_zone *prz)
+{
+	struct md_region md_entry = {};
+
+	strscpy(md_entry.name, prz->label, sizeof(md_entry.name));
+
+	md_entry.virt_addr = (u64)prz->vaddr;
+	md_entry.phys_addr = prz->paddr;
+	md_entry.size = prz->size;
+
+	if (rk_minidump_add_region(&md_entry) < 0)
+		pr_err("Failed to add %s in Minidump\n", prz->label);
+}
+
+static void ramoops_register_ram_zone_info_to_minidump(struct ramoops_context *cxt)
+{
+	int i = 0;
+	struct persistent_ram_zone *prz = NULL;
+
+	for (i = 0; i < cxt->max_boot_log_cnt; i++) {
+		prz = cxt->boot_przs[i];
+		_ramoops_register_ram_zone_info_to_minidump(prz);
+	}
+
+	for (i = 0; i < cxt->max_dump_cnt; i++) {
+		prz = cxt->dprzs[i];
+		_ramoops_register_ram_zone_info_to_minidump(prz);
+	}
+
+	for (i = 0; i < cxt->max_ftrace_cnt; i++) {
+		prz = cxt->fprzs[i];
+		_ramoops_register_ram_zone_info_to_minidump(prz);
+	}
+
+	prz = cxt->cprz;
+	_ramoops_register_ram_zone_info_to_minidump(prz);
+
+	prz = cxt->mprz;
+	_ramoops_register_ram_zone_info_to_minidump(prz);
+}
+#endif
+
 static int ramoops_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
@@ -807,6 +845,7 @@ static int ramoops_probe(struct platform_device *pdev)
 	/* Make sure we didn't get bogus platform data pointer. */
 	if (!pdata) {
 		pr_err("NULL platform data\n");
+		err = -EINVAL;
 		goto fail_out;
 	}
 
@@ -822,6 +861,7 @@ static int ramoops_probe(struct platform_device *pdev)
 			!pdata->ftrace_size && !pdata->pmsg_size)) {
 		pr_err("The memory size and the record/console size must be "
 			"non-zero\n");
+		err = -EINVAL;
 		goto fail_out;
 	}
 #endif
@@ -962,7 +1002,9 @@ static int ramoops_probe(struct platform_device *pdev)
 	ramoops_console_size = pdata->console_size;
 	ramoops_pmsg_size = pdata->pmsg_size;
 	ramoops_ftrace_size = pdata->ftrace_size;
-
+#if IS_REACHABLE(CONFIG_ROCKCHIP_MINIDUMP)
+	ramoops_register_ram_zone_info_to_minidump(cxt);
+#endif
 	pr_info("using 0x%lx@0x%llx, ecc: %d\n",
 		cxt->size, (unsigned long long)cxt->phys_addr,
 		cxt->ecc_info.ecc_size);

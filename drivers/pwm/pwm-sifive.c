@@ -41,7 +41,7 @@
 
 struct pwm_sifive_ddata {
 	struct pwm_chip	chip;
-	struct mutex lock; /* lock to protect user_count */
+	struct mutex lock; /* lock to protect user_count and approx_period */
 	struct notifier_block notifier;
 	struct clk *clk;
 	void __iomem *regs;
@@ -76,6 +76,7 @@ static void pwm_sifive_free(struct pwm_chip *chip, struct pwm_device *pwm)
 	mutex_unlock(&ddata->lock);
 }
 
+/* Called holding ddata->lock */
 static void pwm_sifive_update_clock(struct pwm_sifive_ddata *ddata,
 				    unsigned long rate)
 {
@@ -104,8 +105,8 @@ static void pwm_sifive_update_clock(struct pwm_sifive_ddata *ddata,
 		"New real_period = %u ns\n", ddata->real_period);
 }
 
-static void pwm_sifive_get_state(struct pwm_chip *chip, struct pwm_device *pwm,
-				 struct pwm_state *state)
+static int pwm_sifive_get_state(struct pwm_chip *chip, struct pwm_device *pwm,
+				struct pwm_state *state)
 {
 	struct pwm_sifive_ddata *ddata = pwm_sifive_chip_to_ddata(chip);
 	u32 duty, val;
@@ -122,23 +123,6 @@ static void pwm_sifive_get_state(struct pwm_chip *chip, struct pwm_device *pwm,
 	state->duty_cycle =
 		(u64)duty * ddata->real_period >> PWM_SIFIVE_CMPWIDTH;
 	state->polarity = PWM_POLARITY_INVERSED;
-}
-
-static int pwm_sifive_enable(struct pwm_chip *chip, bool enable)
-{
-	struct pwm_sifive_ddata *ddata = pwm_sifive_chip_to_ddata(chip);
-	int ret;
-
-	if (enable) {
-		ret = clk_enable(ddata->clk);
-		if (ret) {
-			dev_err(ddata->chip.dev, "Enable clk failed\n");
-			return ret;
-		}
-	}
-
-	if (!enable)
-		clk_disable(ddata->clk);
 
 	return 0;
 }
@@ -157,13 +141,6 @@ static int pwm_sifive_apply(struct pwm_chip *chip, struct pwm_device *pwm,
 	if (state->polarity != PWM_POLARITY_INVERSED)
 		return -EINVAL;
 
-	ret = clk_enable(ddata->clk);
-	if (ret) {
-		dev_err(ddata->chip.dev, "Enable clk failed\n");
-		return ret;
-	}
-
-	mutex_lock(&ddata->lock);
 	cur_state = pwm->state;
 	enabled = cur_state.enabled;
 
@@ -182,24 +159,42 @@ static int pwm_sifive_apply(struct pwm_chip *chip, struct pwm_device *pwm,
 	/* The hardware cannot generate a 100% duty cycle */
 	frac = min(frac, (1U << PWM_SIFIVE_CMPWIDTH) - 1);
 
+	mutex_lock(&ddata->lock);
 	if (state->period != ddata->approx_period) {
-		if (ddata->user_count != 1) {
-			ret = -EBUSY;
-			goto exit;
+		/*
+		 * Don't let a 2nd user change the period underneath the 1st user.
+		 * However if ddate->approx_period == 0 this is the first time we set
+		 * any period, so let whoever gets here first set the period so other
+		 * users who agree on the period won't fail.
+		 */
+		if (ddata->user_count != 1 && ddata->approx_period) {
+			mutex_unlock(&ddata->lock);
+			return -EBUSY;
 		}
 		ddata->approx_period = state->period;
 		pwm_sifive_update_clock(ddata, clk_get_rate(ddata->clk));
 	}
+	mutex_unlock(&ddata->lock);
+
+	/*
+	 * If the PWM is enabled the clk is already on. So only enable it
+	 * conditionally to have it on exactly once afterwards independent of
+	 * the PWM state.
+	 */
+	if (!enabled) {
+		ret = clk_enable(ddata->clk);
+		if (ret) {
+			dev_err(ddata->chip.dev, "Enable clk failed\n");
+			return ret;
+		}
+	}
 
 	writel(frac, ddata->regs + PWM_SIFIVE_PWMCMP(pwm->hwpwm));
 
-	if (state->enabled != enabled)
-		pwm_sifive_enable(chip, state->enabled);
+	if (!state->enabled)
+		clk_disable(ddata->clk);
 
-exit:
-	clk_disable(ddata->clk);
-	mutex_unlock(&ddata->lock);
-	return ret;
+	return 0;
 }
 
 static const struct pwm_ops pwm_sifive_ops = {
@@ -217,8 +212,11 @@ static int pwm_sifive_clock_notifier(struct notifier_block *nb,
 	struct pwm_sifive_ddata *ddata =
 		container_of(nb, struct pwm_sifive_ddata, notifier);
 
-	if (event == POST_RATE_CHANGE)
+	if (event == POST_RATE_CHANGE) {
+		mutex_lock(&ddata->lock);
 		pwm_sifive_update_clock(ddata, ndata->new_rate);
+		mutex_unlock(&ddata->lock);
+	}
 
 	return NOTIFY_OK;
 }
@@ -228,7 +226,6 @@ static int pwm_sifive_probe(struct platform_device *pdev)
 	struct device *dev = &pdev->dev;
 	struct pwm_sifive_ddata *ddata;
 	struct pwm_chip *chip;
-	struct resource *res;
 	int ret;
 	u32 val;
 	unsigned int enabled_pwms = 0, enabled_clks = 1;
@@ -241,13 +238,9 @@ static int pwm_sifive_probe(struct platform_device *pdev)
 	chip = &ddata->chip;
 	chip->dev = dev;
 	chip->ops = &pwm_sifive_ops;
-	chip->of_xlate = of_pwm_xlate_with_flags;
-	chip->of_pwm_n_cells = 3;
-	chip->base = -1;
 	chip->npwm = 4;
 
-	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	ddata->regs = devm_ioremap_resource(dev, res);
+	ddata->regs = devm_platform_ioremap_resource(pdev, 0);
 	if (IS_ERR(ddata->regs))
 		return PTR_ERR(ddata->regs);
 

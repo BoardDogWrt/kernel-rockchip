@@ -447,15 +447,13 @@ err_free_mem:
 	return error;
 }
 
-static int wacom_i2c_remove(struct i2c_client *client)
+static void wacom_i2c_remove(struct i2c_client *client)
 {
 	struct wacom_i2c *wac_i2c = i2c_get_clientdata(client);
 
 	free_irq(client->irq, wac_i2c);
 	input_unregister_device(wac_i2c->input);
 	kfree(wac_i2c);
-
-	return 0;
 }
 
 static const struct i2c_device_id wacom_i2c_id[] = {

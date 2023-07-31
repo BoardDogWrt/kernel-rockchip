@@ -21,7 +21,7 @@
 #include <drm/drm_atomic.h>
 #include <drm/drm_atomic_helper.h>
 #include <drm/drm_print.h>
-#include <drm/drm_dp_helper.h>
+#include <drm/display/drm_dp_helper.h>
 #include <drm/drm_of.h>
 
 #define REG(x)                             ((x) + 0x30000)
@@ -845,7 +845,7 @@ static void rk628_hdmirx_bridge_mode_set(struct drm_bridge *bridge,
 {
 	struct rk628_hdmirx *hdmirx = bridge_to_hdmirx(bridge);
 
-	memcpy(&hdmirx->mode, adj, sizeof(hdmirx->mode));
+	drm_mode_copy(&hdmirx->mode, adj);
 }
 
 static const struct drm_bridge_funcs rk628_hdmirx_bridge_funcs = {

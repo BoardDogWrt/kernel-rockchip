@@ -26,6 +26,7 @@
 #include <drm/drm_bridge.h>
 #include <drm/drm_crtc.h>
 #include <drm/drm_device.h>
+#include <drm/drm_edid.h>
 #include <drm/drm_panel.h>
 #include <drm/drm_print.h>
 #include <drm/drm_probe_helper.h>
@@ -497,7 +498,7 @@ static int analogix_dp_process_clock_recovery(struct analogix_dp_device *dp)
 	u8 link_status[2], adjust_request[2];
 	u8 training_pattern = TRAINING_PTN2;
 
-	drm_dp_link_train_clock_recovery_delay(dp->dpcd);
+	drm_dp_link_train_clock_recovery_delay(&dp->aux, dp->dpcd);
 
 	lane_count = dp->link_train.lane_count;
 
@@ -572,7 +573,7 @@ static int analogix_dp_process_equalizer_training(struct analogix_dp_device *dp)
 	u32 reg;
 	u8 link_align, link_status[2], adjust_request[2];
 
-	drm_dp_link_train_channel_eq_delay(dp->dpcd);
+	drm_dp_link_train_channel_eq_delay(&dp->aux, dp->dpcd);
 
 	lane_count = dp->link_train.lane_count;
 
@@ -1847,10 +1848,10 @@ static void analogix_dp_bridge_mode_set(struct drm_bridge *bridge,
 		video->color_depth = COLOR_8;
 		break;
 	}
-	if (display_info->color_formats & DRM_COLOR_FORMAT_YCRCB444) {
+	if (display_info->color_formats & DRM_COLOR_FORMAT_YCBCR444) {
 		video->color_space = COLOR_YCBCR444;
 		video->ycbcr_coeff = COLOR_YCBCR709;
-	} else if (display_info->color_formats & DRM_COLOR_FORMAT_YCRCB422) {
+	} else if (display_info->color_formats & DRM_COLOR_FORMAT_YCBCR422) {
 		video->color_space = COLOR_YCBCR422;
 		video->ycbcr_coeff = COLOR_YCBCR709;
 	} else {
@@ -2095,7 +2096,8 @@ static ssize_t analogix_dpaux_transfer(struct drm_dp_aux *aux,
 
 	ret = analogix_dp_transfer(dp, msg);
 out:
-	pm_runtime_put(dp->dev);
+	pm_runtime_mark_last_busy(dp->dev);
+	pm_runtime_put_autosuspend(dp->dev);
 
 	return ret;
 }
@@ -2341,11 +2343,14 @@ int analogix_dp_bind(struct analogix_dp_device *dp, struct drm_device *drm_dev)
 	dp->aux.name = "DP-AUX";
 	dp->aux.transfer = analogix_dpaux_transfer;
 	dp->aux.dev = dp->dev;
+	dp->aux.drm_dev = drm_dev;
 
 	ret = drm_dp_aux_register(&dp->aux);
 	if (ret)
 		return ret;
 
+	pm_runtime_use_autosuspend(dp->dev);
+	pm_runtime_set_autosuspend_delay(dp->dev, 100);
 	pm_runtime_enable(dp->dev);
 	pm_runtime_get_sync(dp->dev);
 	analogix_dp_init(dp);
@@ -2362,6 +2367,7 @@ int analogix_dp_bind(struct analogix_dp_device *dp, struct drm_device *drm_dev)
 
 err_disable_pm_runtime:
 	pm_runtime_put(dp->dev);
+	pm_runtime_dont_use_autosuspend(dp->dev);
 	pm_runtime_disable(dp->dev);
 	drm_dp_aux_unregister(&dp->aux);
 
@@ -2376,6 +2382,7 @@ void analogix_dp_unbind(struct analogix_dp_device *dp)
 		dp->connector.funcs->destroy(&dp->connector);
 	drm_dp_aux_unregister(&dp->aux);
 	pm_runtime_put(dp->dev);
+	pm_runtime_dont_use_autosuspend(dp->dev);
 	pm_runtime_disable(dp->dev);
 }
 EXPORT_SYMBOL_GPL(analogix_dp_unbind);

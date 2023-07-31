@@ -26,13 +26,13 @@
 #include <drm/drm_mipi_dsi.h>
 
 #include <crypto/hash.h>
-#include <crypto/sha.h>
+#include <crypto/sha1.h>
 
 #include <drm/drm_atomic_helper.h>
 #include <drm/drm_bridge.h>
 #include <drm/drm_crtc.h>
 #include <drm/drm_crtc_helper.h>
-#include <drm/drm_dp_helper.h>
+#include <drm/display/drm_dp_helper.h>
 #include <drm/drm_edid.h>
 #include <drm/drm_print.h>
 #include <drm/drm_mipi_dsi.h>
@@ -1999,14 +1999,14 @@ static void hdmi_tx_set_capability_from_edid_parse(struct it6161 *it6161)
 	it6161->hdmi_mode = drm_detect_hdmi_monitor(it6161->edid);
 	it6161->support_audio = drm_detect_monitor_audio(it6161->edid);
 	if (it6161->hdmi_tx_output_color_space == F_MODE_YUV444) {
-		if ((info->color_formats & DRM_COLOR_FORMAT_YCRCB444) != DRM_COLOR_FORMAT_YCRCB444) {
+		if ((info->color_formats & DRM_COLOR_FORMAT_YCBCR444) != DRM_COLOR_FORMAT_YCBCR444) {
 			it6161->hdmi_tx_output_color_space &= ~F_MODE_CLRMOD_MASK;
 			it6161->hdmi_tx_output_color_space |= F_MODE_RGB444;
 		}
 	}
 
 	if (it6161->hdmi_tx_output_color_space == F_MODE_YUV422) {
-		if ((info->color_formats & DRM_COLOR_FORMAT_YCRCB422) != DRM_COLOR_FORMAT_YCRCB422) {
+		if ((info->color_formats & DRM_COLOR_FORMAT_YCBCR422) != DRM_COLOR_FORMAT_YCBCR422) {
 			it6161->hdmi_tx_output_color_space &= ~F_MODE_CLRMOD_MASK;
 			it6161->hdmi_tx_output_color_space |= F_MODE_RGB444;
 		}
@@ -2016,9 +2016,9 @@ static void hdmi_tx_set_capability_from_edid_parse(struct it6161 *it6161)
 
 	if ((info->color_formats & DRM_COLOR_FORMAT_RGB444) == DRM_COLOR_FORMAT_RGB444)
 		DRM_INFO("support RGB444 output");
-	if ((info->color_formats & DRM_COLOR_FORMAT_YCRCB444) == DRM_COLOR_FORMAT_YCRCB444)
+	if ((info->color_formats & DRM_COLOR_FORMAT_YCBCR444) == DRM_COLOR_FORMAT_YCBCR444)
 		DRM_INFO("support YUV444 output");
-	if ((info->color_formats & DRM_COLOR_FORMAT_YCRCB422) == DRM_COLOR_FORMAT_YCRCB422)
+	if ((info->color_formats & DRM_COLOR_FORMAT_YCBCR422) == DRM_COLOR_FORMAT_YCBCR422)
 		DRM_INFO("support YUV422 output");
 }
 
@@ -2134,7 +2134,7 @@ static int it6161_attach_dsi(struct it6161 *it6161)
     dsi->lanes = 4;
     dsi->format = MIPI_DSI_FMT_RGB888;
     dsi->mode_flags = MIPI_DSI_MODE_VIDEO | MIPI_DSI_MODE_VIDEO_SYNC_PULSE |
-              MIPI_DSI_MODE_EOT_PACKET | MIPI_DSI_MODE_VIDEO_HSE;
+              MIPI_DSI_MODE_NO_EOT_PACKET | MIPI_DSI_MODE_VIDEO_HSE;
 
     ret = mipi_dsi_attach(dsi);
     if (ret < 0) {
@@ -6058,11 +6058,11 @@ static void it6161_mipi_rx_interrupt_reg06_process(struct it6161 *it6161, u8 reg
                 dmt_display_mode = drm_match_dmt_mode(&it6161->mipi_rx_p_display_mode);
 
                 if (dmt_display_mode)
-                    it6161->source_display_mode = *dmt_display_mode;
+                    drm_mode_copy(&it6161->source_display_mode, dmt_display_mode);
 
                 DRM_INFO("%sfind dmt timing", dmt_display_mode ? "" : "not ");
             } else {
-                it6161->source_display_mode = edid_cea_modes[it6161->vic];
+                drm_mode_copy(&it6161->source_display_mode, &edid_cea_modes[it6161->vic]);
             }
 #endif
 

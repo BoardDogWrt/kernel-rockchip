@@ -11,7 +11,7 @@
 
 #include <linux/bio.h>
 #include <linux/blkdev.h>
-#include <linux/keyslot-manager.h>
+#include <linux/blk-crypto-profile.h>
 #include <linux/module.h>
 #include <linux/slab.h>
 
@@ -19,16 +19,19 @@
 
 const struct blk_crypto_mode blk_crypto_modes[] = {
 	[BLK_ENCRYPTION_MODE_AES_256_XTS] = {
+		.name = "AES-256-XTS",
 		.cipher_str = "xts(aes)",
 		.keysize = 64,
 		.ivsize = 16,
 	},
 	[BLK_ENCRYPTION_MODE_AES_128_CBC_ESSIV] = {
+		.name = "AES-128-CBC-ESSIV",
 		.cipher_str = "essiv(cbc(aes),sha256)",
 		.keysize = 16,
 		.ivsize = 16,
 	},
 	[BLK_ENCRYPTION_MODE_ADIANTUM] = {
+		.name = "Adiantum",
 		.cipher_str = "adiantum(xchacha12,aes)",
 		.keysize = 32,
 		.ivsize = 32,
@@ -96,7 +99,6 @@ void bio_crypt_set_ctx(struct bio *bio, const struct blk_crypto_key *key,
 
 	bio->bi_crypt_context = bc;
 }
-EXPORT_SYMBOL_GPL(bio_crypt_set_ctx);
 
 void __bio_crypt_free_ctx(struct bio *bio)
 {
@@ -112,7 +114,6 @@ int __bio_crypt_clone(struct bio *dst, struct bio *src, gfp_t gfp_mask)
 	*dst->bi_crypt_context = *src->bi_crypt_context;
 	return 0;
 }
-EXPORT_SYMBOL_GPL(__bio_crypt_clone);
 
 /* Increments @dun by @inc, treating @dun as a multi-limb integer. */
 void bio_crypt_dun_increment(u64 dun[BLK_CRYPTO_DUN_ARRAY_SIZE],
@@ -219,8 +220,9 @@ static bool bio_crypt_check_alignment(struct bio *bio)
 
 blk_status_t __blk_crypto_init_request(struct request *rq)
 {
-	return blk_ksm_get_slot_for_key(rq->q->ksm, rq->crypt_ctx->bc_key,
-					&rq->crypt_keyslot);
+	return blk_crypto_get_keyslot(rq->q->crypto_profile,
+				      rq->crypt_ctx->bc_key,
+				      &rq->crypt_keyslot);
 }
 
 /**
@@ -234,7 +236,7 @@ blk_status_t __blk_crypto_init_request(struct request *rq)
  */
 void __blk_crypto_free_request(struct request *rq)
 {
-	blk_ksm_put_slot(rq->crypt_keyslot);
+	blk_crypto_put_keyslot(rq->crypt_keyslot);
 	mempool_free(rq->crypt_ctx, bio_crypt_ctx_pool);
 	blk_crypto_rq_set_defaults(rq);
 }
@@ -265,6 +267,7 @@ bool __blk_crypto_bio_prep(struct bio **bio_ptr)
 {
 	struct bio *bio = *bio_ptr;
 	const struct blk_crypto_key *bc_key = bio->bi_crypt_context->bc_key;
+	struct blk_crypto_profile *profile;
 
 	/* Error if bio has no data. */
 	if (WARN_ON_ONCE(!bio_has_data(bio))) {
@@ -281,8 +284,8 @@ bool __blk_crypto_bio_prep(struct bio **bio_ptr)
 	 * Success if device supports the encryption context, or if we succeeded
 	 * in falling back to the crypto API.
 	 */
-	if (blk_ksm_crypto_cfg_supported(bio->bi_disk->queue->ksm,
-					 &bc_key->crypto_cfg))
+	profile = bdev_get_queue(bio->bi_bdev)->crypto_profile;
+	if (__blk_crypto_cfg_supported(profile, &bc_key->crypto_cfg))
 		return true;
 
 	if (blk_crypto_fallback_bio_prep(bio_ptr))
@@ -307,13 +310,8 @@ int __blk_crypto_rq_bio_prep(struct request *rq, struct bio *bio,
 /**
  * blk_crypto_init_key() - Prepare a key for use with blk-crypto
  * @blk_key: Pointer to the blk_crypto_key to initialize.
- * @raw_key: Pointer to the raw key.
- * @raw_key_size: Size of raw key.  Must be at least the required size for the
- *                chosen @crypto_mode; see blk_crypto_modes[].  (It's allowed
- *                to be longer than the mode's actual key size, in order to
- *                support inline encryption hardware that accepts wrapped keys.
- *                @is_hw_wrapped has to be set for such keys)
- * @is_hw_wrapped: Denotes @raw_key is wrapped.
+ * @raw_key: Pointer to the raw key. Must be the correct length for the chosen
+ *	     @crypto_mode; see blk_crypto_modes[].
  * @crypto_mode: identifier for the encryption algorithm to use
  * @dun_bytes: number of bytes that will be used to specify the DUN when this
  *	       key is used
@@ -322,9 +320,7 @@ int __blk_crypto_rq_bio_prep(struct request *rq, struct bio *bio,
  * Return: 0 on success, -errno on failure.  The caller is responsible for
  *	   zeroizing both blk_key and raw_key when done with them.
  */
-int blk_crypto_init_key(struct blk_crypto_key *blk_key,
-			const u8 *raw_key, unsigned int raw_key_size,
-			bool is_hw_wrapped,
+int blk_crypto_init_key(struct blk_crypto_key *blk_key, const u8 *raw_key,
 			enum blk_crypto_mode_num crypto_mode,
 			unsigned int dun_bytes,
 			unsigned int data_unit_size)
@@ -336,17 +332,9 @@ int blk_crypto_init_key(struct blk_crypto_key *blk_key,
 	if (crypto_mode >= ARRAY_SIZE(blk_crypto_modes))
 		return -EINVAL;
 
-	BUILD_BUG_ON(BLK_CRYPTO_MAX_WRAPPED_KEY_SIZE < BLK_CRYPTO_MAX_KEY_SIZE);
-
 	mode = &blk_crypto_modes[crypto_mode];
-	if (is_hw_wrapped) {
-		if (raw_key_size < mode->keysize ||
-		    raw_key_size > BLK_CRYPTO_MAX_WRAPPED_KEY_SIZE)
-			return -EINVAL;
-	} else {
-		if (raw_key_size != mode->keysize)
-			return -EINVAL;
-	}
+	if (mode->keysize == 0)
+		return -EINVAL;
 
 	if (dun_bytes == 0 || dun_bytes > mode->ivsize)
 		return -EINVAL;
@@ -357,14 +345,12 @@ int blk_crypto_init_key(struct blk_crypto_key *blk_key,
 	blk_key->crypto_cfg.crypto_mode = crypto_mode;
 	blk_key->crypto_cfg.dun_bytes = dun_bytes;
 	blk_key->crypto_cfg.data_unit_size = data_unit_size;
-	blk_key->crypto_cfg.is_hw_wrapped = is_hw_wrapped;
 	blk_key->data_unit_size_bits = ilog2(data_unit_size);
-	blk_key->size = raw_key_size;
-	memcpy(blk_key->raw, raw_key, raw_key_size);
+	blk_key->size = mode->keysize;
+	memcpy(blk_key->raw, raw_key, mode->keysize);
 
 	return 0;
 }
-EXPORT_SYMBOL_GPL(blk_crypto_init_key);
 
 /*
  * Check if bios with @cfg can be en/decrypted by blk-crypto (i.e. either the
@@ -374,10 +360,8 @@ EXPORT_SYMBOL_GPL(blk_crypto_init_key);
 bool blk_crypto_config_supported(struct request_queue *q,
 				 const struct blk_crypto_config *cfg)
 {
-	if (IS_ENABLED(CONFIG_BLK_INLINE_ENCRYPTION_FALLBACK) &&
-	    !cfg->is_hw_wrapped)
-		return true;
-	return blk_ksm_crypto_cfg_supported(q->ksm, cfg);
+	return IS_ENABLED(CONFIG_BLK_INLINE_ENCRYPTION_FALLBACK) ||
+	       __blk_crypto_cfg_supported(q->crypto_profile, cfg);
 }
 
 /**
@@ -398,15 +382,10 @@ bool blk_crypto_config_supported(struct request_queue *q,
 int blk_crypto_start_using_key(const struct blk_crypto_key *key,
 			       struct request_queue *q)
 {
-	if (blk_ksm_crypto_cfg_supported(q->ksm, &key->crypto_cfg))
+	if (__blk_crypto_cfg_supported(q->crypto_profile, &key->crypto_cfg))
 		return 0;
-	if (key->crypto_cfg.is_hw_wrapped) {
-		pr_warn_once("hardware doesn't support wrapped keys\n");
-		return -EOPNOTSUPP;
-	}
 	return blk_crypto_fallback_start_using_mode(key->crypto_cfg.crypto_mode);
 }
-EXPORT_SYMBOL_GPL(blk_crypto_start_using_key);
 
 /**
  * blk_crypto_evict_key() - Evict a key from any inline encryption hardware
@@ -419,18 +398,17 @@ EXPORT_SYMBOL_GPL(blk_crypto_start_using_key);
  * evicted from any hardware that it might have been programmed into.  The key
  * must not be in use by any in-flight IO when this function is called.
  *
- * Return: 0 on success or if key is not present in the q's ksm, -err on error.
+ * Return: 0 on success or if the key wasn't in any keyslot; -errno on error.
  */
 int blk_crypto_evict_key(struct request_queue *q,
 			 const struct blk_crypto_key *key)
 {
-	if (blk_ksm_crypto_cfg_supported(q->ksm, &key->crypto_cfg))
-		return blk_ksm_evict_key(q->ksm, key);
+	if (__blk_crypto_cfg_supported(q->crypto_profile, &key->crypto_cfg))
+		return __blk_crypto_evict_key(q->crypto_profile, key);
 
 	/*
-	 * If the request queue's associated inline encryption hardware didn't
-	 * have support for the key, then the key might have been programmed
-	 * into the fallback keyslot manager, so try to evict from there.
+	 * If the request_queue didn't support the key, then blk-crypto-fallback
+	 * may have been used, so try to evict the key from blk-crypto-fallback.
 	 */
 	return blk_crypto_fallback_evict_key(key);
 }

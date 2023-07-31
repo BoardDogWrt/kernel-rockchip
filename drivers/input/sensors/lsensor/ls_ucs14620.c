@@ -332,9 +332,9 @@ static int light_ucs14620_probe(struct i2c_client *client,
 	return sensor_register_device(client, NULL, devid, &light_ucs14620_ops);
 }
 
-static int light_ucs14620_remove(struct i2c_client *client)
+static void light_ucs14620_remove(struct i2c_client *client)
 {
-	return sensor_unregister_device(client, NULL, &light_ucs14620_ops);
+	sensor_unregister_device(client, NULL, &light_ucs14620_ops);
 }
 
 static const struct i2c_device_id light_ucs14620_id[] = {

@@ -55,6 +55,7 @@
 #include <linux/module.h>
 #include <linux/of.h>
 #include <linux/of_address.h>
+#include <linux/panic_notifier.h>
 #include <linux/kernel_stat.h>
 #include <linux/irq.h>
 #include <linux/delay.h>

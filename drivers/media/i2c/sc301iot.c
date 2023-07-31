@@ -838,7 +838,7 @@ static const struct SC301IOT_mode supported_modes[] = {
 		.bus_fmt = MEDIA_BUS_FMT_SBGGR10_1X10,
 		.reg_list = SC301IOT_linear_10_2048x1536_regs,
 		.hdr_mode = NO_HDR,
-		.vc[PAD0] = V4L2_MBUS_CSI2_CHANNEL_0,
+		.vc[PAD0] = 0,
 	}, {
 		.width = 2048,
 		.height = 1536,
@@ -852,10 +852,10 @@ static const struct SC301IOT_mode supported_modes[] = {
 		.bus_fmt = MEDIA_BUS_FMT_SBGGR10_1X10,
 		.reg_list = SC301IOT_hdr_10_2048x1536_regs,
 		.hdr_mode = HDR_X2,
-		.vc[PAD0] = V4L2_MBUS_CSI2_CHANNEL_1,
-		.vc[PAD1] = V4L2_MBUS_CSI2_CHANNEL_0,//L->csi wr0
-		.vc[PAD2] = V4L2_MBUS_CSI2_CHANNEL_1,
-		.vc[PAD3] = V4L2_MBUS_CSI2_CHANNEL_1,//M->csi wr2
+		.vc[PAD0] = 1,
+		.vc[PAD1] = 0,//L->csi wr0
+		.vc[PAD2] = 1,
+		.vc[PAD3] = 1,//M->csi wr2
 	}, {
 		.width = 1536,
 		.height = 1536,
@@ -869,7 +869,7 @@ static const struct SC301IOT_mode supported_modes[] = {
 		.bus_fmt = MEDIA_BUS_FMT_SBGGR10_1X10,
 		.reg_list = SC301IOT_linear_10_1536x1536_regs,
 		.hdr_mode = NO_HDR,
-		.vc[PAD0] = V4L2_MBUS_CSI2_CHANNEL_0,
+		.vc[PAD0] = 0,
 	}, {
 		.width = 1536,
 		.height = 1536,
@@ -883,10 +883,10 @@ static const struct SC301IOT_mode supported_modes[] = {
 		.bus_fmt = MEDIA_BUS_FMT_SBGGR10_1X10,
 		.reg_list = SC301IOT_hdr_10_1536x1536_regs,
 		.hdr_mode = HDR_X2,
-		.vc[PAD0] = V4L2_MBUS_CSI2_CHANNEL_1,
-		.vc[PAD1] = V4L2_MBUS_CSI2_CHANNEL_0,//L->csi wr0
-		.vc[PAD2] = V4L2_MBUS_CSI2_CHANNEL_1,
-		.vc[PAD3] = V4L2_MBUS_CSI2_CHANNEL_1,//M->csi wr2
+		.vc[PAD0] = 1,
+		.vc[PAD1] = 0,//L->csi wr0
+		.vc[PAD2] = 1,
+		.vc[PAD3] = 1,//M->csi wr2
 	},
 };
 
@@ -1152,7 +1152,7 @@ SC301IOT_find_best_fit(struct v4l2_subdev_format *fmt)
 }
 
 static int SC301IOT_set_fmt(struct v4l2_subdev *sd,
-			   struct v4l2_subdev_pad_config *cfg,
+			   struct v4l2_subdev_state *sd_state,
 			   struct v4l2_subdev_format *fmt)
 {
 	struct SC301IOT *SC301IOT = to_SC301IOT(sd);
@@ -1168,7 +1168,7 @@ static int SC301IOT_set_fmt(struct v4l2_subdev *sd,
 	fmt->format.field = V4L2_FIELD_NONE;
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
 #ifdef CONFIG_VIDEO_V4L2_SUBDEV_API
-		*v4l2_subdev_get_try_format(sd, cfg, fmt->pad) = fmt->format;
+		*v4l2_subdev_get_try_format(sd, sd_state, fmt->pad) = fmt->format;
 #else
 		mutex_unlock(&SC301IOT->mutex);
 		return -ENOTTY;
@@ -1192,7 +1192,7 @@ static int SC301IOT_set_fmt(struct v4l2_subdev *sd,
 }
 
 static int SC301IOT_get_fmt(struct v4l2_subdev *sd,
-			   struct v4l2_subdev_pad_config *cfg,
+			   struct v4l2_subdev_state *sd_state,
 			   struct v4l2_subdev_format *fmt)
 {
 	struct SC301IOT *SC301IOT = to_SC301IOT(sd);
@@ -1201,7 +1201,7 @@ static int SC301IOT_get_fmt(struct v4l2_subdev *sd,
 	mutex_lock(&SC301IOT->mutex);
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
 #ifdef CONFIG_VIDEO_V4L2_SUBDEV_API
-		fmt->format = *v4l2_subdev_get_try_format(sd, cfg, fmt->pad);
+		fmt->format = *v4l2_subdev_get_try_format(sd, sd_state, fmt->pad);
 #else
 		mutex_unlock(&SC301IOT->mutex);
 		return -ENOTTY;
@@ -1222,7 +1222,7 @@ static int SC301IOT_get_fmt(struct v4l2_subdev *sd,
 }
 
 static int SC301IOT_enum_mbus_code(struct v4l2_subdev *sd,
-				  struct v4l2_subdev_pad_config *cfg,
+				  struct v4l2_subdev_state *sd_state,
 				  struct v4l2_subdev_mbus_code_enum *code)
 {
 	struct SC301IOT *SC301IOT = to_SC301IOT(sd);
@@ -1235,7 +1235,7 @@ static int SC301IOT_enum_mbus_code(struct v4l2_subdev *sd,
 }
 
 static int SC301IOT_enum_frame_sizes(struct v4l2_subdev *sd,
-				    struct v4l2_subdev_pad_config *cfg,
+				    struct v4l2_subdev_state *sd_state,
 				    struct v4l2_subdev_frame_size_enum *fse)
 {
 	if (fse->index >= ARRAY_SIZE(supported_modes))
@@ -1286,19 +1286,9 @@ static int SC301IOT_g_frame_interval(struct v4l2_subdev *sd,
 static int SC301IOT_g_mbus_config(struct v4l2_subdev *sd, unsigned int pad_id,
 				 struct v4l2_mbus_config *config)
 {
-	struct SC301IOT *SC301IOT = to_SC301IOT(sd);
-	const struct SC301IOT_mode *mode = SC301IOT->cur_mode;
-	u32 val = 1 << (SC301IOT_LANES - 1) |
-		V4L2_MBUS_CSI2_CHANNEL_0 |
-		V4L2_MBUS_CSI2_CONTINUOUS_CLOCK;
-
-	if (mode->hdr_mode != NO_HDR)
-		val |= V4L2_MBUS_CSI2_CHANNEL_1;
-	if (mode->hdr_mode == HDR_X3)
-		val |= V4L2_MBUS_CSI2_CHANNEL_2;
 
 	config->type = V4L2_MBUS_CSI2_DPHY;
-	config->flags = val;
+	config->bus.mipi_csi2.num_data_lanes = SC301IOT_LANES;
 
 	return 0;
 }
@@ -1723,6 +1713,8 @@ static int __SC301IOT_power_on(struct SC301IOT *SC301IOT)
 		dev_err(dev, "Failed to enable xvclk\n");
 		goto disable_clk;
 	}
+	if (SC301IOT->is_thunderboot)
+		return 0;
 	if (!IS_ERR(SC301IOT->reset_gpio))
 		gpiod_set_value_cansleep(SC301IOT->reset_gpio, 0);
 
@@ -1731,9 +1723,6 @@ static int __SC301IOT_power_on(struct SC301IOT *SC301IOT)
 		dev_err(dev, "Failed to enable regulators\n");
 		goto disable_clk;
 	}
-	if (SC301IOT->is_thunderboot)
-		return 0;
-
 	if (!IS_ERR(SC301IOT->reset_gpio))
 		gpiod_set_value_cansleep(SC301IOT->reset_gpio, 1);
 
@@ -1812,7 +1801,7 @@ static int SC301IOT_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 {
 	struct SC301IOT *SC301IOT = to_SC301IOT(sd);
 	struct v4l2_mbus_framefmt *try_fmt =
-				v4l2_subdev_get_try_format(sd, fh->pad, 0);
+				v4l2_subdev_get_try_format(sd, fh->state, 0);
 	const struct SC301IOT_mode *def_mode = &supported_modes[0];
 
 	mutex_lock(&SC301IOT->mutex);
@@ -1830,7 +1819,7 @@ static int SC301IOT_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 #endif
 
 static int SC301IOT_enum_frame_interval(struct v4l2_subdev *sd,
-				       struct v4l2_subdev_pad_config *cfg,
+				       struct v4l2_subdev_state *sd_state,
 				       struct v4l2_subdev_frame_interval_enum *fie)
 {
 	if (fie->index >= ARRAY_SIZE(supported_modes))
@@ -1952,8 +1941,7 @@ static int SC301IOT_set_ctrl(struct v4l2_ctrl *ctrl)
 					 & 0xff);
 		if (!ret)
 			SC301IOT->cur_vts = ctrl->val + SC301IOT->cur_mode->height;
-		if (SC301IOT->cur_vts != SC301IOT->cur_mode->vts_def)
-			SC301IOT_modify_fps_info(SC301IOT);
+		SC301IOT_modify_fps_info(SC301IOT);
 		break;
 	case V4L2_CID_TEST_PATTERN:
 		ret = SC301IOT_enable_test_pattern(SC301IOT, ctrl->val);
@@ -2251,7 +2239,7 @@ static int SC301IOT_probe(struct i2c_client *client,
 	snprintf(sd->name, sizeof(sd->name), "m%02d_%s_%s %s",
 		 SC301IOT->module_index, facing,
 		 SC301IOT_NAME, dev_name(sd->dev));
-	ret = v4l2_async_register_subdev_sensor_common(sd);
+	ret = v4l2_async_register_subdev_sensor(sd);
 	if (ret) {
 		dev_err(dev, "v4l2 async register subdev failed\n");
 		goto err_clean_entity;
@@ -2277,7 +2265,7 @@ err_destroy_mutex:
 	return ret;
 }
 
-static int SC301IOT_remove(struct i2c_client *client)
+static void SC301IOT_remove(struct i2c_client *client)
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct SC301IOT *SC301IOT = to_SC301IOT(sd);
@@ -2293,8 +2281,6 @@ static int SC301IOT_remove(struct i2c_client *client)
 	if (!pm_runtime_status_suspended(&client->dev))
 		__SC301IOT_power_off(SC301IOT);
 	pm_runtime_set_suspended(&client->dev);
-
-	return 0;
 }
 
 #if IS_ENABLED(CONFIG_OF)

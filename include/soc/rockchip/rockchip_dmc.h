@@ -51,6 +51,7 @@ struct dmcfreq_common_info {
 	struct freq_map_table *vop_frame_bw_tbl;
 	struct rl_map_table *vop_pn_rl_tbl;
 	struct delayed_work msch_rl_work;
+	unsigned long vop_4k_rate;
 	unsigned long vop_req_rate;
 	unsigned int read_latency;
 	unsigned int auto_freq_en;
@@ -62,6 +63,7 @@ struct dmcfreq_vop_info {
 	unsigned int line_bw_mbyte;
 	unsigned int frame_bw_mbyte;
 	unsigned int plane_num;
+	unsigned int plane_num_4k;
 };
 
 #if IS_REACHABLE(CONFIG_ARM_ROCKCHIP_DMC_DEVFREQ)
@@ -118,7 +120,7 @@ rockchip_dmcfreq_vop_bandwidth_init(struct dmcfreq_common_info *info)
 {
 }
 
-bool inline int rockchip_dmcfreq_vop_bandwidth_avail(void)
+bool inline rockchip_dmcfreq_vop_bandwidth_avail(void)
 {
 	return false;
 }

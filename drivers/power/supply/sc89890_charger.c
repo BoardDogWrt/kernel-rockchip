@@ -1122,14 +1122,12 @@ irq_fail:
 	return ret;
 }
 
-static int sc89890_remove(struct i2c_client *client)
+static void sc89890_remove(struct i2c_client *client)
 {
 	struct sc89890_device *sc89890 = i2c_get_clientdata(client);
 
 	/* reset all registers to default values */
 	sc89890_chip_reset(sc89890);
-
-	return 0;
 }
 
 #ifdef CONFIG_PM_SLEEP

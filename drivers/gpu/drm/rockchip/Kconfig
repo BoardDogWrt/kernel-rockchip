@@ -2,14 +2,15 @@
 config DRM_ROCKCHIP
 	tristate "DRM Support for Rockchip"
 	depends on DRM
-	select DRM_GEM_CMA_HELPER
+	select DRM_GEM_DMA_HELPER
 	select DRM_KMS_HELPER
 	select DRM_PANEL
 	select VIDEOMODE_HELPERS
 	select DRM_ANALOGIX_DP if ROCKCHIP_ANALOGIX_DP
 	select DRM_DW_HDMI if ROCKCHIP_DW_HDMI
 	select DRM_DW_MIPI_DSI if ROCKCHIP_DW_MIPI_DSI
-	select DRM_RGB if ROCKCHIP_RGB
+	select GENERIC_PHY if ROCKCHIP_DW_MIPI_DSI
+	select GENERIC_PHY_MIPI_DPHY if ROCKCHIP_DW_MIPI_DSI
 	select SND_SOC_HDMI_CODEC if ROCKCHIP_CDN_DP && SND_SOC
 	help
 	  Choose this option if you have a Rockchip soc chipset.
@@ -19,13 +20,6 @@ config DRM_ROCKCHIP
 	  IP found on the SoC.
 
 if DRM_ROCKCHIP
-
-config ROCKCHIP_DRM_CUBIC_LUT
-	bool "Support 3D cubic LUT"
-	depends on NO_GKI
-	help
-	  This add properties to support provision of a 3D cubic
-	  look up table, allowing for color specific adjustments.
 
 config ROCKCHIP_DRM_DEBUG
 	bool "Rockchip DRM debug"
@@ -56,18 +50,21 @@ config ROCKCHIP_VOP
 		      CPU_RK3399 || CPU_RK322X || CPU_RK3328) && \
 		      !ROCKCHIP_MINI_KERNEL
 	help
-	  This selects support for the VOP driver.If you want to
-	  enable VOP on Rockchip SoC, you should select this option.
+	  This selects support for the VOP driver. You should enable it
+	  on older SoCs.
 
 config ROCKCHIP_VOP2
 	bool "Rockchip VOP2 driver"
 	default y if CPU_RK3528 || CPU_RK3562 || CPU_RK3568 || CPU_RK3588
 	help
-	  This selects support for the VOP2 driver. If you want to
-	  enable VOP2 on Rockchip SoC, you should select this option.
+	  This selects support for the VOP2 driver. The VOP2 hardware is
+	  first found on the RK3568.
 
 config ROCKCHIP_ANALOGIX_DP
 	bool "Rockchip specific extensions for Analogix DP driver"
+	depends on ROCKCHIP_VOP
+	select DRM_DISPLAY_HELPER
+	select DRM_DISPLAY_DP_HELPER
 	help
 	  This selects support for Rockchip SoC specific extensions
 	  for the Analogix Core DP driver. If you want to enable DP
@@ -75,6 +72,8 @@ config ROCKCHIP_ANALOGIX_DP
 
 config ROCKCHIP_CDN_DP
 	bool "Rockchip cdn DP"
+	select DRM_DISPLAY_HELPER
+	select DRM_DISPLAY_DP_HELPER
 	help
 	  This selects support for Rockchip SoC specific extensions
 	  for the cdn DP driver. If you want to enable Dp on
@@ -101,12 +100,13 @@ config ROCKCHIP_DW_MIPI_DSI
 	select GENERIC_PHY_MIPI_DPHY
 	help
 	  This selects support for Rockchip SoC specific extensions
-	  for the Synopsys DesignWare HDMI driver. If you want to
+	  for the Synopsys DesignWare dsi driver. If you want to
 	  enable MIPI DSI on RK3288 or RK3399 based SoC, you should
 	  select this option.
 
 config ROCKCHIP_DW_DP
 	bool "Rockchip specific extensions for Synopsys DW DPTX"
+	select DRM_DISPLAY_HDCP_HELPER
 	help
 	  Choose this option for Synopsys DesignWare Cores DisplayPort
 	  transmit controller support on Rockchip SoC.

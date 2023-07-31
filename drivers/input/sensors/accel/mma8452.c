@@ -394,9 +394,9 @@ static int gsensor_mma8452_probe(struct i2c_client *client,
 	return sensor_register_device(client, NULL, devid, &gsensor_mma8452_ops);
 }
 
-static int gsensor_mma8452_remove(struct i2c_client *client)
+static void gsensor_mma8452_remove(struct i2c_client *client)
 {
-	return sensor_unregister_device(client, NULL, &gsensor_mma8452_ops);
+	sensor_unregister_device(client, NULL, &gsensor_mma8452_ops);
 }
 
 static const struct i2c_device_id gsensor_mma8452_id[] = {

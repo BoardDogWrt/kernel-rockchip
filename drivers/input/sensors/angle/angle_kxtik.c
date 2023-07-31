@@ -368,9 +368,9 @@ static int angle_kxtik_probe(struct i2c_client *client,
 	return sensor_register_device(client, NULL, devid, &angle_kxtik_ops);
 }
 
-static int angle_kxtik_remove(struct i2c_client *client)
+static void angle_kxtik_remove(struct i2c_client *client)
 {
-	return sensor_unregister_device(client, NULL, &angle_kxtik_ops);
+	sensor_unregister_device(client, NULL, &angle_kxtik_ops);
 }
 
 static const struct i2c_device_id angle_kxtik_id[] = {

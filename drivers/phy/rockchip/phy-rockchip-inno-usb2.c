@@ -253,8 +253,8 @@ struct rockchip_usb2phy_cfg {
  * @host_disconnect: usb host disconnect status.
  * @dis_u2_susphy: disable usb2 phy suspend.
  * @bvalid_irq: IRQ number assigned for vbus valid rise detection.
- * @ls_irq: IRQ number assigned for linestate detection.
  * @id_irq: IRQ number assigned for id fall or rise detection.
+ * @ls_irq: IRQ number assigned for linestate detection.
  * @otg_mux_irq: IRQ number which multiplex otg-id/otg-bvalid/linestate
  *		 irqs to one irq in otg-port.
  * @mutex: for register updating in sm_work.
@@ -286,8 +286,8 @@ struct rockchip_usb2phy_port {
 	bool		host_disconnect;
 	bool		dis_u2_susphy;
 	int		bvalid_irq;
+	int		id_irq;
 	int		ls_irq;
-	int             id_irq;
 	int		otg_mux_irq;
 	struct mutex	mutex;
 	struct		delayed_work bypass_uart_work;
@@ -295,7 +295,7 @@ struct rockchip_usb2phy_port {
 	struct		delayed_work otg_sm_work;
 	struct		delayed_work sm_work;
 	struct		regulator *vbus;
-	struct		typec_switch *sw;
+	struct		typec_switch_dev *sw;
 	const struct	rockchip_usb2phy_port_cfg *port_cfg;
 	struct notifier_block	event_nb;
 	struct wake_lock	wakelock;
@@ -323,9 +323,9 @@ struct rockchip_usb2phy_port {
  *		     detection primary phase.
  * @phy_sus_cfg: Store the phy current suspend configuration.
  * @edev_self: represent the source of extcon.
+ * @edev: extcon device for notification registration
  * @irq: IRQ number assigned for phy which combined irqs of
  *	 otg port and host port.
- * @edev: extcon device for notification registration
  * @phy_cfg: phy register configuration, assigned by driver data.
  * @ports: phy port instance.
  */
@@ -346,8 +346,8 @@ struct rockchip_usb2phy {
 	u8			primary_retries;
 	unsigned int		phy_sus_cfg;
 	bool			edev_self;
-	int			irq;
 	struct extcon_dev	*edev;
+	int			irq;
 	const struct rockchip_usb2phy_cfg	*phy_cfg;
 	struct rockchip_usb2phy_port	ports[USB2PHY_NUM_PORTS];
 };
@@ -535,7 +535,7 @@ rockchip_usb2phy_clk480m_register(struct rockchip_usb2phy *rphy)
 	struct clk_init_data init = {};
 	struct clk *refclk = of_clk_get_by_name(node, "phyclk");
 	const char *clk_name;
-	int ret;
+	int ret = 0;
 
 	init.flags = 0;
 	init.name = "clk_usbphy_480m";
@@ -566,8 +566,7 @@ rockchip_usb2phy_clk480m_register(struct rockchip_usb2phy *rphy)
 	if (ret < 0)
 		goto err_clk_provider;
 
-	ret = devm_add_action(rphy->dev, rockchip_usb2phy_clk480m_unregister,
-			      rphy);
+	ret = devm_add_action_or_reset(rphy->dev, rockchip_usb2phy_clk480m_unregister, rphy);
 	if (ret < 0)
 		goto err_unreg_action;
 
@@ -888,8 +887,10 @@ static int rockchip_usb2phy_power_on(struct phy *phy)
 		goto unlock;
 
 	ret = property_enable(base, &rport->port_cfg->phy_sus, false);
-	if (ret)
+	if (ret) {
+		clk_disable_unprepare(rphy->clk480m);
 		goto unlock;
+	}
 
 	/*
 	 * For rk3588, it needs to reset phy when exit from
@@ -902,8 +903,10 @@ static int rockchip_usb2phy_power_on(struct phy *phy)
 	if (rport->port_id == USB2PHY_PORT_OTG &&
 	    of_device_is_compatible(rphy->dev->of_node, "rockchip,rk3588-usb2phy")) {
 		ret = rockchip_usb2phy_reset(rphy);
-		if (ret)
+		if (ret) {
+			clk_disable_unprepare(rphy->clk480m);
 			goto unlock;
+		}
 	}
 
 	/* waiting for the utmi_clk to become stable */
@@ -2001,7 +2004,7 @@ static void rockchip_usb2phy_usb_bvalid_enable(struct rockchip_usb2phy_port *rpo
 		property_enable(rphy->grf, &cfg->bvalid_grf_con, enable);
 }
 
-static int rockchip_usb2phy_orien_sw_set(struct typec_switch *sw,
+static int rockchip_usb2phy_orien_sw_set(struct typec_switch_dev *sw,
 					 enum typec_orientation orien)
 {
 	struct rockchip_usb2phy_port *rport = typec_switch_get_drvdata(sw);
@@ -2381,7 +2384,7 @@ static int rockchip_usb2phy_probe(struct platform_device *pdev)
 
 		phy = devm_phy_create(dev, child_np, &rockchip_usb2phy_ops);
 		if (IS_ERR(phy)) {
-			dev_err(dev, "failed to create phy\n");
+			dev_err_probe(dev, PTR_ERR(phy), "failed to create phy\n");
 			ret = PTR_ERR(phy);
 			goto put_child;
 		}

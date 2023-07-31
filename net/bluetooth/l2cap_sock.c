@@ -29,6 +29,7 @@
 
 #include <linux/module.h>
 #include <linux/export.h>
+#include <linux/filter.h>
 #include <linux/sched/signal.h>
 
 #include <net/bluetooth/bluetooth.h>
@@ -1622,6 +1623,14 @@ static struct sk_buff *l2cap_sock_alloc_skb_cb(struct l2cap_chan *chan,
 
 	if (!skb)
 		return ERR_PTR(err);
+
+	/* Channel lock is released before requesting new skb and then
+	 * reacquired thus we need to recheck channel state.
+	 */
+	if (chan->state != BT_CONNECTED) {
+		kfree_skb(skb);
+		return ERR_PTR(-ENOTCONN);
+	}
 
 	skb->priority = sk->sk_priority;
 

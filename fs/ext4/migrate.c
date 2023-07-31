@@ -32,7 +32,7 @@ static int finish_range(handle_t *handle, struct inode *inode,
 	newext.ee_block = cpu_to_le32(lb->first_block);
 	newext.ee_len   = cpu_to_le16(lb->last_block - lb->first_block + 1);
 	ext4_ext_store_pblock(&newext, lb->first_pblock);
-	/* Locking only for convinience since we are operating on temp inode */
+	/* Locking only for convenience since we are operating on temp inode */
 	down_write(&EXT4_I(inode)->i_data_sem);
 	path = ext4_find_extent(inode, lb->first_block, NULL, 0);
 	if (IS_ERR(path)) {
@@ -43,8 +43,8 @@ static int finish_range(handle_t *handle, struct inode *inode,
 
 	/*
 	 * Calculate the credit needed to inserting this extent
-	 * Since we are doing this in loop we may accumalate extra
-	 * credit. But below we try to not accumalate too much
+	 * Since we are doing this in loop we may accumulate extra
+	 * credit. But below we try to not accumulate too much
 	 * of them by restarting the journal.
 	 */
 	needed = ext4_ext_calc_credits_for_single_extent(inode,
@@ -56,8 +56,7 @@ static int finish_range(handle_t *handle, struct inode *inode,
 	retval = ext4_ext_insert_extent(handle, inode, &path, &newext, 0);
 err_out:
 	up_write((&EXT4_I(inode)->i_data_sem));
-	ext4_ext_drop_refs(path);
-	kfree(path);
+	ext4_free_ext_path(path);
 	lb->first_pblock = 0;
 	return retval;
 }
@@ -439,7 +438,7 @@ int ext4_ext_migrate(struct inode *inode)
 
 	/*
 	 * Worst case we can touch the allocation bitmaps and a block
-	 * group descriptor block.  We do need need to worry about
+	 * group descriptor block.  We do need to worry about
 	 * credits for modifying the quota inode.
 	 */
 	handle = ext4_journal_start(inode, EXT4_HT_MIGRATE,
@@ -487,7 +486,7 @@ int ext4_ext_migrate(struct inode *inode)
 	 * when we add extents we extent the journal
 	 */
 	/*
-	 * Even though we take i_mutex we can still cause block
+	 * Even though we take i_rwsem we can still cause block
 	 * allocation via mmap write to holes. If we have allocated
 	 * new blocks we fail migrate.  New block allocation will
 	 * clear EXT4_STATE_EXT_MIGRATE flag.  The flag is updated

@@ -63,13 +63,13 @@ static struct v4l2_subdev *get_remote_sensor(struct v4l2_subdev *sd)
 	struct media_entity *sensor_me;
 
 	local = &sd->entity.pads[RK_CSI2_PAD_SINK];
-	remote = media_entity_remote_pad(local);
+	remote = media_pad_remote_pad_first(local);
 	if (!remote) {
 		v4l2_warn(sd, "No link between dphy and sensor\n");
 		return NULL;
 	}
 
-	sensor_me = media_entity_remote_pad(local)->entity;
+	sensor_me = media_pad_remote_pad_first(local)->entity;
 	return media_entity_to_v4l2_subdev(sensor_me);
 }
 
@@ -125,25 +125,7 @@ static void csi2_update_sensor_info(struct csi2_dev *csi2)
 		csi2->dsi_input_en = 0;
 	}
 
-	csi2->bus.flags = mbus.flags;
-	switch (csi2->bus.flags & V4L2_MBUS_CSI2_LANES) {
-	case V4L2_MBUS_CSI2_1_LANE:
-		csi2->bus.num_data_lanes = 1;
-		break;
-	case V4L2_MBUS_CSI2_2_LANE:
-		csi2->bus.num_data_lanes = 2;
-		break;
-	case V4L2_MBUS_CSI2_3_LANE:
-		csi2->bus.num_data_lanes = 3;
-		break;
-	case V4L2_MBUS_CSI2_4_LANE:
-		csi2->bus.num_data_lanes = 4;
-		break;
-	default:
-		v4l2_warn(&csi2->sd, "lane num is invalid\n");
-		csi2->bus.num_data_lanes = 0;
-		break;
-	}
+	csi2->bus = mbus.bus.mipi_csi2;
 
 }
 
@@ -386,7 +368,7 @@ static int csi2_media_init(struct v4l2_subdev *sd)
 
 /* csi2 accepts all fmt/size from sensor */
 static int csi2_get_set_fmt(struct v4l2_subdev *sd,
-			    struct v4l2_subdev_pad_config *cfg,
+			    struct v4l2_subdev_state *sd_state,
 			    struct v4l2_subdev_format *fmt)
 {
 	int ret;
@@ -405,17 +387,17 @@ static int csi2_get_set_fmt(struct v4l2_subdev *sd,
 }
 
 static struct v4l2_rect *mipi_csi2_get_crop(struct csi2_dev *csi2,
-						 struct v4l2_subdev_pad_config *cfg,
+						 struct v4l2_subdev_state *sd_state,
 						 enum v4l2_subdev_format_whence which)
 {
 	if (which == V4L2_SUBDEV_FORMAT_TRY)
-		return v4l2_subdev_get_try_crop(&csi2->sd, cfg, RK_CSI2_PAD_SINK);
+		return v4l2_subdev_get_try_crop(&csi2->sd, sd_state, RK_CSI2_PAD_SINK);
 	else
 		return &csi2->crop;
 }
 
 static int csi2_get_selection(struct v4l2_subdev *sd,
-				   struct v4l2_subdev_pad_config *cfg,
+				   struct v4l2_subdev_state *sd_state,
 				   struct v4l2_subdev_selection *sel)
 {
 	struct csi2_dev *csi2 = sd_to_dev(sd);
@@ -438,7 +420,7 @@ static int csi2_get_selection(struct v4l2_subdev *sd,
 		if (sel->which == V4L2_SUBDEV_FORMAT_ACTIVE) {
 			sel->pad = 0;
 			ret = v4l2_subdev_call(sensor, pad, get_selection,
-					       cfg, sel);
+					       sd_state, sel);
 			if (ret) {
 				fmt.which = V4L2_SUBDEV_FORMAT_ACTIVE;
 				fmt.pad = 0;
@@ -457,12 +439,12 @@ static int csi2_get_selection(struct v4l2_subdev *sd,
 				csi2->crop = sel->r;
 			}
 		} else {
-			sel->r = *v4l2_subdev_get_try_crop(&csi2->sd, cfg, sel->pad);
+			sel->r = *v4l2_subdev_get_try_crop(&csi2->sd, sd_state, sel->pad);
 		}
 		break;
 
 	case V4L2_SEL_TGT_CROP:
-		sel->r = *mipi_csi2_get_crop(csi2, cfg, sel->which);
+		sel->r = *mipi_csi2_get_crop(csi2, sd_state, sel->which);
 		break;
 
 	default:
@@ -475,7 +457,7 @@ err:
 }
 
 static int csi2_set_selection(struct v4l2_subdev *sd,
-				   struct v4l2_subdev_pad_config *cfg,
+				   struct v4l2_subdev_state *sd_state,
 				   struct v4l2_subdev_selection *sel)
 {
 	struct csi2_dev *csi2 = sd_to_dev(sd);
@@ -483,7 +465,7 @@ static int csi2_set_selection(struct v4l2_subdev *sd,
 	int ret = 0;
 
 	ret = v4l2_subdev_call(sensor, pad, set_selection,
-			       cfg, sel);
+			       sd_state, sel);
 	if (!ret)
 		csi2->crop = sel->r;
 
@@ -500,8 +482,8 @@ static int csi2_g_mbus_config(struct v4l2_subdev *sd, unsigned int pad_id,
 	ret = v4l2_subdev_call(sensor_sd, pad, get_mbus_config, 0, mbus);
 	if (ret) {
 		mbus->type = V4L2_MBUS_CSI2_DPHY;
-		mbus->flags = csi2->bus.flags;
-		mbus->flags |= BIT(csi2->bus.num_data_lanes - 1);
+		mbus->bus.mipi_csi2.flags = csi2->bus.flags;
+		mbus->bus.mipi_csi2.flags |= BIT(csi2->bus.num_data_lanes - 1);
 	}
 
 	return 0;
@@ -637,16 +619,6 @@ static int csi2_parse_endpoint(struct device *dev,
 			       struct v4l2_fwnode_endpoint *vep,
 			       struct v4l2_async_subdev *asd)
 {
-	struct v4l2_subdev *sd = dev_get_drvdata(dev);
-	struct csi2_dev *csi2 = sd_to_dev(sd);
-
-	if (vep->base.port != 0) {
-		dev_err(dev, "The csi host node needs to parse port 0\n");
-		return -EINVAL;
-	}
-
-	csi2->bus = vep->bus.mipi_csi2;
-
 	return 0;
 }
 
@@ -896,23 +868,23 @@ static int csi2_notifier(struct csi2_dev *csi2)
 	struct v4l2_async_notifier *ntf = &csi2->notifier;
 	int ret;
 
-	v4l2_async_notifier_init(ntf);
+	v4l2_async_nf_init(ntf);
 
-	ret = v4l2_async_notifier_parse_fwnode_endpoints_by_port(csi2->dev,
-								 &csi2->notifier,
-								 sizeof(struct v4l2_async_subdev), 0,
-								 csi2_parse_endpoint);
+	ret = v4l2_async_nf_parse_fwnode_endpoints(csi2->dev,
+							 ntf,
+							 sizeof(struct v4l2_async_subdev),
+							 csi2_parse_endpoint);
 	if (ret < 0)
 		return ret;
 
 	csi2->sd.subdev_notifier = &csi2->notifier;
 	csi2->notifier.ops = &csi2_async_ops;
-	ret = v4l2_async_subdev_notifier_register(&csi2->sd, &csi2->notifier);
+	ret = v4l2_async_subdev_nf_register(&csi2->sd, &csi2->notifier);
 	if (ret) {
 		v4l2_err(&csi2->sd,
 			 "failed to register async notifier : %d\n",
 			 ret);
-		v4l2_async_notifier_cleanup(&csi2->notifier);
+		v4l2_async_nf_cleanup(&csi2->notifier);
 		return ret;
 	}
 

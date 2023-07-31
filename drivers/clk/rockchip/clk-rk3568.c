@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * Copyright (c) 2020 Rockchip Electronics Co. Ltd.
+ * Copyright (c) 2021 Rockchip Electronics Co. Ltd.
  * Author: Elaine Zhang <zhangqing@rock-chips.com>
  */
 
@@ -79,11 +79,17 @@ static struct rockchip_pll_rate_table rk3568_pll_rates[] = {
 	RK3036_PLL_RATE(500000000, 1, 125, 6, 1, 1, 0),
 	RK3036_PLL_RATE(408000000, 1, 68, 2, 2, 1, 0),
 	RK3036_PLL_RATE(312000000, 1, 78, 6, 1, 1, 0),
+	RK3036_PLL_RATE(297000000, 1, 99, 8, 1, 1, 0),
+	RK3036_PLL_RATE(241500000, 1, 161, 8, 2, 1, 0),
 	RK3036_PLL_RATE(216000000, 1, 72, 4, 2, 1, 0),
 	RK3036_PLL_RATE(200000000, 1, 100, 3, 4, 1, 0),
 	RK3036_PLL_RATE(148500000, 1, 99, 4, 4, 1, 0),
+	RK3036_PLL_RATE(135000000, 1, 45, 8, 1, 1, 0),
+	RK3036_PLL_RATE(119000000, 3, 119, 4, 2, 1, 0),
+	RK3036_PLL_RATE(108000000, 1, 45, 8, 1, 1, 0),
 	RK3036_PLL_RATE(100000000, 1, 150, 6, 6, 1, 0),
 	RK3036_PLL_RATE(96000000, 1, 96, 6, 4, 1, 0),
+	RK3036_PLL_RATE(78750000, 1, 96, 6, 4, 1, 0),
 	RK3036_PLL_RATE(74250000, 2, 99, 4, 4, 1, 0),
 	{ /* sentinel */ },
 };
@@ -1387,21 +1393,21 @@ static struct rockchip_clk_branch rk3568_clk_branches[] __initdata = {
 			RK3568_CLKSEL_CON(72), 6, 1, MFLAGS, RK3568_CLKGATE_CON(31), 1, GFLAGS),
 	GATE(PCLK_PWM1, "pclk_pwm1", "pclk_bus", 0, RK3568_CLKGATE_CON(31), 10, GFLAGS),
 	COMPOSITE_NODIV(CLK_PWM1, "clk_pwm1", gpll100_xin24m_cpll100_p, 0,
-			RK3568_CLKSEL_CON(72), 8, 1, MFLAGS,
+			RK3568_CLKSEL_CON(72), 8, 2, MFLAGS,
 			RK3568_CLKGATE_CON(31), 11, GFLAGS),
 	GATE(CLK_PWM1_CAPTURE, "clk_pwm1_capture", "xin24m", 0,
 			RK3568_CLKGATE_CON(31), 12, GFLAGS),
 	GATE(PCLK_PWM2, "pclk_pwm2", "pclk_bus", 0,
 			RK3568_CLKGATE_CON(31), 13, GFLAGS),
 	COMPOSITE_NODIV(CLK_PWM2, "clk_pwm2", gpll100_xin24m_cpll100_p, 0,
-			RK3568_CLKSEL_CON(72), 10, 1, MFLAGS,
+			RK3568_CLKSEL_CON(72), 10, 2, MFLAGS,
 			RK3568_CLKGATE_CON(31), 14, GFLAGS),
 	GATE(CLK_PWM2_CAPTURE, "clk_pwm2_capture", "xin24m", 0,
 			RK3568_CLKGATE_CON(31), 15, GFLAGS),
 	GATE(PCLK_PWM3, "pclk_pwm3", "pclk_bus", 0,
 			RK3568_CLKGATE_CON(32), 0, GFLAGS),
 	COMPOSITE_NODIV(CLK_PWM3, "clk_pwm3", gpll100_xin24m_cpll100_p, 0,
-			RK3568_CLKSEL_CON(72), 12, 1, MFLAGS,
+			RK3568_CLKSEL_CON(72), 12, 2, MFLAGS,
 			RK3568_CLKGATE_CON(32), 1, GFLAGS),
 	GATE(CLK_PWM3_CAPTURE, "clk_pwm3_capture", "xin24m", 0,
 			RK3568_CLKGATE_CON(32), 2, GFLAGS),

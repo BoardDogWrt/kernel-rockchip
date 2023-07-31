@@ -7,6 +7,7 @@
 
 #include <linux/module.h>
 #include <linux/clk.h>
+#include <linux/media-bus-format.h>
 #include <linux/platform_device.h>
 #include <linux/of.h>
 #include <linux/regmap.h>
@@ -309,7 +310,8 @@ static int rk628_gvi_connector_get_modes(struct drm_connector *connector)
 		break;
 	}
 
-	info->edid_hdmi_dc_modes = 0;
+	info->edid_hdmi_rgb444_dc_modes = 0;
+	info->edid_hdmi_ycbcr444_dc_modes = 0;
 	info->hdmi.y420_dc_modes = 0;
 	info->color_formats = 0;
 	info->max_tmds_clock = 300000;

@@ -289,9 +289,9 @@ static int light_stk3171_probe(struct i2c_client *client,
 	return sensor_register_device(client, NULL, devid, &light_stk3171_ops);
 }
 
-static int light_stk3171_remove(struct i2c_client *client)
+static void light_stk3171_remove(struct i2c_client *client)
 {
-	return sensor_unregister_device(client, NULL, &light_stk3171_ops);
+	sensor_unregister_device(client, NULL, &light_stk3171_ops);
 }
 
 static const struct i2c_device_id light_stk3171_id[] = {

@@ -615,7 +615,6 @@ static int rkisp_fwnode_parse(struct device *dev,
 {
 	struct rkisp_async_subdev *rk_asd =
 			container_of(asd, struct rkisp_async_subdev, asd);
-	struct v4l2_fwnode_bus_parallel *bus = &vep->bus.parallel;
 
 	/*
 	 * MIPI sensor is linked with a mipi dphy and its media bus config can
@@ -625,7 +624,6 @@ static int rkisp_fwnode_parse(struct device *dev,
 	    vep->bus_type != V4L2_MBUS_PARALLEL)
 		return 0;
 
-	rk_asd->mbus.flags = bus->flags;
 	rk_asd->mbus.type = vep->bus_type;
 
 	return 0;
@@ -661,9 +659,9 @@ static int isp_subdev_notifier(struct rkisp_device *isp_dev)
 	struct device *dev = isp_dev->dev;
 	int ret;
 
-	v4l2_async_notifier_init(ntf);
+	v4l2_async_nf_init(ntf);
 
-	ret = v4l2_async_notifier_parse_fwnode_endpoints(
+	ret = v4l2_async_nf_parse_fwnode_endpoints(
 		dev, ntf, sizeof(struct rkisp_async_subdev),
 		rkisp_fwnode_parse);
 	if (ret < 0)
@@ -671,7 +669,7 @@ static int isp_subdev_notifier(struct rkisp_device *isp_dev)
 
 	ntf->ops = &subdev_notifier_ops;
 
-	return v4l2_async_notifier_register(&isp_dev->v4l2_dev, ntf);
+	return v4l2_async_nf_register(&isp_dev->v4l2_dev, ntf);
 }
 
 /***************************** platform deive *******************************/
@@ -941,8 +939,8 @@ static int rkisp_plat_remove(struct platform_device *pdev)
 
 	rkisp_proc_cleanup(isp_dev);
 	media_device_unregister(&isp_dev->media_dev);
-	v4l2_async_notifier_unregister(&isp_dev->notifier);
-	v4l2_async_notifier_cleanup(&isp_dev->notifier);
+	v4l2_async_nf_unregister(&isp_dev->notifier);
+	v4l2_async_nf_cleanup(&isp_dev->notifier);
 	v4l2_device_unregister(&isp_dev->v4l2_dev);
 	v4l2_ctrl_handler_free(&isp_dev->ctrl_handler);
 	rkisp_unregister_luma_vdev(&isp_dev->luma_vdev);
@@ -978,6 +976,8 @@ static int __maybe_unused rkisp_runtime_resume(struct device *dev)
 	    rkisp_update_sensor_info(isp_dev) >= 0)
 		_set_pipeline_default_fmt(isp_dev, false);
 
+	if (isp_dev->hw_dev->is_assigned_clk)
+		rkisp_clk_dbg = true;
 	isp_dev->cap_dev.wait_line = rkisp_wait_line;
 	isp_dev->cap_dev.wrap_line = rkisp_wrap_line;
 	isp_dev->is_rdbk_auto = rkisp_rdbk_auto;

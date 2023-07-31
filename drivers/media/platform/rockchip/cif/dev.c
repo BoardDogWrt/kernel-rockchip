@@ -644,12 +644,16 @@ void rkcif_write_register(struct rkcif_device *dev,
 		}
 	}
 	if (index < CIF_REG_INDEX_MAX) {
-		if (index == CIF_REG_DVP_CTRL || reg->offset != 0x0)
+		if (index == CIF_REG_DVP_CTRL || reg->offset != 0x0) {
 			write_cif_reg(base, reg->offset + csi_offset, val);
-		else
+			v4l2_dbg(4, rkcif_debug, &dev->v4l2_dev,
+				 "write reg[0x%x]:0x%x!!!\n",
+				 reg->offset + csi_offset, val);
+		} else {
 			v4l2_dbg(1, rkcif_debug, &dev->v4l2_dev,
 				 "write reg[%d]:0x%x failed, maybe useless!!!\n",
 				 index, val);
+		}
 	}
 }
 
@@ -681,6 +685,9 @@ void rkcif_write_register_or(struct rkcif_device *dev,
 			reg_val = read_cif_reg(base, reg->offset + csi_offset);
 			reg_val |= val;
 			write_cif_reg(base, reg->offset + csi_offset, reg_val);
+			v4l2_dbg(4, rkcif_debug, &dev->v4l2_dev,
+				 "write or reg[0x%x]:0x%x!!!\n",
+				 reg->offset + csi_offset, val);
 		} else {
 			v4l2_dbg(1, rkcif_debug, &dev->v4l2_dev,
 				 "write reg[%d]:0x%x with OR failed, maybe useless!!!\n",
@@ -717,6 +724,9 @@ void rkcif_write_register_and(struct rkcif_device *dev,
 			reg_val = read_cif_reg(base, reg->offset + csi_offset);
 			reg_val &= val;
 			write_cif_reg(base, reg->offset + csi_offset, reg_val);
+			v4l2_dbg(4, rkcif_debug, &dev->v4l2_dev,
+				 "write and reg[0x%x]:0x%x!!!\n",
+				 reg->offset + csi_offset, val);
 		} else {
 			v4l2_dbg(1, rkcif_debug, &dev->v4l2_dev,
 				 "write reg[%d]:0x%x with OR failed, maybe useless!!!\n",
@@ -914,7 +924,7 @@ static int __cif_pipeline_prepare(struct rkcif_pipeline *p,
 
 			if (!(spad->flags & MEDIA_PAD_FL_SINK))
 				continue;
-			pad = media_entity_remote_pad(spad);
+			pad = media_pad_remote_pad_first(spad);
 			if (pad)
 				break;
 		}
@@ -1466,7 +1476,7 @@ static int subdev_asyn_register_itf(struct rkcif_device *dev)
 	}
 	sditf = dev->sditf[0];
 	if (sditf && (!sditf->is_combine_mode) && (!dev->is_notifier_isp)) {
-		ret = v4l2_async_register_subdev_sensor_common(&sditf->sd);
+		ret = v4l2_async_register_subdev_sensor(&sditf->sd);
 		dev->is_notifier_isp = true;
 	}
 
@@ -1503,26 +1513,11 @@ static int subdev_notifier_complete(struct v4l2_async_notifier *notifier)
 			}
 		}
 
-		if (sensor->mbus.type == V4L2_MBUS_CCP2 ||
-		    sensor->mbus.type == V4L2_MBUS_CSI2_DPHY ||
+		if (sensor->mbus.type == V4L2_MBUS_CSI2_DPHY ||
 		    sensor->mbus.type == V4L2_MBUS_CSI2_CPHY) {
-
-			switch (sensor->mbus.flags & V4L2_MBUS_CSI2_LANES) {
-			case V4L2_MBUS_CSI2_1_LANE:
-				sensor->lanes = 1;
-				break;
-			case V4L2_MBUS_CSI2_2_LANE:
-				sensor->lanes = 2;
-				break;
-			case V4L2_MBUS_CSI2_3_LANE:
-				sensor->lanes = 3;
-				break;
-			case V4L2_MBUS_CSI2_4_LANE:
-				sensor->lanes = 4;
-				break;
-			default:
-				sensor->lanes = 1;
-			}
+			sensor->lanes = sensor->mbus.bus.mipi_csi2.num_data_lanes;
+		} else if (sensor->mbus.type == V4L2_MBUS_CCP2) {
+			sensor->lanes = sensor->mbus.bus.mipi_csi1.data_lane;
 		}
 
 		if (sensor->mbus.type == V4L2_MBUS_CCP2) {
@@ -1620,7 +1615,6 @@ static int rkcif_fwnode_parse(struct device *dev,
 {
 	struct rkcif_async_subdev *rk_asd =
 			container_of(asd, struct rkcif_async_subdev, asd);
-	struct v4l2_fwnode_bus_parallel *bus = &vep->bus.parallel;
 
 	if (vep->bus_type != V4L2_MBUS_BT656 &&
 	    vep->bus_type != V4L2_MBUS_PARALLEL &&
@@ -1630,16 +1624,6 @@ static int rkcif_fwnode_parse(struct device *dev,
 		return 0;
 
 	rk_asd->mbus.type = vep->bus_type;
-
-	if (vep->bus_type == V4L2_MBUS_CSI2_DPHY ||
-	    vep->bus_type == V4L2_MBUS_CSI2_CPHY) {
-		rk_asd->mbus.flags = vep->bus.mipi_csi2.flags;
-		rk_asd->lanes = vep->bus.mipi_csi2.num_data_lanes;
-	} else if (vep->bus_type == V4L2_MBUS_CCP2) {
-		rk_asd->lanes = vep->bus.mipi_csi1.data_lane;
-	} else {
-		rk_asd->mbus.flags = bus->flags;
-	}
 
 	return 0;
 }
@@ -1655,9 +1639,9 @@ static int cif_subdev_notifier(struct rkcif_device *cif_dev)
 	struct device *dev = cif_dev->dev;
 	int ret;
 
-	v4l2_async_notifier_init(ntf);
+	v4l2_async_nf_init(ntf);
 
-	ret = v4l2_async_notifier_parse_fwnode_endpoints(
+	ret = v4l2_async_nf_parse_fwnode_endpoints(
 		dev, ntf, sizeof(struct rkcif_async_subdev), rkcif_fwnode_parse);
 
 	if (ret < 0) {
@@ -1668,7 +1652,7 @@ static int cif_subdev_notifier(struct rkcif_device *cif_dev)
 
 	ntf->ops = &subdev_notifier_ops;
 
-	ret = v4l2_async_notifier_register(&cif_dev->v4l2_dev, ntf);
+	ret = v4l2_async_nf_register(&cif_dev->v4l2_dev, ntf);
 
 	return ret;
 }

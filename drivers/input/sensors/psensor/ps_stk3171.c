@@ -238,9 +238,9 @@ static int proximity_stk3171_probe(struct i2c_client *client,
 	return sensor_register_device(client, NULL, devid, &proximity_stk3171_ops);
 }
 
-static int proximity_stk3171_remove(struct i2c_client *client)
+static void proximity_stk3171_remove(struct i2c_client *client)
 {
-	return sensor_unregister_device(client, NULL, &proximity_stk3171_ops);
+	sensor_unregister_device(client, NULL, &proximity_stk3171_ops);
 }
 
 static const struct i2c_device_id proximity_stk3171_id[] = {

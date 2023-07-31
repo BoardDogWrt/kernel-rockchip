@@ -31,11 +31,15 @@
 #define VOP_VERSION_RK3568	VOP2_VERSION(0x40, 0x15, 0x8023)
 #define VOP_VERSION_RK3588	VOP2_VERSION(0x40, 0x17, 0x6786)
 
+/* register one connector */
 #define ROCKCHIP_OUTPUT_DUAL_CHANNEL_LEFT_RIGHT_MODE	BIT(0)
+/* register one connector */
 #define ROCKCHIP_OUTPUT_DUAL_CHANNEL_ODD_EVEN_MODE	BIT(1)
 #define ROCKCHIP_OUTPUT_DATA_SWAP			BIT(2)
 /* MIPI DSI DataStream(cmd) mode on rk3588 */
 #define ROCKCHIP_OUTPUT_MIPI_DS_MODE			BIT(3)
+/* register two connector */
+#define ROCKCHIP_OUTPUT_DUAL_CONNECTOR_SPLIT_MODE	BIT(4)
 
 #define AFBDC_FMT_RGB565	0x0
 #define AFBDC_FMT_U8U8U8U8	0x5
@@ -225,6 +229,30 @@ struct vop_reg {
 	uint32_t write_mask:1;
 };
 
+struct vop_afbc {
+	struct vop_reg enable;
+	struct vop_reg win_sel;
+	struct vop_reg format;
+	struct vop_reg rb_swap;
+	struct vop_reg uv_swap;
+	struct vop_reg auto_gating_en;
+	struct vop_reg rotate;
+	struct vop_reg block_split_en;
+	struct vop_reg pic_vir_width;
+	struct vop_reg tile_num;
+	struct vop_reg pic_offset;
+	struct vop_reg pic_size;
+	struct vop_reg dsp_offset;
+	struct vop_reg transform_offset;
+	struct vop_reg hdr_ptr;
+	struct vop_reg half_block_en;
+	struct vop_reg xmirror;
+	struct vop_reg ymirror;
+	struct vop_reg rotate_270;
+	struct vop_reg rotate_90;
+	struct vop_reg rstn;
+};
+
 struct vop_csc {
 	struct vop_reg y2r_en;
 	struct vop_reg r2r_en;
@@ -401,6 +429,7 @@ struct vop_ctrl {
 struct vop_intr {
 	const int *intrs;
 	uint32_t nintrs;
+
 	struct vop_reg line_flag_num[2];
 	struct vop_reg enable;
 	struct vop_reg clear;
@@ -438,30 +467,6 @@ struct vop_scl_regs {
 	struct vop_reg scale_yrgb_y;
 	struct vop_reg scale_cbcr_x;
 	struct vop_reg scale_cbcr_y;
-};
-
-struct vop_afbc {
-	struct vop_reg enable;
-	struct vop_reg win_sel;
-	struct vop_reg format;
-	struct vop_reg rb_swap;
-	struct vop_reg uv_swap;
-	struct vop_reg auto_gating_en;
-	struct vop_reg rotate;
-	struct vop_reg block_split_en;
-	struct vop_reg pic_vir_width;
-	struct vop_reg tile_num;
-	struct vop_reg pic_offset;
-	struct vop_reg pic_size;
-	struct vop_reg dsp_offset;
-	struct vop_reg transform_offset;
-	struct vop_reg hdr_ptr;
-	struct vop_reg half_block_en;
-	struct vop_reg xmirror;
-	struct vop_reg ymirror;
-	struct vop_reg rotate_270;
-	struct vop_reg rotate_90;
-	struct vop_reg rstn;
 };
 
 struct vop_csc_table {
@@ -597,37 +602,6 @@ enum vop_hdr_format {
 	HDR_FORMAT_MAX,
 };
 
-#define ACM_GAIN_LUT_HY_LENGTH		(9*17)
-#define ACM_GAIN_LUT_HY_TOTAL_LENGTH	(ACM_GAIN_LUT_HY_LENGTH * 3)
-#define ACM_GAIN_LUT_HS_LENGTH		(13*17)
-#define ACM_GAIN_LUT_HS_TOTAL_LENGTH (ACM_GAIN_LUT_HS_LENGTH * 3)
-#define ACM_DELTA_LUT_H_LENGTH		65
-#define ACM_DELTA_LUT_H_TOTAL_LENGTH	(ACM_DELTA_LUT_H_LENGTH * 3)
-
-struct post_acm {
-	s16 delta_lut_h[ACM_DELTA_LUT_H_TOTAL_LENGTH];
-	s16 gain_lut_hy[ACM_GAIN_LUT_HY_TOTAL_LENGTH];
-	s16 gain_lut_hs[ACM_GAIN_LUT_HS_TOTAL_LENGTH];
-	u16 y_gain;
-	u16 h_gain;
-	u16 s_gain;
-	u16 acm_enable;
-};
-
-struct post_csc {
-	u16 hue;
-	u16 saturation;
-	u16 contrast;
-	u16 brightness;
-	u16 r_gain;
-	u16 g_gain;
-	u16 b_gain;
-	u16 r_offset;
-	u16 g_offset;
-	u16 b_offset;
-	u16 csc_enable;
-};
-
 struct post_csc_coef {
 	s32 csc_coef00;
 	s32 csc_coef01;
@@ -684,8 +658,8 @@ struct vop_win_phy {
 	const uint32_t *data_formats;
 	uint32_t nformats;
 
-	struct vop_reg gate;
 	struct vop_reg enable;
+	struct vop_reg gate;
 	struct vop_reg format;
 	struct vop_reg interlace_read;
 	struct vop_reg fmt_10;
@@ -694,6 +668,7 @@ struct vop_win_phy {
 	struct vop_reg xmirror;
 	struct vop_reg ymirror;
 	struct vop_reg rb_swap;
+	struct vop_reg uv_swap;
 	struct vop_reg act_info;
 	struct vop_reg dsp_info;
 	struct vop_reg dsp_st;
@@ -702,12 +677,12 @@ struct vop_win_phy {
 	struct vop_reg yrgb_vir;
 	struct vop_reg uv_vir;
 
-	struct vop_reg channel;
 	struct vop_reg dst_alpha_ctl;
 	struct vop_reg src_alpha_ctl;
+	struct vop_reg alpha_pre_mul;
 	struct vop_reg alpha_mode;
 	struct vop_reg alpha_en;
-	struct vop_reg alpha_pre_mul;
+	struct vop_reg channel;
 	struct vop_reg global_alpha_val;
 	struct vop_reg color_key;
 	struct vop_reg color_key_en;
@@ -952,6 +927,10 @@ struct vop2_video_port_regs {
 	struct vop_reg csc_offset0;
 	struct vop_reg csc_offset1;
 	struct vop_reg csc_offset2;
+
+	/* color bar */
+	struct vop_reg color_bar_en;
+	struct vop_reg color_bar_mode;
 };
 
 struct vop2_power_domain_regs {
@@ -1457,7 +1436,9 @@ struct vop2_data {
 #define ROCKCHIP_OUT_MODE_P565		2
 #define ROCKCHIP_OUT_MODE_BT656		5
 #define ROCKCHIP_OUT_MODE_S888		8
+#define ROCKCHIP_OUT_MODE_S666		9
 #define ROCKCHIP_OUT_MODE_YUV422	9
+#define ROCKCHIP_OUT_MODE_S565		10
 #define ROCKCHIP_OUT_MODE_S888_DUMMY	12
 #define ROCKCHIP_OUT_MODE_YUV420	14
 /* for use special outface */
@@ -1573,7 +1554,6 @@ enum vop_pol {
 	DEN_NEGATIVE   = 2,
 	DCLK_INVERT    = 3
 };
-
 
 #define FRAC_16_16(mult, div)    (((mult) << 16) / (div))
 #define SCL_FT_DEFAULT_FIXPOINT_SHIFT	12

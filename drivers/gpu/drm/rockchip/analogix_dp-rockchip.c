@@ -20,10 +20,10 @@
 #include <video/of_videomode.h>
 #include <video/videomode.h>
 
+#include <drm/display/drm_dp_helper.h>
 #include <drm/drm_atomic.h>
 #include <drm/drm_atomic_helper.h>
 #include <drm/bridge/analogix_dp.h>
-#include <drm/drm_dp_helper.h>
 #include <drm/drm_of.h>
 #include <drm/drm_panel.h>
 #include <drm/drm_probe_helper.h>
@@ -33,8 +33,6 @@
 #include "rockchip_drm_vop.h"
 
 #define PSR_WAIT_LINE_FLAG_TIMEOUT_MS	100
-
-#define to_dp(nm)	container_of(nm, struct rockchip_dp_device, nm)
 
 #define GRF_REG_FIELD(_reg, _lsb, _msb) {	\
 				.reg = _reg,	\
@@ -75,7 +73,7 @@ struct rockchip_dp_chip_data {
 struct rockchip_dp_device {
 	struct drm_device        *drm_dev;
 	struct device            *dev;
-	struct drm_encoder       encoder;
+	struct rockchip_encoder  encoder;
 	struct drm_display_mode  mode;
 
 	struct regmap            *grf;
@@ -93,6 +91,18 @@ struct rockchip_dp_device {
 	unsigned int min_refresh_rate;
 	unsigned int max_refresh_rate;
 };
+
+static struct rockchip_dp_device *encoder_to_dp(struct drm_encoder *encoder)
+{
+	struct rockchip_encoder *rkencoder = to_rockchip_encoder(encoder);
+
+	return container_of(rkencoder, struct rockchip_dp_device, encoder);
+}
+
+static struct rockchip_dp_device *pdata_encoder_to_dp(struct analogix_dp_plat_data *plat_data)
+{
+	return container_of(plat_data, struct rockchip_dp_device, plat_data);
+}
 
 static int rockchip_grf_write(struct regmap *grf, unsigned int reg,
 			      unsigned int mask, unsigned int val)
@@ -196,7 +206,7 @@ static int rockchip_dp_pre_init(struct rockchip_dp_device *dp)
 
 static int rockchip_dp_poweron_start(struct analogix_dp_plat_data *plat_data)
 {
-	struct rockchip_dp_device *dp = to_dp(plat_data);
+	struct rockchip_dp_device *dp = pdata_encoder_to_dp(plat_data);
 	int ret;
 
 	ret = rockchip_dp_pre_init(dp);
@@ -210,7 +220,7 @@ static int rockchip_dp_poweron_start(struct analogix_dp_plat_data *plat_data)
 
 static int rockchip_dp_powerdown(struct analogix_dp_plat_data *plat_data)
 {
-	struct rockchip_dp_device *dp = to_dp(plat_data);
+	struct rockchip_dp_device *dp = pdata_encoder_to_dp(plat_data);
 
 	return rockchip_grf_field_write(dp->grf, &dp->data->edp_mode, 0);
 }
@@ -220,7 +230,7 @@ static int rockchip_dp_get_modes(struct analogix_dp_plat_data *plat_data,
 {
 	struct drm_display_info *di = &connector->display_info;
 	/* VOP couldn't output YUV video format for eDP rightly */
-	u32 mask = DRM_COLOR_FORMAT_YCRCB444 | DRM_COLOR_FORMAT_YCRCB422;
+	u32 mask = DRM_COLOR_FORMAT_YCBCR444 | DRM_COLOR_FORMAT_YCBCR422;
 
 	if ((di->color_formats & mask)) {
 		DRM_DEBUG_KMS("Swapping display color format from YUV to RGB\n");
@@ -234,7 +244,7 @@ static int rockchip_dp_get_modes(struct analogix_dp_plat_data *plat_data,
 
 static int rockchip_dp_loader_protect(struct drm_encoder *encoder, bool on)
 {
-	struct rockchip_dp_device *dp = to_dp(encoder);
+	struct rockchip_dp_device *dp = encoder_to_dp(encoder);
 	struct analogix_dp_plat_data *plat_data = &dp->plat_data;
 	struct rockchip_dp_device *secondary = NULL;
 	int ret;
@@ -242,7 +252,7 @@ static int rockchip_dp_loader_protect(struct drm_encoder *encoder, bool on)
 	if (plat_data->right) {
 		secondary = rockchip_dp_find_by_id(dp->dev->driver, !dp->id);
 
-		ret = rockchip_dp_loader_protect(&secondary->encoder, on);
+		ret = rockchip_dp_loader_protect(&secondary->encoder.encoder, on);
 		if (ret)
 			return ret;
 	}
@@ -281,7 +291,7 @@ static int rockchip_dp_bridge_attach(struct analogix_dp_plat_data *plat_data,
 				     struct drm_bridge *bridge,
 				     struct drm_connector *connector)
 {
-	struct rockchip_dp_device *dp = to_dp(plat_data);
+	struct rockchip_dp_device *dp = pdata_encoder_to_dp(plat_data);
 	struct rockchip_drm_sub_dev *sdev = &dp->sub_dev;
 
 	if (!connector) {
@@ -307,7 +317,7 @@ static int rockchip_dp_bridge_attach(struct analogix_dp_plat_data *plat_data,
 static void rockchip_dp_bridge_detach(struct analogix_dp_plat_data *plat_data,
 				      struct drm_bridge *bridge)
 {
-	struct rockchip_dp_device *dp = to_dp(plat_data);
+	struct rockchip_dp_device *dp = pdata_encoder_to_dp(plat_data);
 	struct rockchip_drm_sub_dev *sdev = &dp->sub_dev;
 
 	if (sdev->connector)
@@ -351,7 +361,7 @@ struct drm_crtc *rockchip_dp_drm_get_new_crtc(struct drm_encoder *encoder,
 static void rockchip_dp_drm_encoder_enable(struct drm_encoder *encoder,
 					   struct drm_atomic_state *state)
 {
-	struct rockchip_dp_device *dp = to_dp(encoder);
+	struct rockchip_dp_device *dp = encoder_to_dp(encoder);
 	struct drm_crtc *crtc;
 	struct drm_crtc_state *old_crtc_state;
 	int ret;
@@ -379,7 +389,7 @@ static void rockchip_dp_drm_encoder_enable(struct drm_encoder *encoder,
 static void rockchip_dp_drm_encoder_disable(struct drm_encoder *encoder,
 					    struct drm_atomic_state *state)
 {
-	struct rockchip_dp_device *dp = to_dp(encoder);
+	struct rockchip_dp_device *dp = encoder_to_dp(encoder);
 	struct drm_crtc *crtc;
 	struct drm_crtc *old_crtc = encoder->crtc;
 	struct drm_crtc_state *new_crtc_state = NULL;
@@ -410,7 +420,7 @@ rockchip_dp_drm_encoder_atomic_check(struct drm_encoder *encoder,
 				      struct drm_crtc_state *crtc_state,
 				      struct drm_connector_state *conn_state)
 {
-	struct rockchip_dp_device *dp = to_dp(encoder);
+	struct rockchip_dp_device *dp = encoder_to_dp(encoder);
 	struct rockchip_crtc_state *s = to_rockchip_crtc_state(crtc_state);
 	struct drm_display_info *di = &conn_state->connector->display_info;
 	int refresh_rate;
@@ -511,7 +521,7 @@ static int rockchip_dp_of_probe(struct rockchip_dp_device *dp)
 
 static int rockchip_dp_drm_create_encoder(struct rockchip_dp_device *dp)
 {
-	struct drm_encoder *encoder = &dp->encoder;
+	struct drm_encoder *encoder = &dp->encoder.encoder;
 	struct drm_device *drm_dev = dp->drm_dev;
 	struct device *dev = dp->dev;
 	int ret;
@@ -548,7 +558,7 @@ static int rockchip_dp_bind(struct device *dev, struct device *master,
 			return ret;
 		}
 
-		dp->plat_data.encoder = &dp->encoder;
+		dp->plat_data.encoder = &dp->encoder.encoder;
 	}
 
 	if (dp->data->audio) {
@@ -580,7 +590,7 @@ err_unregister_audio_pdev:
 	if (dp->audio_pdev)
 		platform_device_unregister(dp->audio_pdev);
 err_cleanup_encoder:
-	dp->encoder.funcs->destroy(&dp->encoder);
+	dp->encoder.encoder.funcs->destroy(&dp->encoder.encoder);
 	return ret;
 }
 
@@ -592,7 +602,7 @@ static void rockchip_dp_unbind(struct device *dev, struct device *master,
 	if (dp->audio_pdev)
 		platform_device_unregister(dp->audio_pdev);
 	analogix_dp_unbind(dp->adp);
-	dp->encoder.funcs->destroy(&dp->encoder);
+	dp->encoder.encoder.funcs->destroy(&dp->encoder.encoder);
 }
 
 static const struct component_ops rockchip_dp_component_ops = {
@@ -809,6 +819,6 @@ struct platform_driver rockchip_dp_driver = {
 	.driver = {
 		   .name = "rockchip-dp",
 		   .pm = &rockchip_dp_pm_ops,
-		   .of_match_table = of_match_ptr(rockchip_dp_dt_ids),
+		   .of_match_table = rockchip_dp_dt_ids,
 	},
 };

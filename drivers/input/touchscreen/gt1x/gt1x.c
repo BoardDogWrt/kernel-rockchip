@@ -636,7 +636,7 @@ static int gt1x_ts_probe(struct i2c_client *client, const struct i2c_device_id *
  * @client: i2c device struct.
  * Return  0: succeed, -1: failed.
  */
-static int gt1x_ts_remove(struct i2c_client *client)
+static void gt1x_ts_remove(struct i2c_client *client)
 {
 	GTP_DEBUG_FUNC();
 	GTP_DEBUG("GTP driver removing...");
@@ -651,8 +651,6 @@ static int gt1x_ts_remove(struct i2c_client *client)
 	if (gt1x_wq) {
 		destroy_workqueue(gt1x_wq);
 	}
-
-	return 0;
 }
 
 #if defined(CONFIG_FB)

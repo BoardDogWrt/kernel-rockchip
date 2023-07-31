@@ -263,86 +263,40 @@ static irqreturn_t isp_irq_hdl(int irq, void *ctx)
 	return IRQ_HANDLED;
 }
 
-static irqreturn_t irq_handler(int irq, void *ctx)
-{
-	struct device *dev = ctx;
-	struct rkisp_hw_dev *hw_dev = dev_get_drvdata(dev);
-	struct rkisp_device *isp = hw_dev->isp[hw_dev->cur_dev_id];
-	unsigned int mis_val, mis_3a = 0;
-
-	mis_val = readl(hw_dev->base_addr + CIF_ISP_MIS);
-	if (hw_dev->isp_ver >= ISP_V20)
-		mis_3a = readl(hw_dev->base_addr + ISP_ISP3A_MIS);
-	if (mis_val || mis_3a)
-		rkisp_isp_isr(mis_val, mis_3a, isp);
-
-	mis_val = readl(hw_dev->base_addr + CIF_MIPI_MIS);
-	if (mis_val)
-		rkisp_mipi_isr(mis_val, isp);
-
-	mis_val = readl(hw_dev->base_addr + CIF_MI_MIS);
-	if (mis_val)
-		rkisp_mi_isr(mis_val, isp);
-
-	return IRQ_HANDLED;
-}
-
 int rkisp_register_irq(struct rkisp_hw_dev *hw_dev)
 {
 	const struct isp_match_data *match_data = hw_dev->match_data;
 	struct platform_device *pdev = hw_dev->pdev;
 	struct device *dev = &pdev->dev;
-	struct resource *res;
 	int i, ret, irq;
 
-	res = platform_get_resource_byname(pdev, IORESOURCE_IRQ,
-					   match_data->irqs[0].name);
-	if (res) {
-		/* there are irq names in dts */
-		for (i = 0; i < match_data->num_irqs; i++) {
-			irq = platform_get_irq_byname(pdev, match_data->irqs[i].name);
-			if (irq < 0) {
-				dev_err(dev, "no irq %s in dts\n",
-					match_data->irqs[i].name);
-				return irq;
-			}
-
-			if (!strcmp(match_data->irqs[i].name, "mipi_irq"))
-				hw_dev->mipi_irq = irq;
-
-			ret = devm_request_irq(dev, irq,
-					       match_data->irqs[i].irq_hdl,
-					       IRQF_SHARED,
-					       dev_driver_string(dev),
-					       dev);
-			if (ret < 0) {
-				dev_err(dev, "request %s failed: %d\n",
-					match_data->irqs[i].name, ret);
-				return ret;
-			}
-
-			if (hw_dev->mipi_irq == irq &&
-			    (hw_dev->isp_ver == ISP_V12 ||
-			     hw_dev->isp_ver == ISP_V13))
-				disable_irq(hw_dev->mipi_irq);
-		}
-	} else {
-		/* no irq names in dts */
-		irq = platform_get_irq(pdev, 0);
+	/* there are irq names in dts */
+	for (i = 0; i < match_data->num_irqs; i++) {
+		irq = platform_get_irq_byname(pdev, match_data->irqs[i].name);
 		if (irq < 0) {
-			dev_err(dev, "no isp irq in dts\n");
+			dev_err(dev, "no irq %s in dts\n",
+				match_data->irqs[i].name);
 			return irq;
 		}
 
+		if (!strcmp(match_data->irqs[i].name, "mipi_irq"))
+			hw_dev->mipi_irq = irq;
+
 		ret = devm_request_irq(dev, irq,
-				       irq_handler,
+				       match_data->irqs[i].irq_hdl,
 				       IRQF_SHARED,
 				       dev_driver_string(dev),
 				       dev);
 		if (ret < 0) {
-			dev_err(dev, "request irq failed: %d\n", ret);
+			dev_err(dev, "request %s failed: %d\n",
+				match_data->irqs[i].name, ret);
 			return ret;
 		}
+
+		if (hw_dev->mipi_irq == irq &&
+		    (hw_dev->isp_ver == ISP_V12 ||
+		     hw_dev->isp_ver == ISP_V13))
+			disable_irq(hw_dev->mipi_irq);
 	}
 
 	return 0;
@@ -786,10 +740,12 @@ static int enable_sys_clk(struct rkisp_hw_dev *dev)
 		}
 	}
 
-	rate = dev->clk_rate_tbl[0].clk_rate * 1000000UL;
-	rkisp_set_clk_rate(dev->clks[0], rate);
-	if (dev->is_unite)
-		rkisp_set_clk_rate(dev->clks[5], rate);
+	if (!dev->is_assigned_clk) {
+		rate = dev->clk_rate_tbl[0].clk_rate * 1000000UL;
+		rkisp_set_clk_rate(dev->clks[0], rate);
+		if (dev->is_unite)
+			rkisp_set_clk_rate(dev->clks[5], rate);
+	}
 	rkisp_soft_reset(dev, false);
 	isp_config_clk(dev, true);
 	return 0;
@@ -848,6 +804,7 @@ static int rkisp_hw_probe(struct platform_device *pdev)
 	struct resource *res;
 	int i, ret;
 	bool is_mem_reserved = true;
+	u32 clk_rate = 0;
 
 	match = of_match_node(rkisp_hw_of_match, node);
 	if (IS_ERR(match))
@@ -940,6 +897,11 @@ static int rkisp_hw_probe(struct platform_device *pdev)
 	hw_dev->num_clks = match_data->num_clks;
 	hw_dev->clk_rate_tbl = match_data->clk_rate_tbl;
 	hw_dev->num_clk_rate_tbl = match_data->num_clk_rate_tbl;
+
+	hw_dev->is_assigned_clk = false;
+	ret = of_property_read_u32(node, "assigned-clock-rates", &clk_rate);
+	if (!ret && clk_rate)
+		hw_dev->is_assigned_clk = true;
 
 	hw_dev->reset = devm_reset_control_array_get(dev, false, false);
 	if (IS_ERR(hw_dev->reset)) {

@@ -270,9 +270,9 @@ static int light_al3006_probe(struct i2c_client *client,
 	return sensor_register_device(client, NULL, devid, &light_al3006_ops);
 }
 
-static int light_al3006_remove(struct i2c_client *client)
+static void light_al3006_remove(struct i2c_client *client)
 {
-	return sensor_unregister_device(client, NULL, &light_al3006_ops);
+	sensor_unregister_device(client, NULL, &light_al3006_ops);
 }
 
 static const struct i2c_device_id light_al3006_id[] = {

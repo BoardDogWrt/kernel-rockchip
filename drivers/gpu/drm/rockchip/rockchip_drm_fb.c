@@ -12,6 +12,7 @@
 #include <drm/drm_damage_helper.h>
 #include <drm/drm_fb_helper.h>
 #include <drm/drm_fourcc.h>
+#include <drm/drm_framebuffer.h>
 #include <drm/drm_gem_framebuffer_helper.h>
 #include <drm/drm_probe_helper.h>
 #include <soc/rockchip/rockchip_dmc.h>
@@ -167,6 +168,7 @@ static int rockchip_drm_bandwidth_atomic_check(struct drm_device *dev,
 	vop_bw_info->line_bw_mbyte = 0;
 	vop_bw_info->frame_bw_mbyte = 0;
 	vop_bw_info->plane_num = 0;
+	vop_bw_info->plane_num_4k = 0;
 
 	for_each_old_crtc_in_state(state, crtc, old_crtc_state, i) {
 		funcs = priv->crtc_funcs[drm_crtc_index(crtc)];
@@ -192,7 +194,7 @@ static void drm_atomic_helper_connector_commit(struct drm_device *dev,
 		if (!funcs->atomic_commit)
 			continue;
 
-		funcs->atomic_commit(connector, new_conn_state);
+		funcs->atomic_commit(connector, old_state);
 	}
 }
 
@@ -303,20 +305,6 @@ static const struct drm_mode_config_funcs rockchip_drm_mode_config_funcs = {
 	.atomic_commit = drm_atomic_helper_commit,
 };
 
-struct drm_framebuffer *
-rockchip_drm_framebuffer_init(struct drm_device *dev,
-			      const struct drm_mode_fb_cmd2 *mode_cmd,
-			      struct drm_gem_object *obj)
-{
-	struct drm_framebuffer *fb;
-
-	fb = rockchip_fb_alloc(dev, mode_cmd, &obj, 1);
-	if (IS_ERR(fb))
-		return ERR_CAST(fb);
-
-	return fb;
-}
-
 void rockchip_drm_mode_config_init(struct drm_device *dev)
 {
 	dev->mode_config.min_width = 0;
@@ -338,4 +326,6 @@ void rockchip_drm_mode_config_init(struct drm_device *dev)
 
 	dev->mode_config.funcs = &rockchip_drm_mode_config_funcs;
 	dev->mode_config.helper_private = &rockchip_mode_config_helpers;
+
+	dev->mode_config.normalize_zpos = true;
 }

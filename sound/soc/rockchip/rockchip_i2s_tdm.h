@@ -1,14 +1,10 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * sound/soc/rockchip/rockchip_i2s_tdm.h
- *
- * ALSA SoC Audio Layer - Rockchip I2S_TDM Controller driver
+ * ALSA SoC Audio Layer - Rockchip I2S/TDM Controller driver
  *
  * Copyright (c) 2018 Rockchip Electronics Co. Ltd.
  * Author: Sugar Zhang <sugar.zhang@rock-chips.com>
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 
 #ifndef _ROCKCHIP_I2S_TDM_H
@@ -320,7 +316,7 @@ enum {
 
 #define HIWORD_UPDATE(v, h, l)	(((v) << (l)) | (GENMASK((h), (l)) << 16))
 
-/* PX30 GRF CONFIGS*/
+/* PX30 GRF CONFIGS */
 #define PX30_I2S0_CLK_IN_SRC_FROM_TX		HIWORD_UPDATE(1, 13, 12)
 #define PX30_I2S0_CLK_IN_SRC_FROM_RX		HIWORD_UPDATE(2, 13, 12)
 #define PX30_I2S0_MCLK_OUT_SRC_FROM_TX		HIWORD_UPDATE(1, 5, 5)
@@ -332,7 +328,7 @@ enum {
 #define PX30_I2S0_CLK_RXONLY \
 	(PX30_I2S0_MCLK_OUT_SRC_FROM_RX | PX30_I2S0_CLK_IN_SRC_FROM_RX)
 
-/* RK1808 GRF CONFIGS*/
+/* RK1808 GRF CONFIGS */
 #define RK1808_I2S0_MCLK_OUT_SRC_FROM_RX	HIWORD_UPDATE(1, 2, 2)
 #define RK1808_I2S0_MCLK_OUT_SRC_FROM_TX	HIWORD_UPDATE(0, 2, 2)
 #define RK1808_I2S0_CLK_IN_SRC_FROM_TX		HIWORD_UPDATE(1, 1, 0)
@@ -344,7 +340,7 @@ enum {
 #define RK1808_I2S0_CLK_RXONLY \
 	(RK1808_I2S0_MCLK_OUT_SRC_FROM_RX | RK1808_I2S0_CLK_IN_SRC_FROM_RX)
 
-/* RK3308 GRF CONFIGS*/
+/* RK3308 GRF CONFIGS */
 #define RK3308_I2S0_8CH_MCLK_OUT_SRC_FROM_RX	HIWORD_UPDATE(1, 10, 10)
 #define RK3308_I2S0_8CH_MCLK_OUT_SRC_FROM_TX	HIWORD_UPDATE(0, 10, 10)
 #define RK3308_I2S0_8CH_CLK_IN_RX_SRC_FROM_TX	HIWORD_UPDATE(1, 9, 9)
@@ -378,7 +374,7 @@ enum {
 	RK3308_I2S1_8CH_CLK_IN_RX_SRC_FROM_RX | \
 	RK3308_I2S1_8CH_CLK_IN_TX_SRC_FROM_RX)
 
-/* RK3568 GRF CONFIGS*/
+/* RK3568 GRF CONFIGS */
 #define RK3568_I2S1_MCLK_OUT_SRC_FROM_TX	HIWORD_UPDATE(1, 5, 5)
 #define RK3568_I2S1_MCLK_OUT_SRC_FROM_RX	HIWORD_UPDATE(0, 5, 5)
 
@@ -409,7 +405,7 @@ enum {
 	(RK3568_I2S3_SCLK_SRC_FROM_RX | \
 	RK3568_I2S3_LRCK_SRC_FROM_RX)
 
-/* RV1126 GRF CONFIGS*/
+/* RV1126 GRF CONFIGS */
 #define RV1126_I2S0_MCLK_OUT_SRC_FROM_TX	HIWORD_UPDATE(0, 9, 9)
 #define RV1126_I2S0_MCLK_OUT_SRC_FROM_RX	HIWORD_UPDATE(1, 9, 9)
 

@@ -54,7 +54,7 @@ static struct v4l2_subdev *get_remote_subdev(struct v4l2_subdev *sd)
 	local = &sd->entity.pads[CSI_SINK];
 	if (!local)
 		goto end;
-	remote = media_entity_remote_pad(local);
+	remote = media_pad_remote_pad_first(local);
 	if (!remote)
 		goto end;
 
@@ -116,7 +116,7 @@ static int rkisp_csi_g_mbus_config(struct v4l2_subdev *sd,
 }
 
 static int rkisp_csi_get_set_fmt(struct v4l2_subdev *sd,
-				  struct v4l2_subdev_pad_config *cfg,
+				  struct v4l2_subdev_state *sd_state,
 				  struct v4l2_subdev_format *fmt)
 {
 	struct v4l2_subdev *remote_sd;
@@ -187,26 +187,7 @@ static int csi_config(struct rkisp_csi_device *csi)
 	u32 emd_vc, emd_dt, mipi_ctrl;
 	int lanes, ret, i;
 
-	/*
-	 * sensor->mbus is set in isp or d-phy notifier_bound function
-	 */
-	switch (sensor->mbus.flags & V4L2_MBUS_CSI2_LANES) {
-	case V4L2_MBUS_CSI2_4_LANE:
-		lanes = 4;
-		break;
-	case V4L2_MBUS_CSI2_3_LANE:
-		lanes = 3;
-		break;
-	case V4L2_MBUS_CSI2_2_LANE:
-		lanes = 2;
-		break;
-	case V4L2_MBUS_CSI2_1_LANE:
-		lanes = 1;
-		break;
-	default:
-		return -EINVAL;
-	}
-
+	lanes = sensor->mbus.bus.mipi_csi2.num_data_lanes;
 	emd_vc = 0xFF;
 	emd_dt = 0;
 	dev->hdr.sensor = NULL;

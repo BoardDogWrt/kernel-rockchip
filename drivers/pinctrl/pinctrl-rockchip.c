@@ -33,7 +33,9 @@
 #include <linux/clk.h>
 #include <linux/regmap.h>
 #include <linux/mfd/syscon.h>
+#include <linux/string_helpers.h>
 #include <linux/rockchip/cpu.h>
+
 #include <dt-bindings/pinctrl/rockchip.h>
 
 #include "core.h"
@@ -1672,11 +1674,11 @@ static int rv1108_calc_schmitt_reg_and_bit(struct rockchip_pin_bank *bank,
 }
 
 #define RV1126_PULL_PMU_OFFSET		0x40
-#define RV1126_PULL_GRF_GPIO1A0_OFFSET		0x10108
+#define RV1126_PULL_GRF_GPIO1A0_OFFSET	0x10108
 #define RV1126_PULL_PINS_PER_REG	8
 #define RV1126_PULL_BITS_PER_PIN	2
 #define RV1126_PULL_BANK_STRIDE		16
-#define RV1126_GPIO_C4_D7(p)	(p >= 20 && p <= 31) /* GPIO0_C4 ~ GPIO0_D7 */
+#define RV1126_GPIO_C4_D7(p)		(p >= 20 && p <= 31) /* GPIO0_C4 ~ GPIO0_D7 */
 
 static int rv1126_calc_pull_reg_and_bit(struct rockchip_pin_bank *bank,
 					int pin_num, struct regmap **regmap,
@@ -1710,7 +1712,7 @@ static int rv1126_calc_pull_reg_and_bit(struct rockchip_pin_bank *bank,
 }
 
 #define RV1126_DRV_PMU_OFFSET		0x20
-#define RV1126_DRV_GRF_GPIO1A0_OFFSET		0x10090
+#define RV1126_DRV_GRF_GPIO1A0_OFFSET	0x10090
 #define RV1126_DRV_BITS_PER_PIN		4
 #define RV1126_DRV_PINS_PER_REG		4
 #define RV1126_DRV_BANK_STRIDE		32
@@ -1748,7 +1750,7 @@ static int rv1126_calc_drv_reg_and_bit(struct rockchip_pin_bank *bank,
 }
 
 #define RV1126_SCHMITT_PMU_OFFSET		0x60
-#define RV1126_SCHMITT_GRF_GPIO1A0_OFFSET		0x10188
+#define RV1126_SCHMITT_GRF_GPIO1A0_OFFSET	0x10188
 #define RV1126_SCHMITT_BANK_STRIDE		16
 #define RV1126_SCHMITT_PINS_PER_GRF_REG		8
 #define RV1126_SCHMITT_PINS_PER_PMU_REG		8
@@ -3526,12 +3528,14 @@ static int rockchip_pmx_set(struct pinctrl_dev *pctldev, unsigned selector,
 
 static int rockchip_pmx_gpio_set_direction(struct pinctrl_dev *pctldev,
 					   struct pinctrl_gpio_range *range,
-					   unsigned offset, bool input)
+					   unsigned offset,
+					   bool input)
 {
 	struct rockchip_pinctrl *info = pinctrl_dev_get_drvdata(pctldev);
-	struct rockchip_pin_bank *bank = pin_to_bank(info, offset);
+	struct rockchip_pin_bank *bank;
 
-	return rockchip_set_mux(bank, offset - range->gc->base, RK_FUNC_GPIO);
+	bank = pin_to_bank(info, offset);
+	return rockchip_set_mux(bank, offset - bank->pin_base, RK_FUNC_GPIO);
 }
 
 static const struct pinmux_ops rockchip_pmx_ops = {
@@ -3874,6 +3878,7 @@ static int rockchip_pinctrl_parse_groups(struct device_node *np,
 		np_config = of_find_node_by_phandle(be32_to_cpup(phandle));
 		ret = pinconf_generic_parse_dt_config(np_config, NULL,
 				&grp->data[j].configs, &grp->data[j].nconfigs);
+		of_node_put(np_config);
 		if (ret)
 			return ret;
 	}
@@ -3966,6 +3971,7 @@ static int rockchip_pinctrl_register(struct platform_device *pdev,
 	struct pinctrl_pin_desc *pindesc, *pdesc;
 	struct rockchip_pin_bank *pin_bank;
 	struct device *dev = &pdev->dev;
+	char **pin_names;
 	int pin, bank, ret;
 	int k;
 
@@ -3985,10 +3991,14 @@ static int rockchip_pinctrl_register(struct platform_device *pdev,
 	pdesc = pindesc;
 	for (bank = 0, k = 0; bank < info->ctrl->nr_banks; bank++) {
 		pin_bank = &info->ctrl->pin_banks[bank];
+
+		pin_names = devm_kasprintf_strarray(dev, pin_bank->name, pin_bank->nr_pins);
+		if (IS_ERR(pin_names))
+			return PTR_ERR(pin_names);
+
 		for (pin = 0; pin < pin_bank->nr_pins; pin++, k++) {
 			pdesc->number = k;
-			pdesc->name = kasprintf(GFP_KERNEL, "%s-%d",
-						pin_bank->name, pin);
+			pdesc->name = pin_names[pin];
 			pdesc++;
 		}
 
@@ -4054,7 +4064,8 @@ static struct rockchip_pin_ctrl *rockchip_pinctrl_get_soc_data(
 
 			/* preset iomux offset value, set new start value */
 			if (iom->offset >= 0) {
-				if ((iom->type & IOMUX_SOURCE_PMU) || (iom->type & IOMUX_L_SOURCE_PMU))
+				if ((iom->type & IOMUX_SOURCE_PMU) ||
+				    (iom->type & IOMUX_L_SOURCE_PMU))
 					pmu_offs = iom->offset;
 				else
 					grf_offs = iom->offset;
@@ -4451,11 +4462,11 @@ static struct rockchip_pin_bank rv1126_pin_banks[] = {
 			     IOMUX_WIDTH_4BIT | IOMUX_L_SOURCE_PMU,
 			     IOMUX_WIDTH_4BIT),
 	PIN_BANK_IOMUX_FLAGS_OFFSET(1, 32, "gpio1",
-			     IOMUX_WIDTH_4BIT,
-			     IOMUX_WIDTH_4BIT,
-			     IOMUX_WIDTH_4BIT,
-			     IOMUX_WIDTH_4BIT,
-			     0x10010, 0x10018, 0x10020, 0x10028),
+				    IOMUX_WIDTH_4BIT,
+				    IOMUX_WIDTH_4BIT,
+				    IOMUX_WIDTH_4BIT,
+				    IOMUX_WIDTH_4BIT,
+				    0x10010, 0x10018, 0x10020, 0x10028),
 	PIN_BANK_IOMUX_FLAGS(2, 32, "gpio2",
 			     IOMUX_WIDTH_4BIT,
 			     IOMUX_WIDTH_4BIT,

@@ -12,8 +12,9 @@
 
 #include <drm/drm_atomic_helper.h>
 #include <drm/drm_bridge.h>
-#include <drm/drm_dp_helper.h>
-#include <drm/drm_hdcp.h>
+#include <drm/display/drm_dp_helper.h>
+#include <drm/display/drm_hdcp_helper.h>
+#include <drm/display/drm_hdmi_helper.h>
 #include <drm/drm_of.h>
 #include <drm/drm_panel.h>
 #include <drm/drm_print.h>
@@ -476,17 +477,17 @@ static const struct dw_dp_output_format possible_output_fmts[] = {
 	  DPTX_VM_RGB_10BIT, 10, 30 },
 	{ MEDIA_BUS_FMT_RGB888_1X24, DRM_COLOR_FORMAT_RGB444,
 	  DPTX_VM_RGB_8BIT, 8, 24 },
-	{ MEDIA_BUS_FMT_YUV10_1X30, DRM_COLOR_FORMAT_YCRCB444,
+	{ MEDIA_BUS_FMT_YUV10_1X30, DRM_COLOR_FORMAT_YCBCR444,
 	  DPTX_VM_YCBCR444_10BIT, 10, 30 },
-	{ MEDIA_BUS_FMT_YUV8_1X24, DRM_COLOR_FORMAT_YCRCB444,
+	{ MEDIA_BUS_FMT_YUV8_1X24, DRM_COLOR_FORMAT_YCBCR444,
 	  DPTX_VM_YCBCR444_8BIT, 8, 24},
-	{ MEDIA_BUS_FMT_YUYV10_1X20, DRM_COLOR_FORMAT_YCRCB422,
+	{ MEDIA_BUS_FMT_YUYV10_1X20, DRM_COLOR_FORMAT_YCBCR422,
 	  DPTX_VM_YCBCR422_10BIT, 10, 20 },
-	{ MEDIA_BUS_FMT_YUYV8_1X16, DRM_COLOR_FORMAT_YCRCB422,
+	{ MEDIA_BUS_FMT_YUYV8_1X16, DRM_COLOR_FORMAT_YCBCR422,
 	  DPTX_VM_YCBCR422_8BIT, 8, 16 },
-	{ MEDIA_BUS_FMT_UYYVYY10_0_5X30, DRM_COLOR_FORMAT_YCRCB420,
+	{ MEDIA_BUS_FMT_UYYVYY10_0_5X30, DRM_COLOR_FORMAT_YCBCR420,
 	  DPTX_VM_YCBCR420_10BIT, 10, 15 },
-	{ MEDIA_BUS_FMT_UYYVYY8_0_5X24, DRM_COLOR_FORMAT_YCRCB420,
+	{ MEDIA_BUS_FMT_UYYVYY8_0_5X24, DRM_COLOR_FORMAT_YCBCR420,
 	  DPTX_VM_YCBCR420_8BIT, 8, 12 },
 	{ MEDIA_BUS_FMT_RGB666_1X24_CPADHI, DRM_COLOR_FORMAT_RGB444,
 	  DPTX_VM_RGB_6BIT, 6, 18 },
@@ -1433,7 +1434,7 @@ static bool dw_dp_has_sink_count(const u8 dpcd[DP_RECEIVER_CAP_SIZE],
 {
 	return dpcd[DP_DPCD_REV] >= DP_DPCD_REV_11 &&
 	       dpcd[DP_DOWNSTREAMPORT_PRESENT] & DP_DWN_STRM_PORT_PRESENT &&
-	       !drm_dp_has_quirk(desc, 0, DP_DPCD_QUIRK_NO_SINK_COUNT);
+	       !drm_dp_has_quirk(desc, DP_DPCD_QUIRK_NO_SINK_COUNT);
 }
 
 static int dw_dp_link_probe(struct dw_dp *dp)
@@ -1759,7 +1760,7 @@ static int dw_dp_link_clock_recovery(struct dw_dp *dp)
 		if (ret)
 			return ret;
 
-		drm_dp_link_train_clock_recovery_delay(link->dpcd);
+		drm_dp_link_train_clock_recovery_delay(&dp->aux, link->dpcd);
 
 		ret = drm_dp_dpcd_read_link_status(&dp->aux, status);
 		if (ret < 0) {
@@ -1811,7 +1812,7 @@ static int dw_dp_link_channel_equalization(struct dw_dp *dp)
 		if (ret)
 			return ret;
 
-		drm_dp_link_train_channel_eq_delay(link->dpcd);
+		drm_dp_link_train_channel_eq_delay(&dp->aux, link->dpcd);
 
 		ret = drm_dp_dpcd_read_link_status(&dp->aux, status);
 		if (ret < 0)
@@ -2084,13 +2085,13 @@ static int dw_dp_send_vsc_sdp(struct dw_dp *dp)
 	vsc.length = 0x13;
 
 	switch (video->color_format) {
-	case DRM_COLOR_FORMAT_YCRCB444:
+	case DRM_COLOR_FORMAT_YCBCR444:
 		vsc.pixelformat = DP_PIXELFORMAT_YUV444;
 		break;
-	case DRM_COLOR_FORMAT_YCRCB420:
+	case DRM_COLOR_FORMAT_YCBCR420:
 		vsc.pixelformat = DP_PIXELFORMAT_YUV420;
 		break;
-	case DRM_COLOR_FORMAT_YCRCB422:
+	case DRM_COLOR_FORMAT_YCBCR422:
 		vsc.pixelformat = DP_PIXELFORMAT_YUV422;
 		break;
 	case DRM_COLOR_FORMAT_RGB444:
@@ -2202,7 +2203,7 @@ static bool dw_dp_video_need_vsc_sdp(struct dw_dp *dp)
 	if (!link->vsc_sdp_extension_for_colorimetry_supported)
 		return false;
 
-	if (video->color_format == DRM_COLOR_FORMAT_YCRCB420)
+	if (video->color_format == DRM_COLOR_FORMAT_YCBCR420)
 		return true;
 
 	if (dw_dp_is_hdr_eotf(dp->eotf_type))
@@ -2223,13 +2224,13 @@ static int dw_dp_video_set_msa(struct dw_dp *dp, u8 color_format, u8 bpc,
 	case DRM_COLOR_FORMAT_RGB444:
 		misc |= DP_MSA_MISC_COLOR_RGB;
 		break;
-	case DRM_COLOR_FORMAT_YCRCB444:
+	case DRM_COLOR_FORMAT_YCBCR444:
 		misc |= DP_MSA_MISC_COLOR_YCBCR_444_BT709;
 		break;
-	case DRM_COLOR_FORMAT_YCRCB422:
+	case DRM_COLOR_FORMAT_YCBCR422:
 		misc |= DP_MSA_MISC_COLOR_YCBCR_422_BT709;
 		break;
-	case DRM_COLOR_FORMAT_YCRCB420:
+	case DRM_COLOR_FORMAT_YCBCR420:
 		break;
 	default:
 		return -EINVAL;
@@ -2353,9 +2354,9 @@ static int dw_dp_video_enable(struct dw_dp *dp)
 	if (pixel_mode == DPTX_MP_SINGLE_PIXEL) {
 		if (average_bytes_per_tu < 6)
 			init_threshold = 32;
-		else if (hblank <= 80 && color_format != DRM_COLOR_FORMAT_YCRCB420)
+		else if (hblank <= 80 && color_format != DRM_COLOR_FORMAT_YCBCR420)
 			init_threshold = 12;
-		else if (hblank <= 40 && color_format == DRM_COLOR_FORMAT_YCRCB420)
+		else if (hblank <= 40 && color_format == DRM_COLOR_FORMAT_YCBCR420)
 			init_threshold = 3;
 		else
 			init_threshold = 16;
@@ -2367,7 +2368,7 @@ static int dw_dp_video_enable(struct dw_dp *dp)
 			t1 = (4 * 1000 / 9) * link->lanes;
 			break;
 		case 8:
-			if (color_format == DRM_COLOR_FORMAT_YCRCB422) {
+			if (color_format == DRM_COLOR_FORMAT_YCBCR422) {
 				t1 = (1000 / 2) * link->lanes;
 			} else {
 				if (pixel_mode == DPTX_MP_DUAL_PIXEL)
@@ -2377,13 +2378,13 @@ static int dw_dp_video_enable(struct dw_dp *dp)
 			}
 			break;
 		case 10:
-			if (color_format == DRM_COLOR_FORMAT_YCRCB422)
+			if (color_format == DRM_COLOR_FORMAT_YCBCR422)
 				t1 = (2000 / 5) * link->lanes;
 			else
 				t1 = (4000 / 15) * link->lanes;
 			break;
 		case 12:
-			if (color_format == DRM_COLOR_FORMAT_YCRCB422) {
+			if (color_format == DRM_COLOR_FORMAT_YCBCR422) {
 				if (pixel_mode == DPTX_MP_DUAL_PIXEL)
 					t1 = (1000 / 6) * link->lanes;
 				else
@@ -2393,7 +2394,7 @@ static int dw_dp_video_enable(struct dw_dp *dp)
 			}
 			break;
 		case 16:
-			if (color_format != DRM_COLOR_FORMAT_YCRCB422 &&
+			if (color_format != DRM_COLOR_FORMAT_YCBCR422 &&
 			    pixel_mode == DPTX_MP_DUAL_PIXEL)
 				t1 = (1000 / 6) * link->lanes;
 			else
@@ -2403,7 +2404,7 @@ static int dw_dp_video_enable(struct dw_dp *dp)
 			return -EINVAL;
 		}
 
-		if (color_format == DRM_COLOR_FORMAT_YCRCB420)
+		if (color_format == DRM_COLOR_FORMAT_YCBCR420)
 			t2 = (link->rate / 4) * 1000 / (mode->clock / 2);
 		else
 			t2 = (link->rate / 4) * 1000 / mode->clock;
@@ -2569,14 +2570,14 @@ static int dw_dp_encoder_atomic_check(struct drm_encoder *encoder,
 
 	dp->eotf_type = dw_dp_get_eotf(conn_state);
 	switch (video->color_format) {
-	case DRM_COLOR_FORMAT_YCRCB420:
+	case DRM_COLOR_FORMAT_YCBCR420:
 		s->output_mode = ROCKCHIP_OUT_MODE_YUV420;
 		break;
-	case DRM_COLOR_FORMAT_YCRCB422:
+	case DRM_COLOR_FORMAT_YCBCR422:
 		s->output_mode = ROCKCHIP_OUT_MODE_S888_DUMMY;
 		break;
 	case DRM_COLOR_FORMAT_RGB444:
-	case DRM_COLOR_FORMAT_YCRCB444:
+	case DRM_COLOR_FORMAT_YCBCR444:
 	default:
 		s->output_mode = ROCKCHIP_OUT_MODE_AAAA;
 		break;
@@ -2743,11 +2744,11 @@ dw_dp_bridge_mode_valid(struct drm_bridge *bridge,
 	if (dp->split_mode)
 		drm_mode_convert_to_origin_mode(&m);
 
-	if (info->color_formats & DRM_COLOR_FORMAT_YCRCB420 &&
+	if (info->color_formats & DRM_COLOR_FORMAT_YCBCR420 &&
 	    link->vsc_sdp_extension_for_colorimetry_supported &&
 	    (drm_mode_is_420_only(info, &m) || drm_mode_is_420_also(info, &m)))
 		min_bpp = 12;
-	else if (info->color_formats & DRM_COLOR_FORMAT_YCRCB422)
+	else if (info->color_formats & DRM_COLOR_FORMAT_YCBCR422)
 		min_bpp = 16;
 	else if (info->color_formats & DRM_COLOR_FORMAT_RGB444)
 		min_bpp = 18;
@@ -3275,12 +3276,12 @@ static u32 *dw_dp_bridge_atomic_get_output_bus_fmts(struct drm_bridge *bridge,
 		if (!(di->color_formats & fmt->color_format))
 			continue;
 
-		if (fmt->color_format == DRM_COLOR_FORMAT_YCRCB420 &&
+		if (fmt->color_format == DRM_COLOR_FORMAT_YCBCR420 &&
 		    !link->vsc_sdp_extension_for_colorimetry_supported)
 			continue;
 
 		if (drm_mode_is_420_only(di, &mode) &&
-		    fmt->color_format != DRM_COLOR_FORMAT_YCRCB420)
+		    fmt->color_format != DRM_COLOR_FORMAT_YCBCR420)
 			continue;
 
 		if (!dw_dp_bandwidth_ok(dp, &mode, fmt->bpp, link->lanes, link->rate))
@@ -3862,13 +3863,6 @@ static void dw_dp_unregister_audio_driver(void *data)
 	}
 }
 
-static void dw_dp_aux_unregister(void *data)
-{
-	struct dw_dp *dp = data;
-
-	drm_dp_aux_unregister(&dp->aux);
-}
-
 static int dw_dp_bind(struct device *dev, struct device *master, void *data)
 {
 	struct dw_dp *dp = dev_get_drvdata(dev);
@@ -3876,6 +3870,14 @@ static int dw_dp_bind(struct device *dev, struct device *master, void *data)
 	struct drm_encoder *encoder = &dp->encoder;
 	struct drm_bridge *bridge = &dp->bridge;
 	int ret;
+
+	dp->aux.dev = dev;
+	dp->aux.drm_dev = drm_dev;
+	dp->aux.name = dev_name(dev);
+	dp->aux.transfer = dw_dp_aux_transfer;
+	ret = drm_dp_aux_register(&dp->aux);
+	if (ret)
+		return ret;
 
 	if (!dp->left) {
 		drm_simple_encoder_init(drm_dev, encoder, DRM_MODE_ENCODER_TMDS);
@@ -3887,7 +3889,7 @@ static int dw_dp_bind(struct device *dev, struct device *master, void *data)
 		ret = drm_bridge_attach(encoder, bridge, NULL, 0);
 		if (ret) {
 			dev_err(dev, "failed to attach bridge: %d\n", ret);
-			return ret;
+			goto error_unregister_aux;
 		}
 	}
 
@@ -3900,7 +3902,7 @@ static int dw_dp_bind(struct device *dev, struct device *master, void *data)
 		ret = drm_bridge_attach(encoder, &secondary->bridge, last_bridge,
 					DRM_BRIDGE_ATTACH_NO_CONNECTOR);
 		if (ret)
-			return ret;
+			goto error_unregister_aux;
 	}
 
 	pm_runtime_enable(dp->dev);
@@ -3911,11 +3913,17 @@ static int dw_dp_bind(struct device *dev, struct device *master, void *data)
 		enable_irq(dp->hpd_irq);
 
 	return 0;
+
+error_unregister_aux:
+	drm_dp_aux_unregister(&dp->aux);
+	return ret;
 }
 
 static void dw_dp_unbind(struct device *dev, struct device *master, void *data)
 {
 	struct dw_dp *dp = dev_get_drvdata(dev);
+
+	drm_dp_aux_unregister(&dp->aux);
 
 	if (dp->hpd_gpio)
 		disable_irq(dp->hpd_irq);
@@ -4132,17 +4140,6 @@ static int dw_dp_probe(struct platform_device *pdev)
 		return ret;
 
 	ret = devm_add_action_or_reset(dev, dw_dp_unregister_audio_driver, dp);
-	if (ret)
-		return ret;
-
-	dp->aux.dev = dev;
-	dp->aux.name = dev_name(dev);
-	dp->aux.transfer = dw_dp_aux_transfer;
-	ret = drm_dp_aux_register(&dp->aux);
-	if (ret)
-		return ret;
-
-	ret = devm_add_action_or_reset(dev, dw_dp_aux_unregister, dp);
 	if (ret)
 		return ret;
 

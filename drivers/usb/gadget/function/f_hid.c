@@ -1292,6 +1292,7 @@ static struct usb_function *hidg_alloc(struct usb_function_instance *fi)
 						 GFP_KERNEL);
 		if (!hidg->report_desc) {
 			put_device(&hidg->dev);
+			--opts->refcnt;
 			mutex_unlock(&opts->lock);
 			return ERR_PTR(-ENOMEM);
 		}
@@ -1308,7 +1309,7 @@ static struct usb_function *hidg_alloc(struct usb_function_instance *fi)
 	hidg->func.setup   = hidg_setup;
 	hidg->func.free_func = hidg_free;
 
-	/* this could me made configurable at some point */
+	/* this could be made configurable at some point */
 	hidg->qlen	   = 4;
 
 	return &hidg->func;

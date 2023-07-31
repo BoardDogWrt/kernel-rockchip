@@ -926,9 +926,9 @@ static int gsensor_stk8baxx_probe(struct i2c_client *client,
 	return sensor_register_device(client, NULL, devid, &gsensor_stk8baxx_ops);
 }
 
-static int gsensor_stk8baxx_remove(struct i2c_client *client)
+static void gsensor_stk8baxx_remove(struct i2c_client *client)
 {
-	return sensor_unregister_device(client, NULL, &gsensor_stk8baxx_ops);
+	sensor_unregister_device(client, NULL, &gsensor_stk8baxx_ops);
 }
 
 static const struct i2c_device_id gsensor_stk8baxx_id[] = {

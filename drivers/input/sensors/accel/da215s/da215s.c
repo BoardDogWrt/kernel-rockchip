@@ -313,9 +313,9 @@ static int gsensor_da215s_probe(struct i2c_client *client,
 	return sensor_register_device(client, NULL, devid, &gsensor_da215s_ops);
 }
 
-static int gsensor_da215s_remove(struct i2c_client *client)
+static void gsensor_da215s_remove(struct i2c_client *client)
 {
-	return sensor_unregister_device(client, NULL, &gsensor_da215s_ops);
+	sensor_unregister_device(client, NULL, &gsensor_da215s_ops);
 }
 
 static const struct i2c_device_id gsensor_da215s_id[] = {

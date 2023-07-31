@@ -107,7 +107,7 @@ static int ntfs_read_ea(struct ntfs_inode *ni, struct EA_FULL **ea,
 		return -EFBIG;
 
 	/* Allocate memory for packed Ea. */
-	ea_p = kmalloc(size + add_bytes, GFP_NOFS);
+	ea_p = kmalloc(size_add(size, add_bytes), GFP_NOFS);
 	if (!ea_p)
 		return -ENOMEM;
 
@@ -259,7 +259,7 @@ out:
 
 static noinline int ntfs_set_ea(struct inode *inode, const char *name,
 				size_t name_len, const void *value,
-				size_t val_size, int flags)
+				size_t val_size, int flags, bool locked)
 {
 	struct ntfs_inode *ni = ntfs_i(inode);
 	struct ntfs_sb_info *sbi = ni->mi.sbi;
@@ -278,7 +278,8 @@ static noinline int ntfs_set_ea(struct inode *inode, const char *name,
 	u64 new_sz;
 	void *p;
 
-	ni_lock(ni);
+	if (!locked)
+		ni_lock(ni);
 
 	run_init(&ea_run);
 
@@ -472,7 +473,8 @@ update_ea:
 	mark_inode_dirty(&ni->vfs_inode);
 
 out:
-	ni_unlock(ni);
+	if (!locked)
+		ni_unlock(ni);
 
 	run_close(&ea_run);
 	kfree(ea_all);
@@ -534,12 +536,15 @@ static struct posix_acl *ntfs_get_acl_ex(struct inode *inode, int type,
 /*
  * ntfs_get_acl - inode_operations::get_acl
  */
-struct posix_acl *ntfs_get_acl(struct inode *inode, int type)
+struct posix_acl *ntfs_get_acl(struct inode *inode, int type, bool rcu)
 {
+	if (rcu)
+		return ERR_PTR(-ECHILD);
+
 	return ntfs_get_acl_ex(inode, type, 0);
 }
 
-static noinline int ntfs_set_acl_ex(
+static noinline int ntfs_set_acl_ex(struct user_namespace *mnt_userns,
 				    struct inode *inode, struct posix_acl *acl,
 				    int type, bool init_acl)
 {
@@ -558,7 +563,7 @@ static noinline int ntfs_set_acl_ex(
 	case ACL_TYPE_ACCESS:
 		/* Do not change i_mode if we are in init_acl */
 		if (acl && !init_acl) {
-			err = posix_acl_update_mode(inode, &mode,
+			err = posix_acl_update_mode(mnt_userns, inode, &mode,
 						    &acl);
 			if (err)
 				return err;
@@ -594,7 +599,7 @@ static noinline int ntfs_set_acl_ex(
 		flags = 0;
 	}
 
-	err = ntfs_set_ea(inode, name, name_len, value, size, flags);
+	err = ntfs_set_ea(inode, name, name_len, value, size, flags, 0);
 	if (err == -ENODATA && !size)
 		err = 0; /* Removing non existed xattr. */
 	if (!err) {
@@ -614,10 +619,10 @@ out:
 /*
  * ntfs_set_acl - inode_operations::set_acl
  */
-int ntfs_set_acl(struct inode *inode,
+int ntfs_set_acl(struct user_namespace *mnt_userns, struct inode *inode,
 		 struct posix_acl *acl, int type)
 {
-	return ntfs_set_acl_ex(inode, acl, type, false);
+	return ntfs_set_acl_ex(mnt_userns, inode, acl, type, false);
 }
 
 /*
@@ -625,7 +630,7 @@ int ntfs_set_acl(struct inode *inode,
  *
  * Called from ntfs_create_inode().
  */
-int ntfs_init_acl(struct inode *inode,
+int ntfs_init_acl(struct user_namespace *mnt_userns, struct inode *inode,
 		  struct inode *dir)
 {
 	struct posix_acl *default_acl, *acl;
@@ -636,20 +641,20 @@ int ntfs_init_acl(struct inode *inode,
 		return err;
 
 	if (default_acl) {
-		err = ntfs_set_acl_ex(inode, default_acl,
+		err = ntfs_set_acl_ex(mnt_userns, inode, default_acl,
 				      ACL_TYPE_DEFAULT, true);
 		posix_acl_release(default_acl);
 	} else {
 		inode->i_default_acl = NULL;
 	}
 
-	if (!acl)
-		inode->i_acl = NULL;
-	else {
+	if (acl) {
 		if (!err)
-			err = ntfs_set_acl_ex(inode, acl,
+			err = ntfs_set_acl_ex(mnt_userns, inode, acl,
 					      ACL_TYPE_ACCESS, true);
 		posix_acl_release(acl);
+	} else {
+		inode->i_acl = NULL;
 	}
 
 	return err;
@@ -659,7 +664,7 @@ int ntfs_init_acl(struct inode *inode,
 /*
  * ntfs_acl_chmod - Helper for ntfs3_setattr().
  */
-int ntfs_acl_chmod(struct inode *inode)
+int ntfs_acl_chmod(struct user_namespace *mnt_userns, struct inode *inode)
 {
 	struct super_block *sb = inode->i_sb;
 
@@ -669,13 +674,13 @@ int ntfs_acl_chmod(struct inode *inode)
 	if (S_ISLNK(inode->i_mode))
 		return -EOPNOTSUPP;
 
-	return posix_acl_chmod(inode, inode->i_mode);
+	return posix_acl_chmod(mnt_userns, inode, inode->i_mode);
 }
 
 /*
  * ntfs_permission - inode_operations::permission
  */
-int ntfs_permission(struct inode *inode,
+int ntfs_permission(struct user_namespace *mnt_userns, struct inode *inode,
 		    int mask)
 {
 	if (ntfs_sb(inode->i_sb)->options->noacsrules) {
@@ -683,7 +688,7 @@ int ntfs_permission(struct inode *inode,
 		return 0;
 	}
 
-	return generic_permission(inode, mask);
+	return generic_permission(mnt_userns, inode, mask);
 }
 
 /*
@@ -711,7 +716,7 @@ ssize_t ntfs_listxattr(struct dentry *dentry, char *buffer, size_t size)
 
 static int ntfs_getxattr(const struct xattr_handler *handler, struct dentry *de,
 			 struct inode *inode, const char *name, void *buffer,
-			 size_t size, int flags)
+			 size_t size)
 {
 	int err;
 	struct ntfs_inode *ni = ntfs_i(inode);
@@ -797,6 +802,7 @@ out:
  * ntfs_setxattr - inode_operations::setxattr
  */
 static noinline int ntfs_setxattr(const struct xattr_handler *handler,
+				  struct user_namespace *mnt_userns,
 				  struct dentry *de, struct inode *inode,
 				  const char *name, const void *value,
 				  size_t size, int flags)
@@ -898,7 +904,7 @@ set_new_fa:
 	}
 
 	/* Deal with NTFS extended attribute. */
-	err = ntfs_set_ea(inode, name, name_len, value, size, flags);
+	err = ntfs_set_ea(inode, name, name_len, value, size, flags, 0);
 
 out:
 	inode->i_ctime = current_time(inode);
@@ -916,35 +922,37 @@ int ntfs_save_wsl_perm(struct inode *inode)
 {
 	int err;
 	__le32 value;
+	struct ntfs_inode *ni = ntfs_i(inode);
 
-	/* TODO: refactor this, so we don't lock 4 times in ntfs_set_ea */
+	ni_lock(ni);
 	value = cpu_to_le32(i_uid_read(inode));
 	err = ntfs_set_ea(inode, "$LXUID", sizeof("$LXUID") - 1, &value,
-			  sizeof(value), 0);
+			  sizeof(value), 0, true); /* true == already locked. */
 	if (err)
 		goto out;
 
 	value = cpu_to_le32(i_gid_read(inode));
 	err = ntfs_set_ea(inode, "$LXGID", sizeof("$LXGID") - 1, &value,
-			  sizeof(value), 0);
+			  sizeof(value), 0, true);
 	if (err)
 		goto out;
 
 	value = cpu_to_le32(inode->i_mode);
 	err = ntfs_set_ea(inode, "$LXMOD", sizeof("$LXMOD") - 1, &value,
-			  sizeof(value), 0);
+			  sizeof(value), 0, true);
 	if (err)
 		goto out;
 
 	if (S_ISCHR(inode->i_mode) || S_ISBLK(inode->i_mode)) {
 		value = cpu_to_le32(inode->i_rdev);
 		err = ntfs_set_ea(inode, "$LXDEV", sizeof("$LXDEV") - 1, &value,
-				  sizeof(value), 0);
+				  sizeof(value), 0, true);
 		if (err)
 			goto out;
 	}
 
 out:
+	ni_unlock(ni);
 	/* In case of error should we delete all WSL xattr? */
 	return err;
 }

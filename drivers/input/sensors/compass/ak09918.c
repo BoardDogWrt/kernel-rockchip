@@ -662,9 +662,9 @@ static int compass_akm09918_probe(struct i2c_client *client,
 	return sensor_register_device(client, NULL, devid, &compass_akm09918_ops);
 }
 
-static int compass_akm09918_remove(struct i2c_client *client)
+static void compass_akm09918_remove(struct i2c_client *client)
 {
-	return sensor_unregister_device(client, NULL, &compass_akm09918_ops);
+	sensor_unregister_device(client, NULL, &compass_akm09918_ops);
 }
 
 static const struct i2c_device_id compass_akm09918_id[] = {

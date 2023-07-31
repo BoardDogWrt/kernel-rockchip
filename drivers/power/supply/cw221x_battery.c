@@ -889,13 +889,12 @@ static int cw221X_probe(struct i2c_client *client, const struct i2c_device_id *i
 	return 0;
 }
 
-static int cw221X_remove(struct i2c_client *client)
+static void cw221X_remove(struct i2c_client *client)
 {
 	struct cw_battery *cw_bat = i2c_get_clientdata(client);
 
 	cancel_delayed_work_sync(&cw_bat->battery_delay_work);
 	destroy_workqueue(cw_bat->cwfg_workqueue);
-	return 0;
 }
 
 #ifdef CONFIG_PM

@@ -133,7 +133,7 @@ struct rkisp_sensor_info {
 	struct v4l2_mbus_config mbus;
 	struct v4l2_subdev_frame_interval fi;
 	struct v4l2_subdev_format fmt[CSI_PAD_MAX - 1];
-	struct v4l2_subdev_pad_config cfg;
+	struct v4l2_subdev_state state;
 };
 
 /* struct rkisp_hdr - hdr configured

@@ -831,7 +831,7 @@ err_cleanup:
 	return ret;
 }
 
-static int dw9763_remove(struct i2c_client *client)
+static void dw9763_remove(struct i2c_client *client)
 {
 	struct dw9763_device *dw9763_dev = i2c_get_clientdata(client);
 
@@ -839,8 +839,6 @@ static int dw9763_remove(struct i2c_client *client)
 	mutex_destroy(&dw9763_dev->lock);
 	pm_runtime_disable(&client->dev);
 	dw9763_subdev_cleanup(dw9763_dev);
-
-	return 0;
 }
 
 static int dw9763_init(struct i2c_client *client)

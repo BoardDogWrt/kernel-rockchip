@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * Rockchip PIPE USB3.0 PCIE SATA combphy driver
+ * Rockchip PIPE USB3.0 PCIE SATA Combo Phy driver
  *
- * Copyright (C) 2020 Rockchip Electronics Co., Ltd.
+ * Copyright (C) 2021 Rockchip Electronics Co., Ltd.
  */
 
 #include <linux/clk.h>
@@ -89,24 +89,18 @@ struct rockchip_combphy_priv {
 	const struct rockchip_combphy_cfg *cfg;
 };
 
-static inline bool param_read(struct regmap *base,
-			      const struct combphy_reg *reg, u32 val)
+static void rockchip_combphy_updatel(struct rockchip_combphy_priv *priv,
+				     int mask, int val, int reg)
 {
-	int ret;
-	u32 mask, orig, tmp;
+	unsigned int temp;
 
-	ret = regmap_read(base, reg->offset, &orig);
-	if (ret)
-		return false;
-
-	mask = GENMASK(reg->bitend, reg->bitstart);
-	tmp = (orig & mask) >> reg->bitstart;
-
-	return tmp == val;
+	temp = readl(priv->mmio + reg);
+	temp = (temp & ~(mask)) | val;
+	writel(temp, priv->mmio + reg);
 }
 
-static int param_write(struct regmap *base,
-		       const struct combphy_reg *reg, bool en)
+static int rockchip_combphy_param_write(struct regmap *base,
+					const struct combphy_reg *reg, bool en)
 {
 	u32 val, mask, tmp;
 
@@ -134,7 +128,6 @@ static u32 rockchip_combphy_is_ready(struct rockchip_combphy_priv *priv)
 static int rockchip_combphy_pcie_init(struct rockchip_combphy_priv *priv)
 {
 	int ret = 0;
-	u32 val;
 
 	if (priv->cfg->combphy_cfg) {
 		ret = priv->cfg->combphy_cfg(priv);
@@ -144,11 +137,8 @@ static int rockchip_combphy_pcie_init(struct rockchip_combphy_priv *priv)
 		}
 	}
 
-	if (priv->cfg->force_det_out) {
-		val = readl(priv->mmio + (0x19 << 2));
-		val |= BIT(5);
-		writel(val, priv->mmio + (0x19 << 2));
-	}
+	if (priv->cfg->force_det_out)
+		rockchip_combphy_updatel(priv, GENMASK(5, 5), BIT(5), 0x19 << 2);
 
 	return ret;
 }
@@ -159,12 +149,10 @@ static int rockchip_combphy_usb3_init(struct rockchip_combphy_priv *priv)
 	int ret = 0;
 
 	if (device_property_present(priv->dev, "rockchip,dis-u3otg0-port")) {
-		ret = param_write(priv->pipe_grf, &phy_cfg->grfcfg->u3otg0_port_en,
-				  false);
+		ret = rockchip_combphy_param_write(priv->pipe_grf, &phy_cfg->grfcfg->u3otg0_port_en, false);
 		return ret;
 	} else if (device_property_present(priv->dev, "rockchip,dis-u3otg1-port")) {
-		ret = param_write(priv->pipe_grf, &phy_cfg->grfcfg->u3otg1_port_en,
-				  false);
+		ret = rockchip_combphy_param_write(priv->pipe_grf, &phy_cfg->grfcfg->u3otg1_port_en, false);
 		return ret;
 	}
 
@@ -254,7 +242,7 @@ static int rockchip_combphy_init(struct phy *phy)
 		goto err_clk;
 
 	if (cfg->pipe_phy_grf_reset.enable)
-		param_write(priv->phy_grf, &cfg->pipe_phy_grf_reset, false);
+		rockchip_combphy_param_write(priv->phy_grf, &cfg->pipe_phy_grf_reset, false);
 
 	if (priv->mode == PHY_TYPE_USB3) {
 		ret = readx_poll_timeout_atomic(rockchip_combphy_is_ready,
@@ -279,7 +267,7 @@ static int rockchip_combphy_exit(struct phy *phy)
 	const struct rockchip_combphy_grfcfg *cfg = priv->cfg->grfcfg;
 
 	if (cfg->pipe_phy_grf_reset.enable)
-		param_write(priv->phy_grf, &cfg->pipe_phy_grf_reset, true);
+		rockchip_combphy_param_write(priv->phy_grf, &cfg->pipe_phy_grf_reset, true);
 
 	clk_bulk_disable_unprepare(priv->num_clks, priv->clks);
 	reset_control_assert(priv->phy_rst);
@@ -340,16 +328,13 @@ static int rockchip_combphy_parse_dt(struct device *dev,
 	}
 
 	if (device_property_present(dev, "rockchip,dis-u3otg0-port"))
-		param_write(priv->pipe_grf, &phy_cfg->grfcfg->u3otg0_port_en,
-			    false);
+		rockchip_combphy_param_write(priv->pipe_grf, &phy_cfg->grfcfg->u3otg0_port_en, false);
 	else if (device_property_present(dev, "rockchip,dis-u3otg1-port"))
-		param_write(priv->pipe_grf, &phy_cfg->grfcfg->u3otg1_port_en,
-			    false);
+		rockchip_combphy_param_write(priv->pipe_grf, &phy_cfg->grfcfg->u3otg1_port_en, false);
 
 	if (!device_property_read_u32(dev, "rockchip,sgmii-mac-sel", &mac_id) &&
 	    (mac_id > 0))
-		param_write(priv->pipe_grf, &phy_cfg->grfcfg->pipe_sgmii_mac_sel,
-			    true);
+		rockchip_combphy_param_write(priv->pipe_grf, &phy_cfg->grfcfg->pipe_sgmii_mac_sel, true);
 
 	if (!device_property_read_u32_array(dev, "rockchip,pcie1ln-sel-bits",
 					    vals, ARRAY_SIZE(vals)))
@@ -442,7 +427,6 @@ static int rk3528_combphy_cfg(struct rockchip_combphy_priv *priv)
 	struct clk *refclk = NULL;
 	unsigned long rate;
 	int i;
-	u32 val;
 
 	/* Configure PHY reference clock frequency */
 	for (i = 0; i < priv->num_clks; i++) {
@@ -460,38 +444,26 @@ static int rk3528_combphy_cfg(struct rockchip_combphy_priv *priv)
 	switch (priv->mode) {
 	case PHY_TYPE_PCIE:
 		/* Set SSC downward spread spectrum */
-		val = readl(priv->mmio + 0x18);
-		val &= ~GENMASK(5, 4);
-		val |= 0x01 << 4;
-		writel(val, priv->mmio + 0x18);
+		rockchip_combphy_updatel(priv, GENMASK(5, 4), BIT(4), 0x18);
 
-		param_write(priv->phy_grf, &cfg->con0_for_pcie, true);
-		param_write(priv->phy_grf, &cfg->con1_for_pcie, true);
-		param_write(priv->phy_grf, &cfg->con2_for_pcie, true);
-		param_write(priv->phy_grf, &cfg->con3_for_pcie, true);
+		rockchip_combphy_param_write(priv->phy_grf, &cfg->con0_for_pcie, true);
+		rockchip_combphy_param_write(priv->phy_grf, &cfg->con1_for_pcie, true);
+		rockchip_combphy_param_write(priv->phy_grf, &cfg->con2_for_pcie, true);
+		rockchip_combphy_param_write(priv->phy_grf, &cfg->con3_for_pcie, true);
 		break;
 	case PHY_TYPE_USB3:
 		/* Set SSC downward spread spectrum */
-		val = readl(priv->mmio + 0x18);
-		val &= ~GENMASK(5, 4);
-		val |= 0x01 << 4;
-		writel(val, priv->mmio + 0x18);
+		rockchip_combphy_updatel(priv, GENMASK(5, 4), BIT(4), 0x18);
 
 		/* Enable adaptive CTLE for USB3.0 Rx */
-		val = readl(priv->mmio + 0x200);
-		val &= ~GENMASK(17, 17);
-		val |= 0x01 << 17;
-		writel(val, priv->mmio + 0x200);
+		rockchip_combphy_updatel(priv, GENMASK(17, 17), BIT(17), 0x200);
 
 		/* Set Rx squelch input filler bandwidth */
-		val = readl(priv->mmio + 0x20c);
-		val &= ~GENMASK(2, 0);
-		val |= 0x06;
-		writel(val, priv->mmio + 0x20c);
+		rockchip_combphy_updatel(priv, GENMASK(2, 0), 0x06, 0x20c);
 
-		param_write(priv->phy_grf, &cfg->pipe_txcomp_sel, false);
-		param_write(priv->phy_grf, &cfg->pipe_txelec_sel, false);
-		param_write(priv->phy_grf, &cfg->usb_mode_set, true);
+		rockchip_combphy_param_write(priv->phy_grf, &cfg->pipe_txcomp_sel, false);
+		rockchip_combphy_param_write(priv->phy_grf, &cfg->pipe_txelec_sel, false);
+		rockchip_combphy_param_write(priv->phy_grf, &cfg->usb_mode_set, true);
 		break;
 	default:
 		dev_err(priv->dev, "incompatible PHY type\n");
@@ -502,32 +474,22 @@ static int rk3528_combphy_cfg(struct rockchip_combphy_priv *priv)
 
 	switch (rate) {
 	case 24000000:
-		param_write(priv->phy_grf, &cfg->pipe_clk_24m, true);
-		if (priv->mode == PHY_TYPE_USB3) {
+		rockchip_combphy_param_write(priv->phy_grf, &cfg->pipe_clk_24m, true);
+		if (priv->mode == PHY_TYPE_USB3)
 			/* Set ssc_cnt[10:0]=00101111101 & 31.5KHz */
-			val = readl(priv->mmio + 0x100);
-			val &= ~GENMASK(10, 0);
-			val |= 0x17d;
-			writel(val, priv->mmio + 0x100);
-		} else if (priv->mode == PHY_TYPE_PCIE) {
+			rockchip_combphy_updatel(priv, GENMASK(10, 0), 0x17d, 0x100);
+		else if (priv->mode == PHY_TYPE_PCIE)
 			/* tx_trim[14]=1, Enable the counting clock of the rterm detect */
-			val = readl(priv->mmio + 0x218);
-			val |= (1 << 14);
-			writel(val, priv->mmio + 0x218);
-		}
+			rockchip_combphy_updatel(priv, GENMASK(14, 14), BIT(14), 0x218);
 		break;
 	case 100000000:
-		param_write(priv->phy_grf, &cfg->pipe_clk_100m, true);
+		rockchip_combphy_param_write(priv->phy_grf, &cfg->pipe_clk_100m, true);
 		if (priv->mode == PHY_TYPE_PCIE) {
 			/* PLL KVCO tuning fine */
-			val = readl(priv->mmio + 0x18);
-			val &= ~(0x7 << 10);
-			val |= 0x2 << 10;
-			writel(val, priv->mmio + 0x18);
+			rockchip_combphy_updatel(priv, GENMASK(12, 10), 0x2 << 10, 0x18);
 
 			/* su_trim[6:4]=111, [10:7]=1001, [2:0]=000, swing 650mv */
-			val = 0x570804f0;
-			writel(val, priv->mmio + 0x108);
+			writel(0x570804f0, priv->mmio + 0x108);
 		}
 		break;
 	default:
@@ -579,7 +541,6 @@ static int rk3562_combphy_cfg(struct rockchip_combphy_priv *priv)
 	struct clk *refclk = NULL;
 	unsigned long rate;
 	int i;
-	u32 val;
 
 	/* Configure PHY reference clock frequency */
 	for (i = 0; i < priv->num_clks; i++) {
@@ -597,43 +558,28 @@ static int rk3562_combphy_cfg(struct rockchip_combphy_priv *priv)
 	switch (priv->mode) {
 	case PHY_TYPE_PCIE:
 		/* Set SSC downward spread spectrum */
-		val = readl(priv->mmio + (0x1f << 2));
-		val &= ~GENMASK(5, 4);
-		val |= 0x01 << 4;
-		writel(val, priv->mmio + 0x7c);
+		rockchip_combphy_updatel(priv, GENMASK(5, 4), BIT(4), 0x7c);
 
-		param_write(priv->phy_grf, &cfg->con0_for_pcie, true);
-		param_write(priv->phy_grf, &cfg->con1_for_pcie, true);
-		param_write(priv->phy_grf, &cfg->con2_for_pcie, true);
-		param_write(priv->phy_grf, &cfg->con3_for_pcie, true);
+		rockchip_combphy_param_write(priv->phy_grf, &cfg->con0_for_pcie, true);
+		rockchip_combphy_param_write(priv->phy_grf, &cfg->con1_for_pcie, true);
+		rockchip_combphy_param_write(priv->phy_grf, &cfg->con2_for_pcie, true);
+		rockchip_combphy_param_write(priv->phy_grf, &cfg->con3_for_pcie, true);
 		break;
 	case PHY_TYPE_USB3:
 		/* Set SSC downward spread spectrum */
-		val = readl(priv->mmio + (0x1f << 2));
-		val &= ~GENMASK(5, 4);
-		val |= 0x01 << 4;
-		writel(val, priv->mmio + 0x7c);
+		rockchip_combphy_updatel(priv, GENMASK(5, 4), BIT(4), 0x7c);
 
 		/* Enable adaptive CTLE for USB3.0 Rx */
-		val = readl(priv->mmio + (0x0e << 2));
-		val &= ~GENMASK(0, 0);
-		val |= 0x01;
-		writel(val, priv->mmio + (0x0e << 2));
+		rockchip_combphy_updatel(priv, GENMASK(0, 0), BIT(0), 0x0e << 2);
 
 		/* Set PLL KVCO fine tuning signals */
-		val = readl(priv->mmio + (0x20 << 2));
-		val &= ~(0x7 << 2);
-		val |= 0x2 << 2;
-		writel(val, priv->mmio + (0x20 << 2));
+		rockchip_combphy_updatel(priv, GENMASK(4, 2), 0x2 << 2, 0x20 << 2);
 
 		/* Set PLL LPF R1 to su_trim[10:7]=1001 */
 		writel(0x4, priv->mmio + (0xb << 2));
 
 		/* Set PLL input clock divider 1/2 */
-		val = readl(priv->mmio + (0x5 << 2));
-		val &= ~(0x3 << 6);
-		val |= 0x1 << 6;
-		writel(val, priv->mmio + (0x5 << 2));
+		rockchip_combphy_updatel(priv, GENMASK(7, 6), BIT(6), 0x5 << 2);
 
 		/* Set PLL loop divider */
 		writel(0x32, priv->mmio + (0x11 << 2));
@@ -644,10 +590,10 @@ static int rk3562_combphy_cfg(struct rockchip_combphy_priv *priv)
 		/* Set Rx squelch input filler bandwidth */
 		writel(0x0e, priv->mmio + (0x14 << 2));
 
-		param_write(priv->phy_grf, &cfg->pipe_sel_usb, true);
-		param_write(priv->phy_grf, &cfg->pipe_txcomp_sel, false);
-		param_write(priv->phy_grf, &cfg->pipe_txelec_sel, false);
-		param_write(priv->phy_grf, &cfg->usb_mode_set, true);
+		rockchip_combphy_param_write(priv->phy_grf, &cfg->pipe_sel_usb, true);
+		rockchip_combphy_param_write(priv->phy_grf, &cfg->pipe_txcomp_sel, false);
+		rockchip_combphy_param_write(priv->phy_grf, &cfg->pipe_txelec_sel, false);
+		rockchip_combphy_param_write(priv->phy_grf, &cfg->usb_mode_set, true);
 		break;
 	default:
 		dev_err(priv->dev, "incompatible PHY type\n");
@@ -660,45 +606,29 @@ static int rk3562_combphy_cfg(struct rockchip_combphy_priv *priv)
 	case 24000000:
 		if (priv->mode == PHY_TYPE_USB3) {
 			/* Set ssc_cnt[9:0]=0101111101 & 31.5KHz */
-			val = readl(priv->mmio + (0x0e << 2));
-			val &= ~GENMASK(7, 6);
-			val |= 0x01 << 6;
-			writel(val, priv->mmio + (0x0e << 2));
-
-			val = readl(priv->mmio + (0x0f << 2));
-			val &= ~GENMASK(7, 0);
-			val |= 0x5f;
-			writel(val, priv->mmio + (0x0f << 2));
+			rockchip_combphy_updatel(priv, GENMASK(7, 6), BIT(6), 0x0e << 2);
+			rockchip_combphy_updatel(priv, GENMASK(7, 0), 0x5f, 0x0f << 2);
 		}
 		break;
 	case 25000000:
-		param_write(priv->phy_grf, &cfg->pipe_clk_25m, true);
+		rockchip_combphy_param_write(priv->phy_grf, &cfg->pipe_clk_25m, true);
 		break;
 	case 100000000:
-		param_write(priv->phy_grf, &cfg->pipe_clk_100m, true);
+		rockchip_combphy_param_write(priv->phy_grf, &cfg->pipe_clk_100m, true);
 		if (priv->mode == PHY_TYPE_PCIE) {
 			/* PLL KVCO tuning fine */
-			val = readl(priv->mmio + (0x20 << 2));
-			val &= ~(0x7 << 2);
-			val |= 0x2 << 2;
-			writel(val, priv->mmio + (0x20 << 2));
+			rockchip_combphy_updatel(priv, GENMASK(4, 2), 0x2 << 2, 0x20 << 2);
 
 			/* Enable controlling random jitter, aka RMJ */
 			writel(0x4, priv->mmio + (0xb << 2));
 
-			val = readl(priv->mmio + (0x5 << 2));
-			val &= ~(0x3 << 6);
-			val |= 0x1 << 6;
-			writel(val, priv->mmio + (0x5 << 2));
+			rockchip_combphy_updatel(priv, GENMASK(7, 6), BIT(6), 0x5 << 2);
 
 			writel(0x32, priv->mmio + (0x11 << 2));
 			writel(0xf0, priv->mmio + (0xa << 2));
 
 			/* CKDRV output swing adjust to 650mv */
-			val = readl(priv->mmio + (0xd << 2));
-			val &= ~(0xf << 1);
-			val |= 0xb;
-			writel(val, priv->mmio + (0xd << 2));
+			rockchip_combphy_updatel(priv, GENMASK(4, 1), 0xb << 1, 0xd << 2);
 		}
 		break;
 	default:
@@ -707,23 +637,17 @@ static int rk3562_combphy_cfg(struct rockchip_combphy_priv *priv)
 	}
 
 	if (device_property_read_bool(priv->dev, "rockchip,ext-refclk")) {
-		param_write(priv->phy_grf, &cfg->pipe_clk_ext, true);
+		rockchip_combphy_param_write(priv->phy_grf, &cfg->pipe_clk_ext, true);
 		if (priv->mode == PHY_TYPE_PCIE && rate == 100000000) {
-			val = readl(priv->mmio + (0xc << 2));
-			val |= 0x3 << 4 | 0x1 << 7;
-			writel(val, priv->mmio + (0xc << 2));
+			rockchip_combphy_updatel(priv, 0x3 << 4 | 0x1 << 7,
+						 0x3 << 4 | 0x1 << 7, 0xc << 2);
 
-			val = readl(priv->mmio + (0xd << 2));
-			val |= 0x1;
-			writel(val, priv->mmio + (0xd << 2));
+			rockchip_combphy_updatel(priv, GENMASK(0, 0), BIT(0), 0xd << 2);
 		}
 	}
 
-	if (device_property_read_bool(priv->dev, "rockchip,enable-ssc")) {
-		val = readl(priv->mmio + (0x7 << 2));
-		val |= BIT(4);
-		writel(val, priv->mmio + (0x7 << 2));
-	}
+	if (device_property_read_bool(priv->dev, "rockchip,enable-ssc"))
+		rockchip_combphy_updatel(priv, GENMASK(4, 4), BIT(4), 0x7 << 2);
 
 	return 0;
 }
@@ -774,7 +698,6 @@ static int rk3568_combphy_cfg(struct rockchip_combphy_priv *priv)
 	struct clk *refclk = NULL;
 	unsigned long rate;
 	int i;
-	u32 val;
 
 	/* Configure PHY reference clock frequency */
 	for (i = 0; i < priv->num_clks; i++) {
@@ -792,43 +715,28 @@ static int rk3568_combphy_cfg(struct rockchip_combphy_priv *priv)
 	switch (priv->mode) {
 	case PHY_TYPE_PCIE:
 		/* Set SSC downward spread spectrum */
-		val = readl(priv->mmio + (0x1f << 2));
-		val &= ~GENMASK(5, 4);
-		val |= 0x01 << 4;
-		writel(val, priv->mmio + 0x7c);
+		rockchip_combphy_updatel(priv, GENMASK(5, 4), BIT(4), 0x7c);
 
-		param_write(priv->phy_grf, &cfg->con0_for_pcie, true);
-		param_write(priv->phy_grf, &cfg->con1_for_pcie, true);
-		param_write(priv->phy_grf, &cfg->con2_for_pcie, true);
-		param_write(priv->phy_grf, &cfg->con3_for_pcie, true);
+		rockchip_combphy_param_write(priv->phy_grf, &cfg->con0_for_pcie, true);
+		rockchip_combphy_param_write(priv->phy_grf, &cfg->con1_for_pcie, true);
+		rockchip_combphy_param_write(priv->phy_grf, &cfg->con2_for_pcie, true);
+		rockchip_combphy_param_write(priv->phy_grf, &cfg->con3_for_pcie, true);
 		break;
 	case PHY_TYPE_USB3:
 		/* Set SSC downward spread spectrum */
-		val = readl(priv->mmio + (0x1f << 2));
-		val &= ~GENMASK(5, 4);
-		val |= 0x01 << 4;
-		writel(val, priv->mmio + 0x7c);
+		rockchip_combphy_updatel(priv, GENMASK(5, 4), BIT(4), 0x7c);
 
 		/* Enable adaptive CTLE for USB3.0 Rx */
-		val = readl(priv->mmio + (0x0e << 2));
-		val &= ~GENMASK(0, 0);
-		val |= 0x01;
-		writel(val, priv->mmio + (0x0e << 2));
+		rockchip_combphy_updatel(priv, GENMASK(0, 0), BIT(0), 0xe << 2);
 
 		/* Set PLL KVCO fine tuning signals */
-		val = readl(priv->mmio + (0x20 << 2));
-		val &= ~(0x7 << 2);
-		val |= 0x2 << 2;
-		writel(val, priv->mmio + (0x20 << 2));
+		rockchip_combphy_updatel(priv, GENMASK(4, 2), 0x2 << 2, 0x20 << 2);
 
 		/* Set PLL LPF R1 to su_trim[10:7]=1001 */
 		writel(0x4, priv->mmio + (0xb << 2));
 
 		/* Set PLL input clock divider 1/2 */
-		val = readl(priv->mmio + (0x5 << 2));
-		val &= ~(0x3 << 6);
-		val |= 0x1 << 6;
-		writel(val, priv->mmio + (0x5 << 2));
+		rockchip_combphy_updatel(priv, GENMASK(7, 6), BIT(6), 0x5 << 2);
 
 		/* Set PLL loop divider */
 		writel(0x32, priv->mmio + (0x11 << 2));
@@ -839,32 +747,32 @@ static int rk3568_combphy_cfg(struct rockchip_combphy_priv *priv)
 		/* Set Rx squelch input filler bandwidth */
 		writel(0x0e, priv->mmio + (0x14 << 2));
 
-		param_write(priv->phy_grf, &cfg->pipe_sel_usb, true);
-		param_write(priv->phy_grf, &cfg->pipe_txcomp_sel, false);
-		param_write(priv->phy_grf, &cfg->pipe_txelec_sel, false);
-		param_write(priv->phy_grf, &cfg->usb_mode_set, true);
+		rockchip_combphy_param_write(priv->phy_grf, &cfg->pipe_sel_usb, true);
+		rockchip_combphy_param_write(priv->phy_grf, &cfg->pipe_txcomp_sel, false);
+		rockchip_combphy_param_write(priv->phy_grf, &cfg->pipe_txelec_sel, false);
+		rockchip_combphy_param_write(priv->phy_grf, &cfg->usb_mode_set, true);
 		break;
 	case PHY_TYPE_SATA:
 		writel(0x41, priv->mmio + 0x38);
 		writel(0x8F, priv->mmio + 0x18);
-		param_write(priv->phy_grf, &cfg->con0_for_sata, true);
-		param_write(priv->phy_grf, &cfg->con1_for_sata, true);
-		param_write(priv->phy_grf, &cfg->con2_for_sata, true);
-		param_write(priv->phy_grf, &cfg->con3_for_sata, true);
-		param_write(priv->pipe_grf, &cfg->pipe_con0_for_sata, true);
+		rockchip_combphy_param_write(priv->phy_grf, &cfg->con0_for_sata, true);
+		rockchip_combphy_param_write(priv->phy_grf, &cfg->con1_for_sata, true);
+		rockchip_combphy_param_write(priv->phy_grf, &cfg->con2_for_sata, true);
+		rockchip_combphy_param_write(priv->phy_grf, &cfg->con3_for_sata, true);
+		rockchip_combphy_param_write(priv->pipe_grf, &cfg->pipe_con0_for_sata, true);
 		break;
 	case PHY_TYPE_SGMII:
-		param_write(priv->pipe_grf, &cfg->pipe_xpcs_phy_ready, true);
-		param_write(priv->phy_grf, &cfg->pipe_phymode_sel, true);
-		param_write(priv->phy_grf, &cfg->pipe_sel_qsgmii, true);
-		param_write(priv->phy_grf, &cfg->sgmii_mode_set, true);
+		rockchip_combphy_param_write(priv->pipe_grf, &cfg->pipe_xpcs_phy_ready, true);
+		rockchip_combphy_param_write(priv->phy_grf, &cfg->pipe_phymode_sel, true);
+		rockchip_combphy_param_write(priv->phy_grf, &cfg->pipe_sel_qsgmii, true);
+		rockchip_combphy_param_write(priv->phy_grf, &cfg->sgmii_mode_set, true);
 		break;
 	case PHY_TYPE_QSGMII:
-		param_write(priv->pipe_grf, &cfg->pipe_xpcs_phy_ready, true);
-		param_write(priv->phy_grf, &cfg->pipe_phymode_sel, true);
-		param_write(priv->phy_grf, &cfg->pipe_rate_sel, true);
-		param_write(priv->phy_grf, &cfg->pipe_sel_qsgmii, true);
-		param_write(priv->phy_grf, &cfg->qsgmii_mode_set, true);
+		rockchip_combphy_param_write(priv->pipe_grf, &cfg->pipe_xpcs_phy_ready, true);
+		rockchip_combphy_param_write(priv->phy_grf, &cfg->pipe_phymode_sel, true);
+		rockchip_combphy_param_write(priv->phy_grf, &cfg->pipe_rate_sel, true);
+		rockchip_combphy_param_write(priv->phy_grf, &cfg->pipe_sel_qsgmii, true);
+		rockchip_combphy_param_write(priv->phy_grf, &cfg->qsgmii_mode_set, true);
 		break;
 	default:
 		dev_err(priv->dev, "incompatible PHY type\n");
@@ -877,45 +785,30 @@ static int rk3568_combphy_cfg(struct rockchip_combphy_priv *priv)
 	case 24000000:
 		if (priv->mode == PHY_TYPE_USB3 || priv->mode == PHY_TYPE_SATA) {
 			/* Set ssc_cnt[9:0]=0101111101 & 31.5KHz */
-			val = readl(priv->mmio + (0x0e << 2));
-			val &= ~GENMASK(7, 6);
-			val |= 0x01 << 6;
-			writel(val, priv->mmio + (0x0e << 2));
+			rockchip_combphy_updatel(priv, GENMASK(7, 6), BIT(6), 0xe << 2);
 
-			val = readl(priv->mmio + (0x0f << 2));
-			val &= ~GENMASK(7, 0);
-			val |= 0x5f;
-			writel(val, priv->mmio + (0x0f << 2));
+			rockchip_combphy_updatel(priv, GENMASK(7, 0), 0x5f, 0xf << 2);
 		}
 		break;
 	case 25000000:
-		param_write(priv->phy_grf, &cfg->pipe_clk_25m, true);
+		rockchip_combphy_param_write(priv->phy_grf, &cfg->pipe_clk_25m, true);
 		break;
 	case 100000000:
-		param_write(priv->phy_grf, &cfg->pipe_clk_100m, true);
+		rockchip_combphy_param_write(priv->phy_grf, &cfg->pipe_clk_100m, true);
 		if (priv->mode == PHY_TYPE_PCIE) {
 			/* PLL KVCO tuning fine */
-			val = readl(priv->mmio + (0x20 << 2));
-			val &= ~(0x7 << 2);
-			val |= 0x2 << 2;
-			writel(val, priv->mmio + (0x20 << 2));
+			rockchip_combphy_updatel(priv, GENMASK(4, 2), 0x2 << 2, 0x20 << 2);
 
 			/* Enable controlling random jitter, aka RMJ */
 			writel(0x4, priv->mmio + (0xb << 2));
 
-			val = readl(priv->mmio + (0x5 << 2));
-			val &= ~(0x3 << 6);
-			val |= 0x1 << 6;
-			writel(val, priv->mmio + (0x5 << 2));
+			rockchip_combphy_updatel(priv, GENMASK(7, 6), BIT(6), 0x5 << 2);
 
 			writel(0x32, priv->mmio + (0x11 << 2));
 			writel(0xf0, priv->mmio + (0xa << 2));
 		} else if (priv->mode == PHY_TYPE_SATA) {
 			/* downward spread spectrum +500ppm */
-			val = readl(priv->mmio + (0x1f << 2));
-			val &= ~GENMASK(7, 4);
-			val |= 0x50;
-			writel(val, priv->mmio + (0x1f << 2));
+			rockchip_combphy_updatel(priv, GENMASK(7, 4), 0x50, 0x1f << 2);
 		}
 		break;
 	default:
@@ -924,23 +817,17 @@ static int rk3568_combphy_cfg(struct rockchip_combphy_priv *priv)
 	}
 
 	if (device_property_read_bool(priv->dev, "rockchip,ext-refclk")) {
-		param_write(priv->phy_grf, &cfg->pipe_clk_ext, true);
+		rockchip_combphy_param_write(priv->phy_grf, &cfg->pipe_clk_ext, true);
 		if (priv->mode == PHY_TYPE_PCIE && rate == 100000000) {
-			val = readl(priv->mmio + (0xc << 2));
-			val |= 0x3 << 4 | 0x1 << 7;
-			writel(val, priv->mmio + (0xc << 2));
+			rockchip_combphy_updatel(priv, 0x3 << 4 | 0x1 << 7,
+						 0x3 << 4 | 0x1 << 7, 0xc << 2);
 
-			val = readl(priv->mmio + (0xd << 2));
-			val |= 0x1;
-			writel(val, priv->mmio + (0xd << 2));
+			rockchip_combphy_updatel(priv, GENMASK(0, 0), BIT(0), 0xd << 2);
 		}
 	}
 
-	if (device_property_read_bool(priv->dev, "rockchip,enable-ssc")) {
-		val = readl(priv->mmio + (0x7 << 2));
-		val |= BIT(4);
-		writel(val, priv->mmio + (0x7 << 2));
-	}
+	if (device_property_read_bool(priv->dev, "rockchip,enable-ssc"))
+		rockchip_combphy_updatel(priv, GENMASK(4, 4), BIT(4), 0x7 << 2);
 
 	return 0;
 }
@@ -1019,43 +906,28 @@ static int rk3588_combphy_cfg(struct rockchip_combphy_priv *priv)
 	switch (priv->mode) {
 	case PHY_TYPE_PCIE:
 		/* Set SSC downward spread spectrum */
-		val = readl(priv->mmio + (0x1f << 2));
-		val &= ~GENMASK(5, 4);
-		val |= 0x01 << 4;
-		writel(val, priv->mmio + 0x7c);
+		rockchip_combphy_updatel(priv, GENMASK(5, 4), BIT(4), 0x7c);
 
-		param_write(priv->phy_grf, &cfg->con0_for_pcie, true);
-		param_write(priv->phy_grf, &cfg->con1_for_pcie, true);
-		param_write(priv->phy_grf, &cfg->con2_for_pcie, true);
-		param_write(priv->phy_grf, &cfg->con3_for_pcie, true);
+		rockchip_combphy_param_write(priv->phy_grf, &cfg->con0_for_pcie, true);
+		rockchip_combphy_param_write(priv->phy_grf, &cfg->con1_for_pcie, true);
+		rockchip_combphy_param_write(priv->phy_grf, &cfg->con2_for_pcie, true);
+		rockchip_combphy_param_write(priv->phy_grf, &cfg->con3_for_pcie, true);
 		break;
 	case PHY_TYPE_USB3:
 		/* Set SSC downward spread spectrum */
-		val = readl(priv->mmio + (0x1f << 2));
-		val &= ~GENMASK(5, 4);
-		val |= 0x01 << 4;
-		writel(val, priv->mmio + 0x7c);
+		rockchip_combphy_updatel(priv, GENMASK(5, 4), BIT(4), 0x7c);
 
 		/* Enable adaptive CTLE for USB3.0 Rx */
-		val = readl(priv->mmio + (0x0e << 2));
-		val &= ~GENMASK(0, 0);
-		val |= 0x01;
-		writel(val, priv->mmio + (0x0e << 2));
+		rockchip_combphy_updatel(priv, GENMASK(0, 0), BIT(0), 0xe << 2);
 
 		/* Set PLL KVCO fine tuning signals */
-		val = readl(priv->mmio + (0x20 << 2));
-		val &= ~(0x7 << 2);
-		val |= 0x2 << 2;
-		writel(val, priv->mmio + (0x20 << 2));
+		rockchip_combphy_updatel(priv, GENMASK(4, 2), 0x2 << 2, 0x20 << 2);
 
 		/* Set PLL LPF R1 to su_trim[10:7]=1001 */
 		writel(0x4, priv->mmio + (0xb << 2));
 
 		/* Set PLL input clock divider 1/2 */
-		val = readl(priv->mmio + (0x5 << 2));
-		val &= ~(0x3 << 6);
-		val |= 0x1 << 6;
-		writel(val, priv->mmio + (0x5 << 2));
+		rockchip_combphy_updatel(priv, GENMASK(7, 6), BIT(6), 0x5 << 2);
 
 		/* Set PLL loop divider */
 		writel(0x32, priv->mmio + (0x11 << 2));
@@ -1066,25 +938,22 @@ static int rk3588_combphy_cfg(struct rockchip_combphy_priv *priv)
 		/* Set Rx squelch input filler bandwidth */
 		writel(0x0d, priv->mmio + (0x14 << 2));
 
-		param_write(priv->phy_grf, &cfg->pipe_txcomp_sel, false);
-		param_write(priv->phy_grf, &cfg->pipe_txelec_sel, false);
-		param_write(priv->phy_grf, &cfg->usb_mode_set, true);
+		rockchip_combphy_param_write(priv->phy_grf, &cfg->pipe_txcomp_sel, false);
+		rockchip_combphy_param_write(priv->phy_grf, &cfg->pipe_txelec_sel, false);
+		rockchip_combphy_param_write(priv->phy_grf, &cfg->usb_mode_set, true);
 		break;
 	case PHY_TYPE_SATA:
 		/* Enable adaptive CTLE for SATA Rx */
-		val = readl(priv->mmio + (0x0e << 2));
-		val &= ~GENMASK(0, 0);
-		val |= 0x01;
-		writel(val, priv->mmio + (0x0e << 2));
+		rockchip_combphy_updatel(priv, GENMASK(0, 0), BIT(0), 0xe << 2);
 		/* Set tx_rterm = 50 ohm and rx_rterm = 43.5 ohm */
 		writel(0x8F, priv->mmio + (0x06 << 2));
 
-		param_write(priv->phy_grf, &cfg->con0_for_sata, true);
-		param_write(priv->phy_grf, &cfg->con1_for_sata, true);
-		param_write(priv->phy_grf, &cfg->con2_for_sata, true);
-		param_write(priv->phy_grf, &cfg->con3_for_sata, true);
-		param_write(priv->pipe_grf, &cfg->pipe_con0_for_sata, true);
-		param_write(priv->pipe_grf, &cfg->pipe_con1_for_sata, true);
+		rockchip_combphy_param_write(priv->phy_grf, &cfg->con0_for_sata, true);
+		rockchip_combphy_param_write(priv->phy_grf, &cfg->con1_for_sata, true);
+		rockchip_combphy_param_write(priv->phy_grf, &cfg->con2_for_sata, true);
+		rockchip_combphy_param_write(priv->phy_grf, &cfg->con3_for_sata, true);
+		rockchip_combphy_param_write(priv->pipe_grf, &cfg->pipe_con0_for_sata, true);
+		rockchip_combphy_param_write(priv->pipe_grf, &cfg->pipe_con1_for_sata, true);
 		break;
 	case PHY_TYPE_SGMII:
 	case PHY_TYPE_QSGMII:
@@ -1097,24 +966,15 @@ static int rk3588_combphy_cfg(struct rockchip_combphy_priv *priv)
 
 	switch (rate) {
 	case 24000000:
-		param_write(priv->phy_grf, &cfg->pipe_clk_24m, true);
+		rockchip_combphy_param_write(priv->phy_grf, &cfg->pipe_clk_24m, true);
 		if (priv->mode == PHY_TYPE_USB3 || priv->mode == PHY_TYPE_SATA) {
 			/* Set ssc_cnt[9:0]=0101111101 & 31.5KHz */
-			val = readl(priv->mmio + (0x0e << 2));
-			val &= ~GENMASK(7, 6);
-			val |= 0x01 << 6;
-			writel(val, priv->mmio + (0x0e << 2));
+			rockchip_combphy_updatel(priv, GENMASK(7, 6), BIT(6), 0xe << 2);
 
-			val = readl(priv->mmio + (0x0f << 2));
-			val &= ~GENMASK(7, 0);
-			val |= 0x5f;
-			writel(val, priv->mmio + (0x0f << 2));
+			rockchip_combphy_updatel(priv, GENMASK(7, 0), 0x5f, 0xf << 2);
 		} else if (priv->mode == PHY_TYPE_PCIE) {
 			/* PLL KVCO tuning fine */
-			val = readl(priv->mmio + (0x20 << 2));
-			val &= ~GENMASK(4, 2);
-			val |= 0x4 << 2;
-			writel(val, priv->mmio + (0x20 << 2));
+			rockchip_combphy_updatel(priv, GENMASK(4, 2), 0x4 << 2, 0x20 << 2);
 
 			/* Set up rx_trim */
 			val = 0x0;
@@ -1133,20 +993,17 @@ static int rk3588_combphy_cfg(struct rockchip_combphy_priv *priv)
 		}
 		break;
 	case 25000000:
-		param_write(priv->phy_grf, &cfg->pipe_clk_25m, true);
+		rockchip_combphy_param_write(priv->phy_grf, &cfg->pipe_clk_25m, true);
 		break;
 	case 100000000:
-		param_write(priv->phy_grf, &cfg->pipe_clk_100m, true);
+		rockchip_combphy_param_write(priv->phy_grf, &cfg->pipe_clk_100m, true);
 		if (priv->mode == PHY_TYPE_PCIE) {
 			/* gate_tx_pck_sel length select work for L1SS */
 			val = 0xc0;
 			writel(val, priv->mmio + 0x74);
 
 			/* PLL KVCO tuning fine */
-			val = readl(priv->mmio + (0x20 << 2));
-			val &= ~GENMASK(4, 2);
-			val |= 0x4 << 2;
-			writel(val, priv->mmio + (0x20 << 2));
+			rockchip_combphy_updatel(priv, GENMASK(4, 2), 0x4 << 2, 0x20 << 2);
 
 			/* Set up rx_trim: PLL LPF C1 85pf R1 1.25kohm */
 			val = 0x4c;
@@ -1163,16 +1020,10 @@ static int rk3588_combphy_cfg(struct rockchip_combphy_priv *priv)
 			writel(val, priv->mmio + (0xd << 2));
 		} else if (priv->mode == PHY_TYPE_SATA) {
 			/* downward spread spectrum +500ppm */
-			val = readl(priv->mmio + (0x1f << 2));
-			val &= ~GENMASK(7, 4);
-			val |= 0x50;
-			writel(val, priv->mmio + (0x1f << 2));
+			rockchip_combphy_updatel(priv, GENMASK(7, 4), 0x50, 0x1f << 2);
 
 			/* ssc ppm adjust to 3500ppm */
-			val = readl(priv->mmio + (0x9 << 2));
-			val &= ~GENMASK(3, 0);
-			val |= 0x7;
-			writel(val, priv->mmio + (0x9 << 2));
+			rockchip_combphy_updatel(priv, GENMASK(3, 0), 0x7, 0x9 << 2);
 		}
 		break;
 	default:
@@ -1181,7 +1032,7 @@ static int rk3588_combphy_cfg(struct rockchip_combphy_priv *priv)
 	}
 
 	if (device_property_read_bool(priv->dev, "rockchip,ext-refclk")) {
-		param_write(priv->phy_grf, &cfg->pipe_clk_ext, true);
+		rockchip_combphy_param_write(priv->phy_grf, &cfg->pipe_clk_ext, true);
 		if (priv->mode == PHY_TYPE_PCIE && rate == 100000000) {
 			val = 0x10;
 			writel(val, priv->mmio + (0x20 << 2));
@@ -1202,9 +1053,7 @@ static int rk3588_combphy_cfg(struct rockchip_combphy_priv *priv)
 	}
 
 	if (device_property_read_bool(priv->dev, "rockchip,enable-ssc")) {
-		val = readl(priv->mmio + (0x7 << 2));
-		val |= BIT(4);
-		writel(val, priv->mmio + (0x7 << 2));
+		rockchip_combphy_updatel(priv, GENMASK(4, 4), BIT(4), 0x7 << 2);
 
 		if (priv->mode == PHY_TYPE_PCIE && rate == 24000000) {
 			/* Xin24M T0_1 650mV */

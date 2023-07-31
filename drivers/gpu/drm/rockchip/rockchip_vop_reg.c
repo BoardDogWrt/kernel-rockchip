@@ -46,8 +46,11 @@ static const uint32_t formats_win_full[] = {
 	DRM_FORMAT_RGB565,
 	DRM_FORMAT_BGR565,
 	DRM_FORMAT_NV12,
+	DRM_FORMAT_NV21,
 	DRM_FORMAT_NV16,
+	DRM_FORMAT_NV61,
 	DRM_FORMAT_NV24,
+	DRM_FORMAT_NV42,
 };
 
 static const uint32_t formats_win_full_10bit[] = {
@@ -60,8 +63,11 @@ static const uint32_t formats_win_full_10bit[] = {
 	DRM_FORMAT_RGB565,
 	DRM_FORMAT_BGR565,
 	DRM_FORMAT_NV12,
+	DRM_FORMAT_NV21,
 	DRM_FORMAT_NV16,
+	DRM_FORMAT_NV61,
 	DRM_FORMAT_NV24,
+	DRM_FORMAT_NV42,
 	DRM_FORMAT_NV15, /* yuv420_10bit linear mode, 2 plane, no padding */
 #ifdef CONFIG_NO_GKI
 	DRM_FORMAT_NV20, /* yuv422_10bit linear mode, 2 plane, no padding */
@@ -79,8 +85,11 @@ static const uint32_t formats_win_full_10bit_yuyv[] = {
 	DRM_FORMAT_RGB565,
 	DRM_FORMAT_BGR565,
 	DRM_FORMAT_NV12, /* yuv420_8bit linear mode, 2 plane */
+	DRM_FORMAT_NV21, /* yuv420_8bit linear mode, 2 plane */
 	DRM_FORMAT_NV16, /* yuv422_8bit linear mode, 2 plane */
+	DRM_FORMAT_NV61, /* yuv422_8bit linear mode, 2 plane */
 	DRM_FORMAT_NV24, /* yuv444_8bit linear mode, 2 plane */
+	DRM_FORMAT_NV42, /* yuv444_8bit linear mode, 2 plane */
 	DRM_FORMAT_NV15, /* yuv420_10bit linear mode, 2 plane, no padding */
 #ifdef CONFIG_NO_GKI
 	DRM_FORMAT_NV20, /* yuv422_10bit linear mode, 2 plane, no padding */

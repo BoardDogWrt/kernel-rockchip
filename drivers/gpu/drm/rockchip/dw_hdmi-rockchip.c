@@ -11,11 +11,12 @@
 #include <linux/platform_device.h>
 #include <linux/phy/phy.h>
 #include <linux/regmap.h>
+#include <linux/regulator/consumer.h>
 #include <linux/pm_runtime.h>
 
 #include <drm/drm_of.h>
 #include <drm/drm_crtc_helper.h>
-#include <drm/drm_dsc.h>
+#include <drm/display/drm_dsc.h>
 #include <drm/drm_edid.h>
 #include <drm/bridge/dw_hdmi.h>
 #include <drm/drm_edid.h>
@@ -84,6 +85,7 @@
 #define RK3568_HDMI_SDAIN_MSK		BIT(15)
 #define RK3568_HDMI_SCLIN_MSK		BIT(14)
 
+#define HIWORD_UPDATE(val, mask)	(val | (mask) << 16)
 #define RK3588_GRF_SOC_CON2		0x0308
 #define RK3588_HDMI1_HPD_INT_MSK	BIT(15)
 #define RK3588_HDMI1_HPD_INT_CLR	BIT(14)
@@ -184,6 +186,8 @@ struct rockchip_hdmi {
 	struct clk *hdmitx_ref;
 	struct clk *link_clk;
 	struct dw_hdmi *hdmi;
+	struct regulator *avdd_0v9;
+	struct regulator *avdd_1v8;
 	struct dw_hdmi_qp *hdmi_qp;
 
 	struct phy *phy;
@@ -197,7 +201,6 @@ struct rockchip_hdmi {
 	u8 id;
 	bool hpd_stat;
 	bool is_hdmi_qp;
-	bool user_split_mode;
 
 	unsigned long bus_format;
 	unsigned long output_bus_format;
@@ -215,7 +218,6 @@ struct rockchip_hdmi {
 	struct drm_property *next_hdr_sink_data_property;
 	struct drm_property *output_hdmi_dvi;
 	struct drm_property *output_type_capacity;
-	struct drm_property *user_split_mode_prop;
 	struct drm_property *allm_capacity;
 	struct drm_property *allm_enable;
 
@@ -1487,6 +1489,22 @@ static int rockchip_hdmi_parse_dt(struct rockchip_hdmi *hdmi)
 		return ret;
 	}
 
+	hdmi->avdd_0v9 = devm_regulator_get_optional(hdmi->dev, "avdd-0v9");
+	if (IS_ERR(hdmi->avdd_0v9)) {
+		if (PTR_ERR(hdmi->avdd_0v9) != -ENODEV)
+			return dev_err_probe(hdmi->dev, PTR_ERR(hdmi->avdd_0v9),
+					     "failed to get regulator: avdd-0v9\n");
+		hdmi->avdd_0v9 = NULL;
+	}
+
+	hdmi->avdd_1v8 = devm_regulator_get_optional(hdmi->dev, "avdd-1v8");
+	if (IS_ERR(hdmi->avdd_1v8)) {
+		if (PTR_ERR(hdmi->avdd_1v8) != -ENODEV)
+			return dev_err_probe(hdmi->dev, PTR_ERR(hdmi->avdd_1v8),
+					     "failed to get regulator: avdd-1v8\n");
+		hdmi->avdd_1v8 = NULL;
+	}
+
 	hdmi->skip_check_420_mode =
 		of_property_read_bool(np, "skip-check-420-mode");
 
@@ -1606,7 +1624,7 @@ dw_hdmi_rockchip_mode_valid(struct dw_hdmi *dw_hdmi, void *data,
 		funcs = connector->helper_private;
 		if (funcs->atomic_best_encoder)
 			encoder = funcs->atomic_best_encoder(connector,
-							     connector->state);
+							     connector->state->state);
 		else
 			encoder = funcs->best_encoder(connector);
 	}
@@ -1973,9 +1991,9 @@ dw_hdmi_rockchip_select_output(struct drm_connector_state *conn_state,
 
 	switch (hdmi->hdmi_output) {
 	case RK_IF_FORMAT_YCBCR_HQ:
-		if (info->color_formats & DRM_COLOR_FORMAT_YCRCB444)
+		if (info->color_formats & DRM_COLOR_FORMAT_YCBCR444)
 			*color_format = RK_IF_FORMAT_YCBCR444;
-		else if (info->color_formats & DRM_COLOR_FORMAT_YCRCB422)
+		else if (info->color_formats & DRM_COLOR_FORMAT_YCBCR422)
 			*color_format = RK_IF_FORMAT_YCBCR422;
 		else if (conn_state->connector->ycbcr_420_allowed &&
 			 drm_mode_is_420(info, &mode) &&
@@ -1986,9 +2004,9 @@ dw_hdmi_rockchip_select_output(struct drm_connector_state *conn_state,
 		if (conn_state->connector->ycbcr_420_allowed &&
 		    drm_mode_is_420(info, &mode) && pixclock >= 594000)
 			*color_format = RK_IF_FORMAT_YCBCR420;
-		else if (info->color_formats & DRM_COLOR_FORMAT_YCRCB422)
+		else if (info->color_formats & DRM_COLOR_FORMAT_YCBCR422)
 			*color_format = RK_IF_FORMAT_YCBCR422;
-		else if (info->color_formats & DRM_COLOR_FORMAT_YCRCB444)
+		else if (info->color_formats & DRM_COLOR_FORMAT_YCBCR444)
 			*color_format = RK_IF_FORMAT_YCBCR444;
 		break;
 	case RK_IF_FORMAT_YCBCR420:
@@ -1997,11 +2015,11 @@ dw_hdmi_rockchip_select_output(struct drm_connector_state *conn_state,
 			*color_format = RK_IF_FORMAT_YCBCR420;
 		break;
 	case RK_IF_FORMAT_YCBCR422:
-		if (info->color_formats & DRM_COLOR_FORMAT_YCRCB422)
+		if (info->color_formats & DRM_COLOR_FORMAT_YCBCR422)
 			*color_format = RK_IF_FORMAT_YCBCR422;
 		break;
 	case RK_IF_FORMAT_YCBCR444:
-		if (info->color_formats & DRM_COLOR_FORMAT_YCRCB444)
+		if (info->color_formats & DRM_COLOR_FORMAT_YCBCR444)
 			*color_format = RK_IF_FORMAT_YCBCR444;
 		break;
 	case RK_IF_FORMAT_RGB:
@@ -2010,11 +2028,10 @@ dw_hdmi_rockchip_select_output(struct drm_connector_state *conn_state,
 	}
 
 	if (*color_format == RK_IF_FORMAT_RGB &&
-	    info->edid_hdmi_dc_modes & DRM_EDID_HDMI_DC_30)
+	    info->edid_hdmi_rgb444_dc_modes & DRM_EDID_HDMI_DC_30)
 		support_dc = true;
 	if (*color_format == RK_IF_FORMAT_YCBCR444 &&
-	    info->edid_hdmi_dc_modes &
-	    (DRM_EDID_HDMI_DC_Y444 | DRM_EDID_HDMI_DC_30))
+	    info->edid_hdmi_ycbcr444_dc_modes & DRM_EDID_HDMI_DC_30)
 		support_dc = true;
 	if (*color_format == RK_IF_FORMAT_YCBCR422)
 		support_dc = true;
@@ -2068,7 +2085,7 @@ dw_hdmi_rockchip_select_output(struct drm_connector_state *conn_state,
 	    (hdmi_bus_fmt_color_depth(hdmi->prev_bus_format) == 8 ||
 	     hdmi_bus_fmt_to_color_format(hdmi->prev_bus_format) == RK_IF_FORMAT_YCBCR422)) {
 		/* We prefer use YCbCr422 to send hdr 10bit */
-		if (info->color_formats & DRM_COLOR_FORMAT_YCRCB422)
+		if (info->color_formats & DRM_COLOR_FORMAT_YCBCR422)
 			*color_format = RK_IF_FORMAT_YCBCR422;
 	}
 
@@ -2711,14 +2728,6 @@ dw_hdmi_rockchip_attach_properties(struct drm_connector *connector,
 		drm_object_attach_property(&connector->base, prop, 0);
 	}
 
-	prop = drm_property_create_bool(connector->dev, DRM_MODE_PROP_IMMUTABLE,
-					"USER_SPLIT_MODE");
-	if (prop) {
-		hdmi->user_split_mode_prop = prop;
-		drm_object_attach_property(&connector->base, prop,
-					   hdmi->user_split_mode ? 1 : 0);
-	}
-
 	prop = drm_property_create_bool(connector->dev, 0, "allm_capacity");
 	if (prop) {
 		hdmi->allm_capacity = prop;
@@ -2835,12 +2844,6 @@ dw_hdmi_rockchip_destroy_properties(struct drm_connector *connector,
 		hdmi->output_type_capacity = NULL;
 	}
 
-	if (hdmi->user_split_mode_prop) {
-		drm_property_destroy(connector->dev,
-				     hdmi->user_split_mode_prop);
-		hdmi->user_split_mode_prop = NULL;
-	}
-
 	if (hdmi->allm_capacity) {
 		drm_property_destroy(connector->dev,
 				     hdmi->allm_capacity);
@@ -2943,11 +2946,11 @@ dw_hdmi_rockchip_get_property(struct drm_connector *connector,
 		/* RK3368 only support 8bit */
 		if (hdmi->unsupported_deep_color)
 			return 0;
-		if (info->edid_hdmi_dc_modes & DRM_EDID_HDMI_DC_30)
+		if (info->edid_hdmi_rgb444_dc_modes & DRM_EDID_HDMI_DC_30)
 			*val |= BIT(RK_IF_DEPTH_10);
-		if (info->edid_hdmi_dc_modes & DRM_EDID_HDMI_DC_36)
+		if (info->edid_hdmi_rgb444_dc_modes & DRM_EDID_HDMI_DC_36)
 			*val |= BIT(RK_IF_DEPTH_12);
-		if (info->edid_hdmi_dc_modes & DRM_EDID_HDMI_DC_48)
+		if (info->edid_hdmi_rgb444_dc_modes & DRM_EDID_HDMI_DC_48)
 			*val |= BIT(RK_IF_DEPTH_16);
 		if (info->hdmi.y420_dc_modes & DRM_EDID_YCBCR420_DC_30)
 			*val |= BIT(RK_IF_DEPTH_420_10);
@@ -2958,12 +2961,12 @@ dw_hdmi_rockchip_get_property(struct drm_connector *connector,
 		return 0;
 	} else if (property == hdmi->outputmode_capacity) {
 		*val = BIT(RK_IF_FORMAT_RGB);
-		if (info->color_formats & DRM_COLOR_FORMAT_YCRCB444)
+		if (info->color_formats & DRM_COLOR_FORMAT_YCBCR444)
 			*val |= BIT(RK_IF_FORMAT_YCBCR444);
-		if (info->color_formats & DRM_COLOR_FORMAT_YCRCB422)
+		if (info->color_formats & DRM_COLOR_FORMAT_YCBCR422)
 			*val |= BIT(RK_IF_FORMAT_YCBCR422);
 		if (connector->ycbcr_420_allowed &&
-		    info->color_formats & DRM_COLOR_FORMAT_YCRCB420)
+		    info->color_formats & DRM_COLOR_FORMAT_YCBCR420)
 			*val |= BIT(RK_IF_FORMAT_YCBCR420);
 		return 0;
 	} else if (property == hdmi->quant_range) {
@@ -2981,9 +2984,6 @@ dw_hdmi_rockchip_get_property(struct drm_connector *connector,
 			*val = dw_hdmi_get_output_type_cap(hdmi->hdmi);
 		else
 			*val = dw_hdmi_qp_get_output_type_cap(hdmi->hdmi_qp);
-		return 0;
-	} else if (property == hdmi->user_split_mode_prop) {
-		*val = hdmi->user_split_mode;
 		return 0;
 	} else if (property == hdmi->allm_capacity) {
 		*val = !!(hdmi->add_func & SUPPORT_HDMI_ALLM);
@@ -3497,12 +3497,6 @@ static int dw_hdmi_rockchip_bind(struct device *dev, struct device *master,
 			if (!secondary->plat_data->first_screen)
 				plat_data->first_screen = true;
 		}
-
-		if (device_property_read_bool(dev, "user-split-mode") ||
-		    device_property_read_bool(secondary->dev, "user-split-mode")) {
-			hdmi->user_split_mode = true;
-			secondary->user_split_mode = true;
-		}
 	}
 
 	if (!plat_data->first_screen) {
@@ -3533,7 +3527,8 @@ static int dw_hdmi_rockchip_bind(struct device *dev, struct device *master,
 
 	ret = rockchip_hdmi_parse_dt(hdmi);
 	if (ret) {
-		DRM_DEV_ERROR(hdmi->dev, "Unable to parse OF data\n");
+		if (ret != -EPROBE_DEFER)
+			DRM_DEV_ERROR(hdmi->dev, "Unable to parse OF data\n");
 		return ret;
 	}
 
@@ -3572,6 +3567,22 @@ static int dw_hdmi_rockchip_bind(struct device *dev, struct device *master,
 	if (ret) {
 		dev_err(hdmi->dev, "Failed to enable HDMI pclk: %d\n", ret);
 		return ret;
+	}
+
+	if (hdmi->avdd_0v9) {
+		ret = regulator_enable(hdmi->avdd_0v9);
+		if (ret) {
+			DRM_DEV_ERROR(hdmi->dev, "failed to enable avdd0v9: %d\n", ret);
+			return ret;
+		}
+	}
+
+	if (hdmi->avdd_1v8) {
+		ret = regulator_enable(hdmi->avdd_1v8);
+		if (ret) {
+			DRM_DEV_ERROR(hdmi->dev, "failed to enable avdd1v8: %d\n", ret);
+			return ret;
+		}
 	}
 
 	if (hdmi->chip_data->ddc_en_reg == RK3568_GRF_VO_CON1) {
@@ -3617,9 +3628,17 @@ static int dw_hdmi_rockchip_bind(struct device *dev, struct device *master,
 
 	ret = clk_prepare_enable(hdmi->phyref_clk);
 	if (ret) {
-		DRM_DEV_ERROR(hdmi->dev, "Failed to enable HDMI vpll: %d\n",
+		DRM_DEV_ERROR(hdmi->dev, "Failed to enable HDMI reference clock: %d\n",
 			      ret);
 		return ret;
+	}
+
+	if (hdmi->chip_data == &rk3568_chip_data) {
+		regmap_write(hdmi->regmap, RK3568_GRF_VO_CON1,
+			     HIWORD_UPDATE(RK3568_HDMI_SDAIN_MSK |
+					   RK3568_HDMI_SCLIN_MSK,
+					   RK3568_HDMI_SDAIN_MSK |
+					   RK3568_HDMI_SCLIN_MSK));
 	}
 
 	ret = clk_prepare_enable(hdmi->hclk_vio);
@@ -3753,6 +3772,11 @@ static void dw_hdmi_rockchip_unbind(struct device *dev, struct device *master,
 	clk_disable_unprepare(hdmi->earc_clk);
 	clk_disable_unprepare(hdmi->hdmitx_ref);
 	clk_disable_unprepare(hdmi->pclk);
+
+	if (hdmi->avdd_1v8)
+		regulator_disable(hdmi->avdd_1v8);
+	if (hdmi->avdd_0v9)
+		regulator_disable(hdmi->avdd_0v9);
 }
 
 static const struct component_ops dw_hdmi_rockchip_ops = {

@@ -474,7 +474,7 @@ struct it6616 {
 	struct class *hdmirx_class;
 	struct device *dev;
 	struct device *classdev;
-	struct v4l2_fwnode_bus_mipi_csi2 bus;
+	struct v4l2_mbus_config_mipi_csi2 bus;
 	struct v4l2_subdev sd;
 	struct media_pad pad;
 	struct v4l2_ctrl_handler hdl;
@@ -3641,26 +3641,7 @@ static int it6616_g_mbus_config(struct v4l2_subdev *sd,
 	struct it6616 *it6616 = to_it6616(sd);
 
 	cfg->type = V4L2_MBUS_CSI2_DPHY;
-	cfg->flags = V4L2_MBUS_CSI2_NONCONTINUOUS_CLOCK |
-			V4L2_MBUS_CSI2_CHANNEL_0;
-
-	switch (it6616->csi_lanes_in_use) {
-	case 1:
-		cfg->flags |= V4L2_MBUS_CSI2_1_LANE;
-		break;
-	case 2:
-		cfg->flags |= V4L2_MBUS_CSI2_2_LANE;
-		break;
-	case 3:
-		cfg->flags |= V4L2_MBUS_CSI2_3_LANE;
-		break;
-	case 4:
-		cfg->flags |= V4L2_MBUS_CSI2_4_LANE;
-		break;
-
-	default:
-		return -EINVAL;
-	}
+	cfg->bus.mipi_csi2.num_data_lanes = it6616->csi_lanes_in_use;
 
 	return 0;
 }
@@ -3713,7 +3694,7 @@ unlock_and_return:
 }
 
 static int it6616_enum_mbus_code(struct v4l2_subdev *sd,
-			struct v4l2_subdev_pad_config *cfg,
+			struct v4l2_subdev_state *sd_state,
 			struct v4l2_subdev_mbus_code_enum *code)
 {
 	switch (code->index) {
@@ -3729,7 +3710,7 @@ static int it6616_enum_mbus_code(struct v4l2_subdev *sd,
 }
 
 static int it6616_enum_frame_sizes(struct v4l2_subdev *sd,
-				   struct v4l2_subdev_pad_config *cfg,
+				   struct v4l2_subdev_state *sd_state,
 				   struct v4l2_subdev_frame_size_enum *fse)
 {
 	if (fse->index >= ARRAY_SIZE(supported_modes))
@@ -3747,7 +3728,7 @@ static int it6616_enum_frame_sizes(struct v4l2_subdev *sd,
 }
 
 static int it6616_get_fmt(struct v4l2_subdev *sd,
-			struct v4l2_subdev_pad_config *cfg,
+			struct v4l2_subdev_state *sd_state,
 			struct v4l2_subdev_format *format)
 {
 	struct it6616 *it6616 = to_it6616(sd);
@@ -3770,7 +3751,7 @@ static int it6616_get_fmt(struct v4l2_subdev *sd,
 }
 
 static int it6616_enum_frame_interval(struct v4l2_subdev *sd,
-				struct v4l2_subdev_pad_config *cfg,
+				struct v4l2_subdev_state *sd_state,
 				struct v4l2_subdev_frame_interval_enum *fie)
 {
 	if (fie->index >= ARRAY_SIZE(supported_modes))
@@ -3813,7 +3794,7 @@ it6616_find_best_fit(struct v4l2_subdev_format *fmt)
 }
 
 static int it6616_set_fmt(struct v4l2_subdev *sd,
-			struct v4l2_subdev_pad_config *cfg,
+			struct v4l2_subdev_state *sd_state,
 			struct v4l2_subdev_format *format)
 {
 	struct it6616 *it6616 = to_it6616(sd);
@@ -3821,7 +3802,7 @@ static int it6616_set_fmt(struct v4l2_subdev *sd,
 
 	/* is overwritten by get_fmt */
 	u32 code = format->format.code;
-	int ret = it6616_get_fmt(sd, cfg, format);
+	int ret = it6616_get_fmt(sd, sd_state, format);
 
 	format->format.code = code;
 
@@ -3963,7 +3944,7 @@ static int it6616_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 {
 	struct it6616 *it6616 = to_it6616(sd);
 	struct v4l2_mbus_framefmt *try_fmt =
-				v4l2_subdev_get_try_format(sd, fh->pad, 0);
+				v4l2_subdev_get_try_format(sd, fh->state, 0);
 	const struct it6616_mode *def_mode = &supported_modes[0];
 
 	mutex_lock(&it6616->confctl_mutex);
@@ -4373,7 +4354,7 @@ static int it6616_probe(struct i2c_client *client,
 	snprintf(sd->name, sizeof(sd->name), "m%02d_%s_%s %s",
 		 it6616->module_index, facing,
 		 IT6616_NAME, dev_name(sd->dev));
-	err = v4l2_async_register_subdev_sensor_common(sd);
+	err = v4l2_async_register_subdev_sensor(sd);
 	if (err < 0) {
 		v4l2_err(sd, "v4l2 register subdev failed! err:%d\n", err);
 		goto err_clean_entity;
@@ -4416,7 +4397,7 @@ unregister_mipi_i2c:
 	return err;
 }
 
-static int it6616_remove(struct i2c_client *client)
+static void it6616_remove(struct i2c_client *client)
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct it6616 *it6616 = to_it6616(sd);
@@ -4435,8 +4416,6 @@ static int it6616_remove(struct i2c_client *client)
 	i2c_unregister_device(it6616->mipi_i2c);
 	i2c_unregister_device(it6616->edid_i2c);
 	clk_disable_unprepare(it6616->xvclk);
-
-	return 0;
 }
 
 #if IS_ENABLED(CONFIG_OF)

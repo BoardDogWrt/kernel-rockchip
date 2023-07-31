@@ -561,7 +561,7 @@ static struct rockchip_clk_branch rk3399_clk_branches[] __initdata = {
 	COMPOSITE_NOMUX(0, "atclk_core_l", "armclkl", CLK_IGNORE_UNUSED,
 			RK3399_CLKSEL_CON(1), 0, 5, DFLAGS | CLK_DIVIDER_READ_ONLY,
 			RK3399_CLKGATE_CON(0), 5, GFLAGS),
-	COMPOSITE_NOMUX(0, "pclk_dbg_core_l", "armclkl", CLK_IGNORE_UNUSED,
+	COMPOSITE_NOMUX(PCLK_COREDBG_L, "pclk_dbg_core_l", "armclkl", CLK_IGNORE_UNUSED,
 			RK3399_CLKSEL_CON(1), 8, 5, DFLAGS | CLK_DIVIDER_READ_ONLY,
 			RK3399_CLKGATE_CON(0), 6, GFLAGS),
 
@@ -611,7 +611,7 @@ static struct rockchip_clk_branch rk3399_clk_branches[] __initdata = {
 	GATE(ACLK_GIC_ADB400_CORE_B_2_GIC, "aclk_core_adb400_core_b_2_gic", "armclkb", CLK_IGNORE_UNUSED,
 			RK3399_CLKGATE_CON(14), 4, GFLAGS),
 
-	DIV(0, "pclken_dbg_core_b", "pclk_dbg_core_b", CLK_IGNORE_UNUSED,
+	DIV(PCLK_COREDBG_B, "pclken_dbg_core_b", "pclk_dbg_core_b", CLK_IGNORE_UNUSED,
 			RK3399_CLKSEL_CON(3), 13, 2, DFLAGS | CLK_DIVIDER_READ_ONLY),
 
 	GATE(0, "pclk_dbg_cxcs_pd_core_b", "pclk_dbg_core_b", CLK_IGNORE_UNUSED,
@@ -651,9 +651,9 @@ static struct rockchip_clk_branch rk3399_clk_branches[] __initdata = {
 	MUX(SCLK_RMII_SRC, "clk_rmii_src", mux_rmii_p, CLK_SET_RATE_PARENT,
 			RK3399_CLKSEL_CON(19), 4, 1, MFLAGS),
 	GATE(SCLK_MACREF_OUT, "clk_mac_refout", "clk_rmii_src", 0,
-			RK3399_CLKGATE_CON(5), 6, GFLAGS),
-	GATE(SCLK_MACREF, "clk_mac_ref", "clk_rmii_src", 0,
 			RK3399_CLKGATE_CON(5), 7, GFLAGS),
+	GATE(SCLK_MACREF, "clk_mac_ref", "clk_rmii_src", 0,
+			RK3399_CLKGATE_CON(5), 6, GFLAGS),
 	GATE(SCLK_MAC_RX, "clk_rmii_rx", "clk_rmii_src", 0,
 			RK3399_CLKGATE_CON(5), 8, GFLAGS),
 	GATE(SCLK_MAC_TX, "clk_rmii_tx", "clk_rmii_src", 0,

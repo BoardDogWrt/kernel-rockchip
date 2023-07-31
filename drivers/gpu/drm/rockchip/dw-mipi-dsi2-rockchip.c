@@ -22,7 +22,6 @@
 #include <drm/drm_atomic_helper.h>
 #include <drm/drm_crtc.h>
 #include <drm/drm_crtc_helper.h>
-#include <drm/drm_dsc.h>
 #include <drm/drm_mipi_dsi.h>
 #include <drm/drm_of.h>
 #include <drm/drm_panel.h>
@@ -275,8 +274,6 @@ struct dw_mipi_dsi2 {
 	struct rockchip_drm_sub_dev sub_dev;
 
 	struct gpio_desc *te_gpio;
-	bool user_split_mode;
-	struct drm_property *user_split_mode_prop;
 };
 
 static inline struct dw_mipi_dsi2 *host_to_dsi2(struct mipi_dsi_host *host)
@@ -378,13 +375,13 @@ static void dw_mipi_dsi2_set_vid_mode(struct dw_mipi_dsi2 *dsi2)
 	u32 val = 0, mode;
 	int ret;
 
-	if (dsi2->mode_flags & MIPI_DSI_MODE_VIDEO_HFP)
+	if (dsi2->mode_flags & MIPI_DSI_MODE_VIDEO_NO_HFP)
 		val |= BLK_HFP_HS_EN;
 
-	if (dsi2->mode_flags & MIPI_DSI_MODE_VIDEO_HBP)
+	if (dsi2->mode_flags & MIPI_DSI_MODE_VIDEO_NO_HBP)
 		val |= BLK_HBP_HS_EN;
 
-	if (dsi2->mode_flags & MIPI_DSI_MODE_VIDEO_HSA)
+	if (dsi2->mode_flags & MIPI_DSI_MODE_VIDEO_NO_HSA)
 		val |= BLK_HSA_HS_EN;
 
 	if (dsi2->mode_flags & MIPI_DSI_MODE_VIDEO_BURST)
@@ -674,7 +671,7 @@ static void dw_mipi_dsi2_tx_option_set(struct dw_mipi_dsi2 *dsi2)
 
 	val = BTA_EN | EOTP_TX_EN;
 
-	if (dsi2->mode_flags & MIPI_DSI_MODE_EOT_PACKET)
+	if (dsi2->mode_flags & MIPI_DSI_MODE_NO_EOT_PACKET)
 		val &= ~EOTP_TX_EN;
 
 	regmap_write(dsi2->regmap, DSI2_DSI_GENERAL_CFG, val);
@@ -1219,21 +1216,6 @@ static int dw_mipi_dsi2_register_sub_dev(struct dw_mipi_dsi2 *dsi2,
 					 struct drm_connector *connector)
 {
 	struct device *dev = dsi2->dev;
-	struct drm_property *prop;
-	int ret;
-
-	prop = drm_property_create_bool(dsi2->drm_dev, DRM_MODE_PROP_IMMUTABLE,
-					"USER_SPLIT_MODE");
-	if (!prop) {
-		ret = -EINVAL;
-		DRM_DEV_ERROR(dev, "create user split mode prop failed\n");
-		goto connector_cleanup;
-	}
-
-	dsi2->user_split_mode_prop = prop;
-	drm_object_attach_property(&connector->base,
-				   dsi2->user_split_mode_prop,
-				   dsi2->user_split_mode ? 1 : 0);
 
 	dsi2->sub_dev.connector = connector;
 	dsi2->sub_dev.of_node = dev->of_node;
@@ -1241,11 +1223,6 @@ static int dw_mipi_dsi2_register_sub_dev(struct dw_mipi_dsi2 *dsi2,
 	rockchip_drm_register_sub_dev(&dsi2->sub_dev);
 
 	return 0;
-
-connector_cleanup:
-	connector->funcs->destroy(connector);
-
-	return ret;
 }
 
 static int dw_mipi_dsi2_bind(struct device *dev, struct device *master,
@@ -1563,7 +1540,6 @@ static int dw_mipi_dsi2_probe(struct platform_device *pdev)
 	dsi2->id = id;
 	dsi2->pdata = of_device_get_match_data(dev);
 	platform_set_drvdata(pdev, dsi2);
-	dsi2->user_split_mode = device_property_read_bool(dev, "user-split-mode");
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	regs = devm_ioremap_resource(dev, res);

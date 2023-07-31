@@ -1738,9 +1738,9 @@ static int gsensor_sc7a20_probe(struct i2c_client *client,
 	return sensor_register_device(client, NULL, devid, &gsensor_sc7a20_ops);
 }
 
-static int gsensor_sc7a20_remove(struct i2c_client *client)
+static void gsensor_sc7a20_remove(struct i2c_client *client)
 {
-	return sensor_unregister_device(client, NULL, &gsensor_sc7a20_ops);
+	sensor_unregister_device(client, NULL, &gsensor_sc7a20_ops);
 }
 
 static const struct i2c_device_id gsensor_sc7a20_id[] = {

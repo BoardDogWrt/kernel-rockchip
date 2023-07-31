@@ -26,10 +26,12 @@
 
 #include <drm/drm_atomic.h>
 #include <drm/drm_atomic_state_helper.h>
+#include <drm/drm_blend.h>
 #include <drm/drm_bridge.h>
 #include <drm/drm_connector.h>
 #include <drm/drm_crtc.h>
 #include <drm/drm_device.h>
+#include <drm/drm_framebuffer.h>
 #include <drm/drm_plane.h>
 #include <drm/drm_print.h>
 #include <drm/drm_vblank.h>
@@ -141,10 +143,6 @@ void __drm_atomic_helper_crtc_duplicate_state(struct drm_crtc *crtc,
 		drm_property_blob_get(state->ctm);
 	if (state->gamma_lut)
 		drm_property_blob_get(state->gamma_lut);
-#if defined(CONFIG_ROCKCHIP_DRM_CUBIC_LUT)
-	if (state->cubic_lut)
-		drm_property_blob_get(state->cubic_lut);
-#endif
 	state->mode_changed = false;
 	state->active_changed = false;
 	state->planes_changed = false;
@@ -217,9 +215,6 @@ void __drm_atomic_helper_crtc_destroy_state(struct drm_crtc_state *state)
 	drm_property_blob_put(state->degamma_lut);
 	drm_property_blob_put(state->ctm);
 	drm_property_blob_put(state->gamma_lut);
-#if defined(CONFIG_ROCKCHIP_DRM_CUBIC_LUT)
-	drm_property_blob_put(state->cubic_lut);
-#endif
 }
 EXPORT_SYMBOL(__drm_atomic_helper_crtc_destroy_state);
 
@@ -250,11 +245,36 @@ EXPORT_SYMBOL(drm_atomic_helper_crtc_destroy_state);
 void __drm_atomic_helper_plane_state_reset(struct drm_plane_state *plane_state,
 					   struct drm_plane *plane)
 {
+	u64 val;
+
 	plane_state->plane = plane;
 	plane_state->rotation = DRM_MODE_ROTATE_0;
 
 	plane_state->alpha = DRM_BLEND_ALPHA_OPAQUE;
 	plane_state->pixel_blend_mode = DRM_MODE_BLEND_PREMULTI;
+
+	if (plane->color_encoding_property) {
+		if (!drm_object_property_get_default_value(&plane->base,
+							   plane->color_encoding_property,
+							   &val))
+			plane_state->color_encoding = val;
+	}
+
+	if (plane->color_range_property) {
+		if (!drm_object_property_get_default_value(&plane->base,
+							   plane->color_range_property,
+							   &val))
+			plane_state->color_range = val;
+	}
+
+	if (plane->zpos_property) {
+		if (!drm_object_property_get_default_value(&plane->base,
+							   plane->zpos_property,
+							   &val)) {
+			plane_state->zpos = val;
+			plane_state->normalized_zpos = val;
+		}
+	}
 }
 EXPORT_SYMBOL(__drm_atomic_helper_plane_state_reset);
 
@@ -550,7 +570,7 @@ void drm_atomic_helper_connector_destroy_state(struct drm_connector *connector,
 EXPORT_SYMBOL(drm_atomic_helper_connector_destroy_state);
 
 /**
- * __drm_atomic_helper_private_duplicate_state - copy atomic private state
+ * __drm_atomic_helper_private_obj_duplicate_state - copy atomic private state
  * @obj: CRTC object
  * @state: new private object state
  *

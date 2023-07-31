@@ -270,13 +270,11 @@ static int max96752f_probe(struct i2c_client *client)
 	return 0;
 }
 
-static int max96752f_remove(struct i2c_client *client)
+static void max96752f_remove(struct i2c_client *client)
 {
 	struct max96752f *max96752f = i2c_get_clientdata(client);
 
 	drm_panel_remove(&max96752f->panel);
-
-	return 0;
 }
 
 static int __maybe_unused max96752f_suspend(struct device *dev)
@@ -408,12 +406,11 @@ static int hannstar_hsd123jpw3_a15_prepare(struct max96752f *max96752f)
 {
 	maxim_deserializer_write(max96752f, 0x0002, 0x43);
 	maxim_deserializer_write(max96752f, 0x0140, 0x20);
+	maxim_deserializer_write(max96752f, 0x01ce, 0x5e);
 
-	maxim_deserializer_write(max96752f, 0x01ce, 0x5e);	/* oldi */
-	maxim_deserializer_write(max96752f, 0x0226, 0x40);	/* bl_pwm */
-	maxim_deserializer_write(max96752f, 0x0224, 0x84);
-	maxim_deserializer_write(max96752f, 0x0204, 0xa1);	/* tp_int */
-	maxim_deserializer_write(max96752f, 0x0203, 0x83);
+	maxim_deserializer_write(max96752f, 0x0203, 0x83);	/* GPIO1  <- TP_INT */
+	maxim_deserializer_write(max96752f, 0x0206, 0x84);      /* GPIO2  -> TP_RST */
+	maxim_deserializer_write(max96752f, 0x0224, 0x84);	/* GPIO12 -> LCD_BL_PWM */
 
 	return 0;
 }
@@ -425,8 +422,7 @@ static int hannstar_hsd123jpw3_a15_unprepare(struct max96752f *max96752f)
 
 static int hannstar_hsd123jpw3_a15_enable(struct max96752f *max96752f)
 {
-	maxim_deserializer_write(max96752f, 0x0221, 0x90);	/* lcd_rst */
-	maxim_deserializer_write(max96752f, 0x0206, 0x90);	/* tp_rst */
+	maxim_deserializer_write(max96752f, 0x0221, 0x90);	/* GPIO11 -> LCD_RESET */
 	msleep(20);
 
 	return 0;
@@ -434,8 +430,7 @@ static int hannstar_hsd123jpw3_a15_enable(struct max96752f *max96752f)
 
 static int hannstar_hsd123jpw3_a15_disable(struct max96752f *max96752f)
 {
-	maxim_deserializer_write(max96752f, 0x0206, 0x80);      /* tp_rst */
-	maxim_deserializer_write(max96752f, 0x0227, 0x80);	/* lcd_rst */
+	maxim_deserializer_write(max96752f, 0x0221, 0x80);	/* GPIO11 -> LCD_RESET */
 	msleep(20);
 
 	return 0;

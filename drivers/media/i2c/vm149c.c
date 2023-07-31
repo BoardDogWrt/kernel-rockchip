@@ -567,15 +567,13 @@ err_cleanup:
 	return ret;
 }
 
-static int vm149c_remove(struct i2c_client *client)
+static void vm149c_remove(struct i2c_client *client)
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct vm149c_device *vm149c_dev = sd_to_vm149c_vcm(sd);
 
 	pm_runtime_disable(&client->dev);
 	vm149c_subdev_cleanup(vm149c_dev);
-
-	return 0;
 }
 
 static int __maybe_unused vm149c_vcm_suspend(struct device *dev)

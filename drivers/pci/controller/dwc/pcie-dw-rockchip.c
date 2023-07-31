@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * PCIe host controller driver for Rockchip SoCs
+ * PCIe host controller driver for Rockchip SoCs.
  *
- * Copyright (C) 2018 Rockchip Electronics Co., Ltd.
+ * Copyright (C) 2021 Rockchip Electronics Co., Ltd.
  *		http://www.rock-chips.com
  *
  * Author: Simon Xue <xxm@rock-chips.com>
@@ -115,6 +115,10 @@ enum rk_pcie_device_mode {
 #define PME_TURN_OFF			(BIT(4) | BIT(20))
 #define PCIE_CLIENT_GENERAL_DEBUG	0x104
 #define PCIE_CLIENT_HOT_RESET_CTRL	0x180
+#define PCIE_LTSSM_APP_DLY1_EN		BIT(0)
+#define PCIE_LTSSM_APP_DLY2_EN		BIT(1)
+#define PCIE_LTSSM_APP_DLY1_DONE	BIT(2)
+#define PCIE_LTSSM_APP_DLY2_DONE	BIT(3)
 #define PCIE_LTSSM_ENABLE_ENHANCE	BIT(4)
 #define PCIE_CLIENT_LTSSM_STATUS	0x300
 #define SMLH_LINKUP			BIT(16)
@@ -137,6 +141,16 @@ enum rk_pcie_device_mode {
 
 #define PCIE_PL_ORDER_RULE_CTRL_OFF	0x8B4
 #define RK_PCIE_L2_TMOUT_US		5000
+#define RK_PCIE_HOTRESET_TMOUT_US	10000
+
+#define PCIE_ATU_CR1			0x904
+#define PCIE_ATU_CR2			0x908
+#define PCIE_ATU_REGION_OUTBOUND	0
+#define PCIE_GET_ATU_OUTB_UNR_REG_OFFSET(region) \
+		((region) << 9)
+#define PCIE_ATU_REGION_INBOUND		BIT(31)
+#define PCIE_GET_ATU_INB_UNR_REG_OFFSET(region) \
+		(((region) << 9) | BIT(8))
 
 enum rk_pcie_ltssm_code {
 	S_L0 = 0x11,
@@ -168,7 +182,7 @@ struct rk_pcie {
 	struct gpio_desc		*prsnt_gpio;
 	phys_addr_t			mem_start;
 	size_t				mem_size;
-	struct pcie_port		pp;
+	struct dw_pcie_rp		pp;
 	struct regmap			*usb_pcie_grf;
 	struct regmap			*pmu_grf;
 	struct dma_trx_obj		*dma_obj;
@@ -185,6 +199,14 @@ struct rk_pcie {
 	u32				l1ss_ctl1;
 	struct dentry			*debugfs;
 	u32				msi_vector_num;
+	struct workqueue_struct		*hot_rst_wq;
+	struct work_struct		hot_rst_work;
+};
+
+enum dw_pcie_as_type {
+	DW_PCIE_AS_UNKNOWN,
+	DW_PCIE_AS_MEM,
+	DW_PCIE_AS_IO,
 };
 
 struct rk_pcie_of_data {
@@ -1105,64 +1127,33 @@ static int rk_pcie_ep_win_parse(struct rk_pcie *rk_pcie)
 	return 0;
 }
 
-static int rk_pcie_msi_host_init(struct pcie_port *pp)
-{
-	return 0;
-}
-
-static void rk_pcie_msi_set_num_vectors(struct pcie_port *pp)
-{
-	struct dw_pcie *pci = to_dw_pcie_from_pp(pp);
-	struct rk_pcie *rk_pcie = to_rk_pcie(pci);
-
-	pp->num_vectors = rk_pcie->msi_vector_num;
-}
-
-static int rk_pcie_host_init(struct pcie_port *pp)
-{
-	int ret;
-	struct dw_pcie *pci = to_dw_pcie_from_pp(pp);
-
-	dw_pcie_setup_rc(pp);
-
-	ret = rk_pcie_establish_link(pci);
-
-	if (pp->msi_irq > 0)
-		dw_pcie_msi_init(pp);
-
-	return ret;
-}
-
-static struct dw_pcie_host_ops rk_pcie_host_ops = {
-	.host_init = rk_pcie_host_init,
-};
+static struct dw_pcie_host_ops rk_pcie_host_ops;
 
 static int rk_add_pcie_port(struct rk_pcie *rk_pcie, struct platform_device *pdev)
 {
 	int ret;
 	struct dw_pcie *pci = rk_pcie->pci;
-	struct pcie_port *pp = &pci->pp;
+	struct dw_pcie_rp *pp = &pci->pp;
 	struct device *dev = pci->dev;
 
+	pp->ops = &rk_pcie_host_ops;
+
 	if (IS_ENABLED(CONFIG_PCI_MSI)) {
-		pp->msi_irq = platform_get_irq_byname(pdev, "msi");
-		/* If msi_irq is invalid, use outband msi routine */
-		if (pp->msi_irq < 0) {
-			dev_info(dev, "use outband MSI support");
-			rk_pcie_host_ops.msi_host_init = rk_pcie_msi_host_init;
-		} else {
+		if (rk_pcie->msi_vector_num > 0) {
 			dev_info(dev, "max MSI vector is %d\n", rk_pcie->msi_vector_num);
-			rk_pcie_host_ops.set_num_vectors = rk_pcie_msi_set_num_vectors;
+			pp->num_vectors = rk_pcie->msi_vector_num;
 		}
 	}
-
-	pp->ops = &rk_pcie_host_ops;
 
 	ret = dw_pcie_host_init(pp);
 	if (ret) {
 		dev_err(dev, "failed to initialize host\n");
 		return ret;
 	}
+
+	/* Disable BAR0 BAR1 */
+	dw_pcie_writel_dbi(pci, PCIE_TYPE0_HDR_DBI2_OFFSET + 0x10 + BAR_0 * 4, 0);
+	dw_pcie_writel_dbi(pci, PCIE_TYPE0_HDR_DBI2_OFFSET + 0x10 + BAR_1 * 4, 0);
 
 	return 0;
 }
@@ -1440,13 +1431,37 @@ static void rk_pcie_config_dma_dwc(struct dma_table *table)
 	table->start.chnl = table->chn;
 }
 
+static void rk_pcie_hot_rst_work(struct work_struct *work)
+{
+	struct rk_pcie *rk_pcie = container_of(work, struct rk_pcie, hot_rst_work);
+	u32 val, status;
+	int ret;
+
+	/* Setup command register */
+	val = dw_pcie_readl_dbi(rk_pcie->pci, PCI_COMMAND);
+	val &= 0xffff0000;
+	val |= PCI_COMMAND_IO | PCI_COMMAND_MEMORY |
+		PCI_COMMAND_MASTER | PCI_COMMAND_SERR;
+	dw_pcie_writel_dbi(rk_pcie->pci, PCI_COMMAND, val);
+
+	if (rk_pcie_readl_apb(rk_pcie, PCIE_CLIENT_HOT_RESET_CTRL) & PCIE_LTSSM_APP_DLY2_EN) {
+		ret = readl_poll_timeout(rk_pcie->apb_base + PCIE_CLIENT_LTSSM_STATUS,
+			 status, ((status & 0x3F) == 0), 100, RK_PCIE_HOTRESET_TMOUT_US);
+		if (ret)
+			dev_err(rk_pcie->pci->dev, "wait for detect quiet failed!\n");
+
+		rk_pcie_writel_apb(rk_pcie, PCIE_CLIENT_HOT_RESET_CTRL,
+			(PCIE_LTSSM_APP_DLY2_DONE) | ((PCIE_LTSSM_APP_DLY2_DONE) << 16));
+	}
+}
+
 static irqreturn_t rk_pcie_sys_irq_handler(int irq, void *arg)
 {
 	struct rk_pcie *rk_pcie = arg;
 	u32 chn;
 	union int_status status;
 	union int_clear clears;
-	u32 reg, val;
+	u32 reg;
 
 	status.asdword = dw_pcie_readl_dbi(rk_pcie->pci, PCIE_DMA_OFFSET +
 					   PCIE_DMA_WR_INT_STATUS);
@@ -1487,14 +1502,8 @@ static irqreturn_t rk_pcie_sys_irq_handler(int irq, void *arg)
 	}
 
 	reg = rk_pcie_readl_apb(rk_pcie, PCIE_CLIENT_INTR_STATUS_MISC);
-	if (reg & BIT(2)) {
-		/* Setup command register */
-		val = dw_pcie_readl_dbi(rk_pcie->pci, PCI_COMMAND);
-		val &= 0xffff0000;
-		val |= PCI_COMMAND_IO | PCI_COMMAND_MEMORY |
-		       PCI_COMMAND_MASTER | PCI_COMMAND_SERR;
-		dw_pcie_writel_dbi(rk_pcie->pci, PCI_COMMAND, val);
-	}
+	if (reg & BIT(2))
+		queue_work(rk_pcie->hot_rst_wq, &rk_pcie->hot_rst_work);
 
 	rk_pcie_writel_apb(rk_pcie, PCIE_CLIENT_INTR_STATUS_MISC, reg);
 
@@ -1618,7 +1627,8 @@ static void rk_pcie_fast_link_setup(struct rk_pcie *rk_pcie)
 
 	/* LTSSM EN ctrl mode */
 	val = rk_pcie_readl_apb(rk_pcie, PCIE_CLIENT_HOT_RESET_CTRL);
-	val |= PCIE_LTSSM_ENABLE_ENHANCE | (PCIE_LTSSM_ENABLE_ENHANCE << 16);
+	val |= (PCIE_LTSSM_ENABLE_ENHANCE | PCIE_LTSSM_APP_DLY2_EN)
+		| ((PCIE_LTSSM_APP_DLY2_EN | PCIE_LTSSM_ENABLE_ENHANCE) << 16);
 	rk_pcie_writel_apb(rk_pcie, PCIE_CLIENT_HOT_RESET_CTRL, val);
 }
 
@@ -2109,6 +2119,14 @@ retry_regulator:
 
 	dw_pcie_dbi_ro_wr_dis(pci);
 
+	rk_pcie->hot_rst_wq = create_singlethread_workqueue("rk_pcie_hot_rst_wq");
+	if (!rk_pcie->hot_rst_wq) {
+		dev_err(dev, "failed to create hot_rst workqueue\n");
+		ret = -ENOMEM;
+		goto remove_irq_domain;
+	}
+	INIT_WORK(&rk_pcie->hot_rst_work, rk_pcie_hot_rst_work);
+
 	device_init_wakeup(dev, true);
 
 	/* Enable async system PM for multiports SoC */
@@ -2169,7 +2187,7 @@ static int rk_pcie_probe(struct platform_device *pdev)
 #ifdef CONFIG_PCIEASPM
 static void rk_pcie_downstream_dev_to_d0(struct rk_pcie *rk_pcie, bool enable)
 {
-	struct pcie_port *pp = &rk_pcie->pci->pp;
+	struct dw_pcie_rp *pp = &rk_pcie->pci->pp;
 	struct pci_bus *child, *root_bus = NULL;
 	struct pci_dev *pdev, *bridge;
 	u32 val;
@@ -2406,9 +2424,6 @@ std_rc_done:
 		if (ret)
 			goto err;
 	}
-
-	if (rk_pcie->pci->pp.msi_irq > 0)
-		dw_pcie_msi_init(&rk_pcie->pci->pp);
 
 	return 0;
 err:

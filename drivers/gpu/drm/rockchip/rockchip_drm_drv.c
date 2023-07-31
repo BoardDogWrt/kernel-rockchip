@@ -8,7 +8,6 @@
 
 #include <linux/dma-buf-cache.h>
 #include <linux/dma-mapping.h>
-#include <linux/dma-iommu.h>
 #include <linux/genalloc.h>
 #include <linux/pm_runtime.h>
 #include <linux/module.h>
@@ -21,18 +20,26 @@
 #include <linux/iommu.h>
 #include <linux/of_reserved_mem.h>
 
+#include <drm/drm_aperture.h>
 #include <drm/drm_debugfs.h>
 #include <drm/drm_drv.h>
 #include <drm/drm_displayid.h>
 #include <drm/drm_fb_helper.h>
-#include <drm/drm_gem_cma_helper.h>
+#include <drm/drm_gem_dma_helper.h>
 #include <drm/drm_of.h>
 #include <drm/drm_probe_helper.h>
 #include <drm/drm_vblank.h>
 
+#if defined(CONFIG_ARM_DMA_USE_IOMMU)
+#include <asm/dma-iommu.h>
+#else
+#define arm_iommu_detach_device(...)	({ })
+#define arm_iommu_release_mapping(...)	({ })
+#define to_dma_iommu_mapping(dev) NULL
+#endif
+
 #include "rockchip_drm_drv.h"
 #include "rockchip_drm_fb.h"
-#include "rockchip_drm_fbdev.h"
 #include "rockchip_drm_gem.h"
 #include "rockchip_drm_logo.h"
 
@@ -44,6 +51,14 @@
 #define DRIVER_DATE	"20140818"
 #define DRIVER_MAJOR	3
 #define DRIVER_MINOR	0
+
+#define for_each_displayid_db(displayid, block, idx, length) \
+	for ((block) = (struct displayid_block *)&(displayid)[idx]; \
+	    (idx) + sizeof(struct displayid_block) <= (length) && \
+	    (idx) + sizeof(struct displayid_block) + (block)->num_bytes <= (length) && \
+	    (block)->num_bytes > 0; \
+	    (idx) += sizeof(struct displayid_block) + (block)->num_bytes, \
+	    (block) = (struct displayid_block *)&(displayid)[idx])
 
 #if IS_ENABLED(CONFIG_DRM_ROCKCHIP_VVOP)
 static bool is_support_iommu = false;
@@ -149,32 +164,6 @@ void drm_mode_convert_to_origin_mode(struct drm_display_mode *mode)
 	mode->htotal = mode->hsync_end + hbp / 2;
 }
 EXPORT_SYMBOL(drm_mode_convert_to_origin_mode);
-
-/**
- * drm_connector_oob_hotplug_event - Report out-of-band hotplug event to connector
- * @connector: connector to report the event on
- *
- * On some hardware a hotplug event notification may come from outside the display
- * driver / device. An example of this is some USB Type-C setups where the hardware
- * muxes the DisplayPort data and aux-lines but does not pass the altmode HPD
- * status bit to the GPU's DP HPD pin.
- *
- * This function can be used to report these out-of-band events after obtaining
- * a drm_connector reference through calling drm_connector_find_by_fwnode().
- */
-void drm_connector_oob_hotplug_event(struct fwnode_handle *connector_fwnode)
-{
-	struct rockchip_drm_sub_dev *sub_dev;
-
-	if (!connector_fwnode || !connector_fwnode->dev)
-		return;
-
-	sub_dev = rockchip_drm_get_sub_dev(dev_of_node(connector_fwnode->dev));
-
-	if (sub_dev && sub_dev->connector && sub_dev->oob_hotplug_event)
-		sub_dev->oob_hotplug_event(sub_dev->connector);
-}
-EXPORT_SYMBOL(drm_connector_oob_hotplug_event);
 
 uint32_t rockchip_drm_get_bpp(const struct drm_format_info *info)
 {
@@ -553,9 +542,9 @@ static int validate_displayid(u8 *displayid, int length, int idx)
 {
 	int i, dispid_length;
 	u8 csum = 0;
-	struct displayid_hdr *base;
+	struct displayid_header *base;
 
-	base = (struct displayid_hdr *)&displayid[idx];
+	base = (struct displayid_header *)&displayid[idx];
 
 	DRM_DEBUG_KMS("base revision 0x%x, length %d, %d %d\n",
 		      base->rev, base->bytes, base->prod_id, base->ext_count);
@@ -580,7 +569,7 @@ static u8 *find_displayid_extension(const struct edid *edid,
 				    int *ext_index)
 {
 	u8 *displayid = find_edid_extension(edid, 0x70, ext_index);
-	struct displayid_hdr *base;
+	struct displayid_header *base;
 	int ret;
 
 	if (!displayid)
@@ -594,7 +583,7 @@ static u8 *find_displayid_extension(const struct edid *edid,
 	if (ret)
 		return NULL;
 
-	base = (struct displayid_hdr *)&displayid[*idx];
+	base = (struct displayid_header *)&displayid[*idx];
 	*length = *idx + sizeof(*base) + base->bytes;
 
 	return displayid;
@@ -623,7 +612,7 @@ static u8 *find_cea_extension(const struct edid *edid)
 		if (!displayid)
 			return NULL;
 
-		idx += sizeof(struct displayid_hdr);
+		idx += sizeof(struct displayid_header);
 		for_each_displayid_db(displayid, block, idx, length) {
 			if (block->tag == 0x81)
 				return (u8 *)block;
@@ -651,7 +640,7 @@ int rockchip_drm_get_yuv422_format(struct drm_connector *connector,
 		return -EINVAL;
 
 	if (edid_ext[3] & EDID_CEA_YCRCB422)
-		info->color_formats |= DRM_COLOR_FORMAT_YCRCB422;
+		info->color_formats |= DRM_COLOR_FORMAT_YCBCR422;
 
 	return 0;
 }
@@ -1043,8 +1032,17 @@ int rockchip_drm_dma_attach_device(struct drm_device *drm_dev,
 	struct rockchip_drm_private *private = drm_dev->dev_private;
 	int ret;
 
-	if (!is_support_iommu)
+	if (!private->domain)
 		return 0;
+
+	if (IS_ENABLED(CONFIG_ARM_DMA_USE_IOMMU)) {
+		struct dma_iommu_mapping *mapping = to_dma_iommu_mapping(dev);
+
+		if (mapping) {
+			arm_iommu_detach_device(dev);
+			arm_iommu_release_mapping(mapping);
+		}
+	}
 
 	ret = iommu_attach_device(private->domain, dev);
 	if (ret) {
@@ -1059,12 +1057,22 @@ void rockchip_drm_dma_detach_device(struct drm_device *drm_dev,
 				    struct device *dev)
 {
 	struct rockchip_drm_private *private = drm_dev->dev_private;
-	struct iommu_domain *domain = private->domain;
 
-	if (!is_support_iommu)
+	if (!private->domain)
 		return;
 
-	iommu_detach_device(domain, dev);
+	iommu_detach_device(private->domain, dev);
+}
+
+void rockchip_drm_dma_init_device(struct drm_device *drm_dev,
+				  struct device *dev)
+{
+	struct rockchip_drm_private *private = drm_dev->dev_private;
+
+	if (!device_iommu_mapped(dev))
+		private->iommu_dev = ERR_PTR(-ENODEV);
+	else if (!private->iommu_dev)
+		private->iommu_dev = dev;
 }
 
 void rockchip_drm_crtc_standby(struct drm_crtc *crtc, bool standby)
@@ -1134,10 +1142,10 @@ static int rockchip_drm_init_iommu(struct drm_device *drm_dev)
 	u64 start, end;
 	int ret = 0;
 
-	if (!is_support_iommu)
+	if (IS_ERR_OR_NULL(private->iommu_dev))
 		return 0;
 
-	private->domain = iommu_domain_alloc(&platform_bus_type);
+	private->domain = iommu_domain_alloc(private->iommu_dev->bus);
 	if (!private->domain)
 		return -ENOMEM;
 
@@ -1176,7 +1184,7 @@ static void rockchip_iommu_cleanup(struct drm_device *drm_dev)
 {
 	struct rockchip_drm_private *private = drm_dev->dev_private;
 
-	if (!is_support_iommu)
+	if (!private->domain)
 		return;
 
 	if (iommu_reserve_map) {
@@ -1289,6 +1297,12 @@ static void rockchip_drm_debugfs_init(struct drm_minor *minor)
 }
 #endif
 
+static const struct drm_prop_enum_list split_area[] = {
+	{ ROCKCHIP_DRM_SPLIT_UNSET, "UNSET" },
+	{ ROCKCHIP_DRM_SPLIT_LEFT_SIDE, "LEFT" },
+	{ ROCKCHIP_DRM_SPLIT_RIGHT_SIDE, "RIGHT" },
+};
+
 static int rockchip_drm_create_properties(struct drm_device *dev)
 {
 	struct drm_property *prop;
@@ -1324,6 +1338,11 @@ static int rockchip_drm_create_properties(struct drm_device *dev)
 		return -ENOMEM;
 	private->connector_id_prop = prop;
 
+	prop = drm_property_create_enum(dev, DRM_MODE_PROP_ENUM, "SPLIT_AREA",
+					split_area,
+					ARRAY_SIZE(split_area));
+	private->split_area_prop = prop;
+
 	prop = drm_property_create_object(dev,
 					  DRM_MODE_PROP_ATOMIC | DRM_MODE_PROP_IMMUTABLE,
 					  "SOC_ID", DRM_MODE_OBJECT_CRTC);
@@ -1337,6 +1356,9 @@ static int rockchip_drm_create_properties(struct drm_device *dev)
 	private->aclk_prop = drm_property_create_range(dev, 0, "ACLK", 0, UINT_MAX);
 	private->bg_prop = drm_property_create_range(dev, 0, "BACKGROUND", 0, UINT_MAX);
 	private->line_flag_prop = drm_property_create_range(dev, 0, "LINE_FLAG1", 0, UINT_MAX);
+	private->cubic_lut_prop = drm_property_create(dev, DRM_MODE_PROP_BLOB, "CUBIC_LUT", 0);
+	private->cubic_lut_size_prop = drm_property_create_range(dev, DRM_MODE_PROP_IMMUTABLE,
+								 "CUBIC_LUT_SIZE", 0, UINT_MAX);
 
 	return drm_mode_create_tv_properties(dev, 0, NULL);
 }
@@ -1456,6 +1478,15 @@ static int rockchip_drm_bind(struct device *dev)
 	struct rockchip_drm_private *private;
 	int ret;
 
+	/* Remove existing drivers that may own the framebuffer memory. */
+	ret = drm_aperture_remove_framebuffers(false, &rockchip_drm_driver);
+	if (ret) {
+		DRM_DEV_ERROR(dev,
+			      "Failed to remove existing framebuffers - %d.\n",
+			      ret);
+		return ret;
+	}
+
 	drm_dev = drm_dev_alloc(&rockchip_drm_driver, dev);
 	if (IS_ERR(drm_dev))
 		return PTR_ERR(drm_dev);
@@ -1514,11 +1545,13 @@ static int rockchip_drm_bind(struct device *dev)
 	drm_mode_config_reset(drm_dev);
 	rockchip_drm_set_property_default(drm_dev);
 
+#if IS_ENABLED(CONFIG_DRM_LEGACY)
 	/*
 	 * enable drm irq mode.
 	 * - with irq_enabled = true, we can use the vblank feature.
 	 */
 	drm_dev->irq_enabled = true;
+#endif
 
 	/* init kms poll for handling hpd */
 	drm_kms_helper_poll_init(drm_dev);
@@ -1534,24 +1567,17 @@ static int rockchip_drm_bind(struct device *dev)
 
 	rockchip_drm_show_logo(drm_dev);
 
-	ret = rockchip_drm_fbdev_init(drm_dev);
-	if (ret)
-		goto err_iommu_cleanup;
-
-	drm_dev->mode_config.allow_fb_modifiers = true;
-
 	ret = drm_dev_register(drm_dev, 0);
 	if (ret)
 		goto err_kms_helper_poll_fini;
 
+	drm_fbdev_generic_setup(drm_dev, 0);
 	rockchip_clk_unprotect();
 
 	return 0;
 err_kms_helper_poll_fini:
 	rockchip_gem_pool_destroy(drm_dev);
 	drm_kms_helper_poll_fini(drm_dev);
-	rockchip_drm_fbdev_fini(drm_dev);
-err_iommu_cleanup:
 	rockchip_iommu_cleanup(drm_dev);
 err_unbind_all:
 	component_unbind_all(dev, drm_dev);
@@ -1570,7 +1596,6 @@ static void rockchip_drm_unbind(struct device *dev)
 
 	drm_dev_unregister(drm_dev);
 
-	rockchip_drm_fbdev_fini(drm_dev);
 	rockchip_gem_pool_destroy(drm_dev);
 	drm_kms_helper_poll_fini(drm_dev);
 
@@ -1686,17 +1711,6 @@ static const struct drm_ioctl_desc rockchip_ioctls[] = {
 			  DRM_UNLOCKED),
 };
 
-static const struct file_operations rockchip_drm_driver_fops = {
-	.owner = THIS_MODULE,
-	.open = drm_open,
-	.mmap = rockchip_gem_mmap,
-	.poll = drm_poll,
-	.read = drm_read,
-	.unlocked_ioctl = drm_ioctl,
-	.compat_ioctl = drm_compat_ioctl,
-	.release = drm_release,
-};
-
 static int rockchip_drm_gem_dmabuf_begin_cpu_access(struct dma_buf *dma_buf,
 						    enum dma_data_direction dir)
 {
@@ -1723,7 +1737,6 @@ static const struct dma_buf_ops rockchip_drm_gem_prime_dmabuf_ops = {
 	.mmap = drm_gem_dmabuf_mmap,
 	.vmap = drm_gem_dmabuf_vmap,
 	.vunmap = drm_gem_dmabuf_vunmap,
-	.get_uuid = drm_gem_dmabuf_get_uuid,
 	.begin_cpu_access = rockchip_drm_gem_dmabuf_begin_cpu_access,
 	.end_cpu_access = rockchip_drm_gem_dmabuf_end_cpu_access,
 };
@@ -1790,7 +1803,7 @@ static struct drm_gem_object *rockchip_drm_gem_prime_import(struct drm_device *d
 	return rockchip_drm_gem_prime_import_dev(dev, dma_buf, dev->dev);
 }
 
-static struct dma_buf *rockchip_drm_gem_prime_export(struct drm_gem_object *obj,
+struct dma_buf *rockchip_drm_gem_prime_export(struct drm_gem_object *obj,
 						     int flags)
 {
 	struct drm_device *dev = obj->dev;
@@ -1807,23 +1820,19 @@ static struct dma_buf *rockchip_drm_gem_prime_export(struct drm_gem_object *obj,
 	return drm_gem_dmabuf_export(dev, &exp_info);
 }
 
+DEFINE_DRM_GEM_FOPS(rockchip_drm_driver_fops);
+
 static struct drm_driver rockchip_drm_driver = {
 	.driver_features	= DRIVER_MODESET | DRIVER_GEM | DRIVER_ATOMIC | DRIVER_RENDER,
 	.postclose		= rockchip_drm_postclose,
 	.lastclose		= rockchip_drm_lastclose,
 	.open			= rockchip_drm_open,
-	.gem_vm_ops		= &drm_gem_cma_vm_ops,
-	.gem_free_object_unlocked = rockchip_gem_free_object,
 	.dumb_create		= rockchip_gem_dumb_create,
 	.prime_handle_to_fd	= drm_gem_prime_handle_to_fd,
 	.prime_fd_to_handle	= drm_gem_prime_fd_to_handle,
 	.gem_prime_import	= rockchip_drm_gem_prime_import,
-	.gem_prime_export	= rockchip_drm_gem_prime_export,
-	.gem_prime_get_sg_table	= rockchip_gem_prime_get_sg_table,
 	.gem_prime_import_sg_table	= rockchip_gem_prime_import_sg_table,
-	.gem_prime_vmap		= rockchip_gem_prime_vmap,
-	.gem_prime_vunmap	= rockchip_gem_prime_vunmap,
-	.gem_prime_mmap		= rockchip_gem_mmap_buf,
+	.gem_prime_mmap		= drm_gem_prime_mmap,
 #ifdef CONFIG_DEBUG_FS
 	.debugfs_init		= rockchip_drm_debugfs_init,
 #endif
@@ -1883,10 +1892,17 @@ int rockchip_drm_endpoint_is_subdriver(struct device_node *ep)
 		return -ENODEV;
 
 	/* status disabled will prevent creation of platform-devices */
+	if (!of_device_is_available(node)) {
+		of_node_put(node);
+		return -ENODEV;
+	}
+
 	pdev = of_find_device_by_node(node);
 	of_node_put(node);
+
+	/* enabled non-platform-devices can immediately return here */
 	if (!pdev)
-		return -ENODEV;
+		return false;
 
 	/*
 	 * All rockchip subdrivers have probed at this point, so
@@ -1907,11 +1923,6 @@ int rockchip_drm_endpoint_is_subdriver(struct device_node *ep)
 
 	platform_device_put(pdev);
 	return false;
-}
-
-static int compare_dev(struct device *dev, void *data)
-{
-	return dev == (struct device *)data;
 }
 
 static void rockchip_drm_match_remove(struct device *dev)
@@ -1940,7 +1951,7 @@ static struct component_match *rockchip_drm_match_add(struct device *dev)
 				break;
 
 			device_link_add(dev, d, DL_FLAG_STATELESS);
-			component_match_add(dev, &match, compare_dev, d);
+			component_match_add(dev, &match, component_compare_dev, d);
 		} while (true);
 	}
 
@@ -2085,6 +2096,9 @@ static int __init rockchip_drm_init(void)
 {
 	int ret;
 
+	if (drm_firmware_drivers_only())
+		return -ENODEV;
+
 	num_rockchip_sub_drivers = 0;
 #if IS_ENABLED(CONFIG_DRM_ROCKCHIP_VVOP)
 	ADD_ROCKCHIP_SUB_DRIVER(vvop_platform_driver, CONFIG_DRM_ROCKCHIP_VVOP);
@@ -2148,3 +2162,4 @@ module_exit(rockchip_drm_fini);
 MODULE_AUTHOR("Mark Yao <mark.yao@rock-chips.com>");
 MODULE_DESCRIPTION("ROCKCHIP DRM Driver");
 MODULE_LICENSE("GPL v2");
+MODULE_IMPORT_NS(DMA_BUF);
