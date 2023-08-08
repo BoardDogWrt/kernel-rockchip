@@ -24,7 +24,9 @@
 	"D0 05 0A 09 08 05 2E 44 45 0F 17 16 2B 33\n" \
 	"D0 05 0A 09 08 05 2E 43 45 0F 16 16 2B 33"
 
-#define HSD20_IPS 1
+static int hsd20_ips;
+module_param(hsd20_ips, int, 0644);
+MODULE_PARM_DESC(hsd20_ips, "Enable the HSD20_IPS Panel");
 
 /**
  * enum st7789v_command - ST7789V display controller commands
@@ -90,9 +92,8 @@ static int init_display(struct fbtft_par *par)
 
 	/* set pixel format to RGB-565 */
 	write_reg(par, MIPI_DCS_SET_PIXEL_FORMAT, MIPI_DCS_PIXEL_FMT_16BIT);
-	if (HSD20_IPS)
+	if (hsd20_ips)
 		write_reg(par, PORCTRL, 0x05, 0x05, 0x00, 0x33, 0x33);
-
 	else
 		write_reg(par, PORCTRL, 0x08, 0x08, 0x00, 0x22, 0x22);
 
@@ -100,7 +101,7 @@ static int init_display(struct fbtft_par *par)
 	 * VGH = 13.26V
 	 * VGL = -10.43V
 	 */
-	if (HSD20_IPS)
+	if (hsd20_ips)
 		write_reg(par, GCTRL, 0x75);
 	else
 		write_reg(par, GCTRL, 0x35);
@@ -115,7 +116,7 @@ static int init_display(struct fbtft_par *par)
 	 * VAP =  4.1V + (VCOM + VCOM offset + 0.5 * VDV)
 	 * VAN = -4.1V + (VCOM + VCOM offset + 0.5 * VDV)
 	 */
-	if (HSD20_IPS)
+	if (hsd20_ips)
 		write_reg(par, VRHS, 0x13);
 	else
 		write_reg(par, VRHS, 0x0B);
@@ -124,7 +125,7 @@ static int init_display(struct fbtft_par *par)
 	write_reg(par, VDVS, 0x20);
 
 	/* VCOM = 0.9V */
-	if (HSD20_IPS)
+	if (hsd20_ips)
 		write_reg(par, VCOMS, 0x22);
 	else
 		write_reg(par, VCOMS, 0x20);
@@ -141,7 +142,7 @@ static int init_display(struct fbtft_par *par)
 
 	write_reg(par, MIPI_DCS_SET_DISPLAY_ON);
 
-	if (HSD20_IPS)
+	if (hsd20_ips)
 		write_reg(par, MIPI_DCS_ENTER_INVERT_MODE);
 
 	return 0;
