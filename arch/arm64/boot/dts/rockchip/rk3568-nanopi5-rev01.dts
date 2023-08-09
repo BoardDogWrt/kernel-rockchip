@@ -290,3 +290,26 @@
 		};
 	};
 };
+
+/* GPIO Connector */
+&spi1 {
+	num-cs = <1>;
+	pinctrl-0 = <&spi1m1_cs0 &spi1m1_pins>;
+	pinctrl-1 = <&spi1m1_cs0 &spi1m1_pins_hs>;
+	status = "disabled";
+};
+
+&uart5 {
+	pinctrl-0 = <&uart5m1_xfer>;
+	status = "disabled";
+};
+
+&uart7 {
+	pinctrl-0 = <&uart7m1_xfer>;
+	status = "disabled";
+};
+
+&uart9 {
+	pinctrl-0 = <&uart9m1_xfer>;
+	status = "okay";
+};
