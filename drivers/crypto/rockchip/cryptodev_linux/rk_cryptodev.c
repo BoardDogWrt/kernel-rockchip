@@ -1523,3 +1523,5 @@ bool rk_cryptodev_multi_thread(const char *name)
 
 	return false;
 }
+
+MODULE_IMPORT_NS(DMA_BUF);
