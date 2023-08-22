@@ -478,8 +478,23 @@ static struct urb *usb_wwan_setup_urb(struct usb_serial_port *port,
 			  usb_sndbulkpipe(serial->dev, endpoint) | dir,
 			  buf, len, callback, ctx);
 
-	if (intfdata->use_zlp && dir == USB_DIR_OUT)
+	if (intfdata->use_zlp && dir == USB_DIR_OUT) {
 		urb->transfer_flags |= URB_ZERO_PACKET;
+		return urb;
+	}
+
+	if (dir == USB_DIR_OUT) {
+		struct usb_device_descriptor *desc = &serial->dev->descriptor;
+#define DEV_MATCH(ud, vid, pid) \
+		(ud->idVendor == cpu_to_le16(vid) && ud->idProduct == cpu_to_le16(pid))
+		if (DEV_MATCH(desc, 0x1286, 0x4e3c) ||
+		    DEV_MATCH(desc, 0x05C6, 0x9090) ||
+		    DEV_MATCH(desc, 0x05C6, 0x9003) ||
+		    DEV_MATCH(desc, 0x05C6, 0x9215) ||
+		    (desc->idVendor == cpu_to_le16(0x2C7C)))
+			urb->transfer_flags |= URB_ZERO_PACKET;
+#undef DEV_MATCH
+	}
 
 	return urb;
 }
