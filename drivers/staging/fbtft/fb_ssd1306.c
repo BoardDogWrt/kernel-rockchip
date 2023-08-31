@@ -75,6 +75,11 @@ static int init_display(struct fbtft_par *par)
 	/* Vertical addressing mode  */
 	write_reg(par, 0x01);
 
+	/* Set Page Address */
+	write_reg(par, 0x22);
+	write_reg(par, 0x0);
+	write_reg(par, ((par->info->var.yres >> 3) - 1));
+
 	/* Set Segment Re-map */
 	/* column address 127 is mapped to SEG0 */
 	write_reg(par, 0xA0 | 0x1);
