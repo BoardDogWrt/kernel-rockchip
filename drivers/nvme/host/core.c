@@ -16,6 +16,7 @@
 #include <linux/backing-dev.h>
 #include <linux/slab.h>
 #include <linux/types.h>
+#include <linux/of.h>
 #include <linux/pr.h>
 #include <linux/ptrace.h>
 #include <linux/nvme_ioctl.h>
@@ -5057,6 +5058,7 @@ int nvme_init_ctrl(struct nvme_ctrl *ctrl, struct device *dev,
 		const struct nvme_ctrl_ops *ops, unsigned long quirks)
 {
 	int ret;
+	int min_idx;
 
 	ctrl->state = NVME_CTRL_NEW;
 	clear_bit(NVME_CTRL_FAILFAST_EXPIRED, &ctrl->flags);
@@ -5088,9 +5090,15 @@ int nvme_init_ctrl(struct nvme_ctrl *ctrl, struct device *dev,
 		goto out;
 	}
 
-	ret = ida_alloc(&nvme_instance_ida, GFP_KERNEL);
-	if (ret < 0)
-		goto out;
+	ret = of_alias_get_id(dev->of_node, "nvme");
+	if (ret < 0) {
+		min_idx = of_alias_get_highest_id("nvme");
+		min_idx = min_idx < 0 ? 0 : (min_idx + 1);
+
+		ret = ida_alloc_min(&nvme_instance_ida, min_idx, GFP_KERNEL);
+		if (ret < 0)
+			goto out;
+	}
 	ctrl->instance = ret;
 
 	device_initialize(&ctrl->ctrl_device);
