@@ -15,6 +15,7 @@
 #include <linux/backing-dev.h>
 #include <linux/slab.h>
 #include <linux/types.h>
+#include <linux/of.h>
 #include <linux/pr.h>
 #include <linux/ptrace.h>
 #include <linux/nvme_ioctl.h>
@@ -4542,6 +4543,20 @@ static void nvme_free_ctrl(struct device *dev)
 		nvme_put_subsystem(subsys);
 }
 
+/**
+ * nvme_first_nonreserved_index() - get the first index that is not reserved
+ */
+static int nvme_first_nonreserved_index(void)
+{
+	int max;
+
+	max = of_alias_get_highest_id("nvme");
+	if (max < 0)
+		return 0;
+
+	return max + 1;
+}
+
 /*
  * Initialize a NVMe controller structures.  This needs to be called during
  * earliest initialization so that we have the initialized structured around
@@ -4551,6 +4566,7 @@ int nvme_init_ctrl(struct nvme_ctrl *ctrl, struct device *dev,
 		const struct nvme_ctrl_ops *ops, unsigned long quirks)
 {
 	int ret;
+	int min_idx, max_idx;
 
 	ctrl->state = NVME_CTRL_NEW;
 	spin_lock_init(&ctrl->lock);
@@ -4580,9 +4596,15 @@ int nvme_init_ctrl(struct nvme_ctrl *ctrl, struct device *dev,
 		goto out;
 	}
 
-	ret = ida_simple_get(&nvme_instance_ida, 0, 0, GFP_KERNEL);
-	if (ret < 0)
-		goto out;
+	ret = of_alias_get_id(dev->of_node, "nvme");
+	if (ret < 0) {
+		min_idx = nvme_first_nonreserved_index();
+		max_idx = 0;
+
+		ret = ida_simple_get(&nvme_instance_ida, min_idx, max_idx, GFP_KERNEL);
+		if (ret < 0)
+			goto out;
+	}
 	ctrl->instance = ret;
 
 	device_initialize(&ctrl->ctrl_device);
