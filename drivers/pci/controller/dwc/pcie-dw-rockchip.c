@@ -140,10 +140,8 @@ enum rk_pcie_device_mode {
 
 #define PCIE_ATU_CR1			0x904
 #define PCIE_ATU_CR2			0x908
-#define PCIE_ATU_REGION_OUTBOUND	0
 #define PCIE_GET_ATU_OUTB_UNR_REG_OFFSET(region) \
 		((region) << 9)
-#define PCIE_ATU_REGION_INBOUND		BIT(31)
 #define PCIE_GET_ATU_INB_UNR_REG_OFFSET(region) \
 		(((region) << 9) | BIT(8))
 
@@ -194,12 +192,6 @@ struct rk_pcie {
 	u32				l1ss_ctl1;
 	struct dentry			*debugfs;
 	u32				msi_vector_num;
-};
-
-enum dw_pcie_as_type {
-	DW_PCIE_AS_UNKNOWN,
-	DW_PCIE_AS_MEM,
-	DW_PCIE_AS_IO,
 };
 
 struct rk_pcie_of_data {
@@ -338,26 +330,14 @@ static u32 rk_pcie_readl_ib_unroll(struct dw_pcie *pci, u32 index, u32 reg)
 
 static int rk_pcie_prog_inbound_atu_unroll(struct dw_pcie *pci, u8 func_no,
 					   int index, int bar, u64 cpu_addr,
-					   enum dw_pcie_as_type as_type)
+					   int type)
 {
-	int type;
 	u32 retries, val;
 
 	rk_pcie_writel_ib_unroll(pci, index, PCIE_ATU_UNR_LOWER_TARGET,
 				 lower_32_bits(cpu_addr));
 	rk_pcie_writel_ib_unroll(pci, index, PCIE_ATU_UNR_UPPER_TARGET,
 				 upper_32_bits(cpu_addr));
-
-	switch (as_type) {
-	case DW_PCIE_AS_MEM:
-		type = PCIE_ATU_TYPE_MEM;
-		break;
-	case DW_PCIE_AS_IO:
-		type = PCIE_ATU_TYPE_IO;
-		break;
-	default:
-		return -EINVAL;
-	}
 
 	rk_pcie_writel_ib_unroll(pci, index, PCIE_ATU_UNR_REGION_CTRL1, type |
 				 PCIE_ATU_FUNC_NUM(func_no));
@@ -386,30 +366,18 @@ static int rk_pcie_prog_inbound_atu_unroll(struct dw_pcie *pci, u8 func_no,
 
 static int rk_pcie_prog_inbound_atu(struct dw_pcie *pci, u8 func_no, int index,
 				    int bar, u64 cpu_addr,
-				    enum dw_pcie_as_type as_type)
+				    int type)
 {
-	int type;
 	u32 retries, val;
 
 	if (pci->iatu_unroll_enabled)
 		return rk_pcie_prog_inbound_atu_unroll(pci, func_no, index, bar,
-						       cpu_addr, as_type);
+						       cpu_addr, type);
 
-	dw_pcie_writel_dbi(pci, PCIE_ATU_VIEWPORT, PCIE_ATU_REGION_INBOUND |
+	dw_pcie_writel_dbi(pci, PCIE_ATU_VIEWPORT, PCIE_ATU_REGION_DIR_IB |
 			   index);
 	dw_pcie_writel_dbi(pci, PCIE_ATU_LOWER_TARGET, lower_32_bits(cpu_addr));
 	dw_pcie_writel_dbi(pci, PCIE_ATU_UPPER_TARGET, upper_32_bits(cpu_addr));
-
-	switch (as_type) {
-	case DW_PCIE_AS_MEM:
-		type = PCIE_ATU_TYPE_MEM;
-		break;
-	case DW_PCIE_AS_IO:
-		type = PCIE_ATU_TYPE_IO;
-		break;
-	default:
-		return -EINVAL;
-	}
 
 	dw_pcie_writel_dbi(pci, PCIE_ATU_CR1, type |
 			   PCIE_ATU_FUNC_NUM(func_no));
@@ -435,7 +403,7 @@ static int rk_pcie_prog_inbound_atu(struct dw_pcie *pci, u8 func_no, int index,
 
 static int rk_pcie_ep_inbound_atu(struct rk_pcie *rk_pcie,
 				enum pci_barno bar, dma_addr_t cpu_addr,
-				enum dw_pcie_as_type as_type)
+				int type)
 {
 	int ret;
 	u32 free_win;
@@ -453,7 +421,7 @@ static int rk_pcie_ep_inbound_atu(struct rk_pcie *rk_pcie,
 	}
 
 	ret = rk_pcie_prog_inbound_atu(rk_pcie->pci, func_no, free_win, bar,
-				       cpu_addr, as_type);
+				       cpu_addr, type);
 	if (ret < 0) {
 		dev_err(rk_pcie->pci->dev, "Failed to program IB window\n");
 		return ret;
@@ -538,7 +506,7 @@ static void rk_pcie_prog_outbound_atu(struct dw_pcie *pci, int index,
 	}
 
 	dw_pcie_writel_dbi(pci, PCIE_ATU_VIEWPORT,
-			   PCIE_ATU_REGION_OUTBOUND | index);
+			   PCIE_ATU_REGION_DIR_OB | index);
 	dw_pcie_writel_dbi(pci, PCIE_ATU_LOWER_BASE,
 			   lower_32_bits(cpu_addr));
 	dw_pcie_writel_dbi(pci, PCIE_ATU_UPPER_BASE,
@@ -617,7 +585,6 @@ static int rk_pcie_ep_atu_init(struct rk_pcie *rk_pcie)
 {
 	int ret;
 	enum pci_barno bar;
-	enum dw_pcie_as_type as_type;
 	dma_addr_t cpu_addr;
 	phys_addr_t phys_addr;
 	u64 pci_addr;
@@ -627,8 +594,7 @@ static int rk_pcie_ep_atu_init(struct rk_pcie *rk_pcie)
 		rk_pcie_ep_reset_bar(rk_pcie, bar);
 
 	cpu_addr = rk_pcie->mem_start;
-	as_type = DW_PCIE_AS_MEM;
-	ret = rk_pcie_ep_inbound_atu(rk_pcie, BAR_0, cpu_addr, as_type);
+	ret = rk_pcie_ep_inbound_atu(rk_pcie, BAR_0, cpu_addr, PCIE_ATU_TYPE_MEM);
 	if (ret)
 		return ret;
 
