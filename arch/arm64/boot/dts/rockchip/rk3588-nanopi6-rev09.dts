@@ -459,7 +459,7 @@
 	vpcie3v3-supply = <&vcc3v3_pcie30>;
 	status = "okay";
 
-	pcie@20 {
+	pcie@0,0 {
 		reg = <0x00200000 0 0 0 0>;
 		#address-cells = <3>;
 		#size-cells = <2>;
@@ -479,7 +479,7 @@
 	vpcie3v3-supply = <&vcc3v3_pcie30>;
 	status = "okay";
 
-	pcie@30 {
+	pcie@0,0 {
 		reg = <0x00300000 0 0 0 0>;
 		#address-cells = <3>;
 		#size-cells = <2>;
@@ -495,7 +495,7 @@
 	vpcie3v3-supply = <&vcc_3v3_pcie20>;
 	status = "okay";
 
-	pcie@40 {
+	pcie@0,0 {
 		reg = <0x00400000 0 0 0 0>;
 		#address-cells = <3>;
 		#size-cells = <2>;
@@ -520,12 +520,12 @@
 	vpcie3v3-supply = <&vcc3v3_pcie30>;
 	status = "okay";
 
-	pcie@00 {
+	pcie@0,0 {
 		reg = <0x00000000 0 0 0 0>;
 		#address-cells = <3>;
 		#size-cells = <2>;
 
-		nvme0: pcie@00,0 {
+		nvme0: pcie@0,0 {
 			reg = <0x000000 0 0 0 0>;
 		};
 	};
@@ -539,7 +539,7 @@
 	vpcie3v3-supply = <&vcc3v3_pcie30>;
 	status = "okay";
 
-	pcie@10 {
+	pcie@0,0 {
 		reg = <0x00100000 0 0 0 0>;
 		#address-cells = <3>;
 		#size-cells = <2>;
