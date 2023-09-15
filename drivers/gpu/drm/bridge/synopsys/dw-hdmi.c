@@ -225,7 +225,8 @@ static const struct drm_display_mode dw_hdmi_default_modes[] = {
 	/* 0x10 - 1024x768@60Hz */
 	{ DRM_MODE("1024x768", DRM_MODE_TYPE_DRIVER, 65000, 1024, 1048,
 		   1184, 1344, 0,  768, 771, 777, 806, 0,
-		   DRM_MODE_FLAG_NHSYNC | DRM_MODE_FLAG_NVSYNC) },
+		   DRM_MODE_FLAG_NHSYNC | DRM_MODE_FLAG_NVSYNC),
+	  .vrefresh = 60, .picture_aspect_ratio = HDMI_PICTURE_ASPECT_4_3, },
 	/* 17 - 720x576@50Hz 4:3 */
 	{ DRM_MODE("720x576", DRM_MODE_TYPE_DRIVER, 27000, 720, 732,
 		   796, 864, 0, 576, 581, 586, 625, 0,
@@ -325,6 +326,7 @@ struct dw_hdmi {
 	bool sink_is_hdmi;
 	bool sink_has_audio;
 	bool hpd_state;
+	bool ignore_edid;
 
 	struct delayed_work work;
 	struct workqueue_struct *workqueue;
@@ -2733,7 +2735,9 @@ static int dw_hdmi_connector_get_modes(struct drm_connector *connector)
 	if (!hdmi->ddc)
 		return 0;
 
-	edid = drm_get_edid(connector, hdmi->ddc);
+	edid = hdmi->ignore_edid ? NULL :
+		drm_get_edid(connector, hdmi->ddc);
+
 	if (edid) {
 		dev_dbg(hdmi->dev, "got edid: width[%d] x height[%d]\n",
 			edid->width_cm, edid->height_cm);
@@ -3714,9 +3718,6 @@ __dw_hdmi_probe(struct platform_device *pdev,
 	u8 config0;
 	u8 config3;
 	bool hdcp1x_enable = 0;
-	/* vic index of dw_hdmi_default_modes[] */
-	const u8 def_modes[6] = {4, 16, 31, 19, 17, 2};
-	int i;
 
 	hdmi = devm_kzalloc(dev, sizeof(*hdmi), GFP_KERNEL);
 	if (!hdmi)
@@ -3734,6 +3735,15 @@ __dw_hdmi_probe(struct platform_device *pdev,
 	mutex_init(&hdmi->mutex);
 	mutex_init(&hdmi->audio_mutex);
 	spin_lock_init(&hdmi->audio_lock);
+
+	if (of_property_read_bool(np, "rockchip,broken-edid"))
+		hdmi->ignore_edid = true;
+
+	if (!of_property_read_u32(np, "rockchip,defaultmode", &val) &&
+	    val < ARRAY_SIZE(dw_hdmi_default_modes))
+		hdmi->preferred_mode = val;
+	else
+		hdmi->preferred_mode = 0;
 
 	ddc_node = of_parse_phandle(np, "ddc-i2c-bus", 0);
 	if (ddc_node) {
@@ -3826,17 +3836,6 @@ __dw_hdmi_probe(struct platform_device *pdev,
 				ret);
 			goto err_iahb;
 		}
-	}
-
-	if (!of_property_read_u32(np, "rockchip,defaultmode", &val)) {
-		for (i = 0; i < ARRAY_SIZE(def_modes); i++) {
-			if (def_modes[i] == val) {
-				hdmi->preferred_mode = i;
-				break;
-			}
-		}
-		if (i >= ARRAY_SIZE(dw_hdmi_default_modes))
-			hdmi->preferred_mode = 0;
 	}
 
 	/* Product and revision IDs */
