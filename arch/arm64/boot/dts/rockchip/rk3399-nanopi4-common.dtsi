@@ -484,7 +484,7 @@
 	ddc-i2c-bus = <&i2c7>;
 	/delete-property/ pinctrl-names;
 	/delete-property/ pinctrl-0;
-	rockchip,defaultmode = <16>; /* CEA 1920x1080@60Hz */
+	rockchip,defaultmode = <1>; /* CEA 1920x1080@60Hz */
 };
 
 &hdmi_in_vopl {
