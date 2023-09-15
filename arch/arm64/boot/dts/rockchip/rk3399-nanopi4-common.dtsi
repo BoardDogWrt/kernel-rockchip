@@ -33,6 +33,9 @@
 	};
 
 	aliases {
+		mmc0 = &sdio0;
+		mmc1 = &sdmmc;
+		mmc2 = &sdhci;
 		spi1 = &spi1;
 	};
 
@@ -1035,6 +1038,7 @@
 };
 
 &emmc_phy {
+	rockchip,enable-strobe-pulldown;
 	status = "okay";
 };
 
