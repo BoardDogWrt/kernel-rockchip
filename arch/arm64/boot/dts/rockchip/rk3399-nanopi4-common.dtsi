@@ -586,7 +586,7 @@
 	#sound-dai-cells = <0>;
 	status = "okay";
 	ddc-i2c-bus = <&i2c7>;
-	rockchip,defaultmode = <16>; /* CEA 1920x1080@60Hz */
+	rockchip,defaultmode = <1>; /* CEA 1920x1080@60Hz */
 };
 
 &route_hdmi {
