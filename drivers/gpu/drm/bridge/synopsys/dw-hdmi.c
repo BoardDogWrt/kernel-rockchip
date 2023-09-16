@@ -290,6 +290,7 @@ struct dw_hdmi {
 	bool sink_is_hdmi;
 	bool sink_has_audio;
 	bool hpd_state;
+	bool ignore_edid;
 	bool support_hdmi;
 	bool force_logo;
 	int force_output;
@@ -3220,7 +3221,8 @@ static int dw_hdmi_connector_get_modes(struct drm_connector *connector)
 	int i,  ret = 0;
 
 	memset(metedata, 0, sizeof(*metedata));
-	edid = dw_hdmi_get_edid(hdmi, connector);
+	edid = hdmi->ignore_edid ? NULL :
+		dw_hdmi_get_edid(hdmi, connector);
 	if (edid) {
 		int vic = 0;
 
@@ -5019,6 +5021,9 @@ struct dw_hdmi *dw_hdmi_probe(struct platform_device *pdev,
 			goto err_iahb;
 		}
 	}
+
+	if (of_property_read_bool(np, "rockchip,broken-edid"))
+		hdmi->ignore_edid = true;
 
 	if (!of_property_read_u32(np, "rockchip,defaultmode", &val) &&
 	    val < ARRAY_SIZE(dw_hdmi_default_modes))
