@@ -14,6 +14,7 @@
  *
  */
 #include <linux/bitops.h>
+#include <linux/of.h>
 #include <linux/phy.h>
 #include <linux/module.h>
 
@@ -52,6 +53,15 @@ static int rtl821x_read_page(struct phy_device *phydev)
 static int rtl821x_write_page(struct phy_device *phydev, int page)
 {
 	return __phy_write(phydev, RTL821x_PAGE_SELECT, page);
+}
+
+static void rtl821x_led_of_init(struct phy_device *phydev)
+{
+	struct device *dev = &phydev->mdio.dev;
+	u32 val;
+
+	if (!of_property_read_u32(dev->of_node, "realtek,ledsel", &val))
+		phy_write_paged(phydev, 0xd04, 0x10, val);
 }
 
 static int rtl8201_ack_interrupt(struct phy_device *phydev)
@@ -170,6 +180,8 @@ static int rtl8211f_config_init(struct phy_device *phydev)
 	ret = genphy_config_init(phydev);
 	if (ret < 0)
 		return ret;
+
+	rtl821x_led_of_init(phydev);
 
 	/* enable TX-delay for rgmii-id and rgmii-txid, otherwise disable it */
 	if (phydev->interface == PHY_INTERFACE_MODE_RGMII_ID ||
