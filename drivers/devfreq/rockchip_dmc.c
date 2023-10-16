@@ -180,7 +180,7 @@ static struct pm_qos_request pm_qos;
 static int rockchip_dmcfreq_opp_helper(struct dev_pm_set_opp_data *data);
 
 static struct monitor_dev_profile dmc_mdevp = {
-	.type = MONITOR_TPYE_DEV,
+	.type = MONITOR_TYPE_DEV,
 	.low_temp_adjust = rockchip_monitor_dev_low_temp_adjust,
 	.high_temp_adjust = rockchip_monitor_dev_high_temp_adjust,
 	.update_volt = rockchip_monitor_check_rate_volt,
@@ -3052,6 +3052,10 @@ static void rockchip_dmcfreq_parse_dt(struct rockchip_dmcfreq *dmcfreq)
 	if (rockchip_get_rl_map_talbe(np, "vop-pn-msch-readlatency",
 				      &dmcfreq->info.vop_pn_rl_tbl))
 		dev_err(dev, "failed to get vop pn to msch rl\n");
+	if (dmcfreq->video_4k_rate)
+		dmcfreq->info.vop_4k_rate = dmcfreq->video_4k_rate;
+	else if (dmcfreq->video_4k_10b_rate)
+		dmcfreq->info.vop_4k_rate = dmcfreq->video_4k_10b_rate;
 
 	of_property_read_u32(np, "touchboost_duration",
 			     (u32 *)&dmcfreq->touchboostpulse_duration_val);

@@ -351,6 +351,7 @@ config VIDEO_IT6616
 	depends on VIDEO_V4L2 && I2C && VIDEO_V4L2_SUBDEV_API
 	select HDMI
 	select V4L2_FWNODE
+	select VIDEO_ROCKCHIP_HDMIRX_CLASS
 	help
 	  Support for the ITE IT6616 series HDMI to MIPI CSI-2 bridge.
 
@@ -362,6 +363,7 @@ config VIDEO_LT6911UXC
 	depends on VIDEO_V4L2 && I2C && VIDEO_V4L2_SUBDEV_API
 	select HDMI
 	select V4L2_FWNODE
+	select VIDEO_ROCKCHIP_HDMIRX_CLASS
 	help
 	  Support for the Lontium LT6911UXC series HDMI to MIPI CSI-2 bridge.
 
@@ -661,6 +663,8 @@ config VIDEO_MAX96722
 	  To compile this driver as a module, choose M here: the
 	  module will be called max96722.
 
+source "drivers/media/i2c/maxim4c/Kconfig"
+
 comment "Video and audio decoders"
 
 config VIDEO_SAA717X
@@ -930,6 +934,18 @@ config VIDEO_AR0230
 
 	  To compile this driver as a module, choose M here: the
 	  module will be called ar0230.
+
+config VIDEO_AR0822
+	tristate "Onsemi AR0822 sensor support"
+	depends on I2C && VIDEO_V4L2 && VIDEO_V4L2_SUBDEV_API
+	depends on MEDIA_CAMERA_SUPPORT
+	select V4L2_FWNODE
+	help
+	  This is a Video4Linux2 sensor driver for the Onsemi
+	  AR0822 camera.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called ar0822.
 
 config VIDEO_GC02M2
 	tristate "GalaxyCore GC02M2 sensor support"
@@ -1376,6 +1392,15 @@ config VIDEO_OS02G10
 	help
 	  This is a Video4Linux2 sensor driver for the OmniVision
 	  OS02G10 camera.
+
+config VIDEO_OS02K10
+	tristate "OmniVision OS02K10 sensor support"
+	depends on I2C && VIDEO_V4L2 && VIDEO_V4L2_SUBDEV_API
+	depends on MEDIA_CAMERA_SUPPORT
+	select V4L2_FWNODE
+	help
+	  This is a Video4Linux2 sensor driver for the OmniVision
+	  OS02K10 camera.
 
 config VIDEO_OS03B10
 	tristate "OmniVision OS03B10 sensor support"
@@ -1920,6 +1945,16 @@ config VIDEO_SC132GS
 	  To compile this driver as a module, choose M here: the
 	  module will be called sc132gs.
 
+config VIDEO_SC1346
+	tristate "SmartSens SC1346 sensor support"
+	depends on I2C && VIDEO_V4L2
+	select MEDIA_CONTROLLER
+	select VIDEO_V4L2_SUBDEV_API
+	select V4L2_FWNODE
+	help
+	  This is a Video4Linux2 sensor driver for the SmartSens
+	  SC1346 camera.
+
 config VIDEO_SC200AI
 	tristate "SmartSens SC200AI sensor support"
 	depends on I2C && VIDEO_V4L2
@@ -1959,6 +1994,16 @@ config VIDEO_SC2239
 	help
 	  This is a Video4Linux2 sensor driver for the SmartSens
 	  SC2239 camera.
+
+config VIDEO_SC223A
+	tristate "SmartSens SC223A sensor support"
+	depends on I2C && VIDEO_V4L2
+	select MEDIA_CONTROLLER
+	select VIDEO_V4L2_SUBDEV_API
+	select V4L2_FWNODE
+	help
+	  This is a Video4Linux2 sensor driver for the SmartSens
+	  SC223A camera.
 
 config VIDEO_SC230AI
 	tristate "SmartSens SC230AI sensor support"
@@ -2099,6 +2144,16 @@ config VIDEO_SC530AI
 	help
 	  This is a Video4Linux2 sensor driver for the SmartSens
 	  SC530AI camera.
+
+config VIDEO_SC5336
+	tristate "SmartSens SC5336 sensor support"
+	depends on I2C && VIDEO_V4L2
+	select MEDIA_CONTROLLER
+	select VIDEO_V4L2_SUBDEV_API
+	select V4L2_FWNODE
+	help
+	  This is a Video4Linux2 sensor driver for the SmartSens
+	  SC5336 camera.
 
 config VIDEO_SC850SL
 	tristate "SmartSens SC850SL sensor support"

@@ -2334,7 +2334,7 @@ static void hdmi_config_drm_infoframe(struct dw_hdmi *hdmi,
 
 	/* Dynamic Range and Mastering Infoframe is introduced in v2.11a. */
 	if (hdmi->version < 0x211a) {
-		DRM_ERROR("Not support DRM Infoframe\n");
+		dev_dbg(hdmi->dev, "Not support DRM Infoframe\n");
 		return;
 	}
 
@@ -2431,9 +2431,6 @@ static void hdmi_av_composer(struct dw_hdmi *hdmi,
 
 	vmode->previous_pixelclock = vmode->mpixelclock;
 	vmode->mpixelclock = mode->crtc_clock * 1000;
-	if ((mode->flags & DRM_MODE_FLAG_3D_MASK) ==
-		DRM_MODE_FLAG_3D_FRAME_PACKING)
-		vmode->mpixelclock *= 2;
 	dev_dbg(hdmi->dev, "final pixclk = %d\n", vmode->mpixelclock);
 
 	vmode->previous_tmdsclock = vmode->mtmdsclock;
@@ -5020,6 +5017,7 @@ struct dw_hdmi *dw_hdmi_probe(struct platform_device *pdev,
 		audio.get_eld	= hdmi_audio_get_eld;
 		audio.write	= hdmi_writeb;
 		audio.read	= hdmi_readb;
+		audio.mod	= hdmi_modb;
 		hdmi->enable_audio = dw_hdmi_i2s_audio_enable;
 		hdmi->disable_audio = dw_hdmi_i2s_audio_disable;
 

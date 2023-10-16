@@ -830,7 +830,7 @@ static struct devfreq_cooling_power vdec2_cooling_power_data = {
 };
 
 static struct monitor_dev_profile vdec2_mdevp = {
-	.type = MONITOR_TPYE_DEV,
+	.type = MONITOR_TYPE_DEV,
 	.low_temp_adjust = rockchip_monitor_dev_low_temp_adjust,
 	.high_temp_adjust = rockchip_monitor_dev_high_temp_adjust,
 };
@@ -1581,7 +1581,7 @@ static int rkvdec2_core_probe(struct platform_device *pdev)
 		mpp->dev_ops->task_worker = rkvdec2_hard_ccu_worker;
 		irq_proc = rkvdec2_hard_ccu_irq;
 	}
-	mpp->iommu_info->hdl = rkvdec2_ccu_iommu_fault_handle;
+	mpp->fault_handler = rkvdec2_ccu_iommu_fault_handle;
 	kthread_init_work(&mpp->work, mpp->dev_ops->task_worker);
 
 	/* get irq request */

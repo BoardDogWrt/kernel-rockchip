@@ -40,6 +40,14 @@
 #define PWM_OUTPUT_CENTER	(1 << 5)
 #define PWM_LOCK_EN		(1 << 6)
 #define PWM_LP_DISABLE		(0 << 8)
+#define PWM_CLK_SEL_SHIFT	9
+#define PWM_CLK_SEL_MASK	(1 << PWM_CLK_SEL_SHIFT)
+#define PWM_SEL_NO_SCALED_CLOCK	(0 << PWM_CLK_SEL_SHIFT)
+#define PWM_SEL_SCALED_CLOCK	(1 << PWM_CLK_SEL_SHIFT)
+#define PWM_PRESCELE_SHIFT	12
+#define PWM_PRESCALE_MASK	(0x3 << PWM_PRESCELE_SHIFT)
+#define PWM_SCALE_SHIFT		16
+#define PWM_SCALE_MASK		(0xff << PWM_SCALE_SHIFT)
 
 #define PWM_ONESHOT_COUNT_SHIFT	24
 #define PWM_ONESHOT_COUNT_MASK	(0xff << PWM_ONESHOT_COUNT_SHIFT)
@@ -96,6 +104,7 @@ static void rockchip_pwm_get_state(struct pwm_chip *chip,
 	u32 enable_conf = pc->data->enable_conf;
 	u64 tmp;
 	u32 val;
+	u32 dclk_div;
 	int ret;
 
 	if (!pc->oneshot_en) {
@@ -104,12 +113,14 @@ static void rockchip_pwm_get_state(struct pwm_chip *chip,
 			return;
 	}
 
+	dclk_div = pc->oneshot_en ? 2 : 1;
+
 	tmp = readl_relaxed(pc->base + pc->data->regs.period);
-	tmp *= pc->data->prescaler * NSEC_PER_SEC;
+	tmp *= dclk_div * pc->data->prescaler * NSEC_PER_SEC;
 	state->period = DIV_ROUND_CLOSEST_ULL(tmp, pc->clk_rate);
 
 	tmp = readl_relaxed(pc->base + pc->data->regs.duty);
-	tmp *= pc->data->prescaler * NSEC_PER_SEC;
+	tmp *= dclk_div * pc->data->prescaler * NSEC_PER_SEC;
 	state->duty_cycle =  DIV_ROUND_CLOSEST_ULL(tmp, pc->clk_rate);
 
 	val = readl_relaxed(pc->base + pc->data->regs.ctrl);
@@ -158,10 +169,16 @@ static void rockchip_pwm_config(struct pwm_chip *chip, struct pwm_device *pwm,
 			       const struct pwm_state *state)
 {
 	struct rockchip_pwm_chip *pc = to_rockchip_pwm_chip(chip);
-	unsigned long period, duty;
+	unsigned long period, duty, delay_ns;
 	unsigned long flags;
 	u64 div;
 	u32 ctrl;
+	u8 dclk_div = 1;
+
+#ifdef CONFIG_PWM_ROCKCHIP_ONESHOT
+	if (state->oneshot_count > 0 && state->oneshot_count <= PWM_ONESHOT_COUNT_MAX)
+		dclk_div = 2;
+#endif
 
 	/*
 	 * Since period and duty cycle registers have a width of 32
@@ -169,17 +186,18 @@ static void rockchip_pwm_config(struct pwm_chip *chip, struct pwm_device *pwm,
 	 * default prescaler value for all practical clock rate values.
 	 */
 	div = (u64)pc->clk_rate * state->period;
-	period = DIV_ROUND_CLOSEST_ULL(div,
-				       pc->data->prescaler * NSEC_PER_SEC);
+	period = DIV_ROUND_CLOSEST_ULL(div, dclk_div * pc->data->prescaler * NSEC_PER_SEC);
 
 	div = (u64)pc->clk_rate * state->duty_cycle;
-	duty = DIV_ROUND_CLOSEST_ULL(div, pc->data->prescaler * NSEC_PER_SEC);
+	duty = DIV_ROUND_CLOSEST_ULL(div, dclk_div * pc->data->prescaler * NSEC_PER_SEC);
+
+	if (pc->data->supports_lock) {
+		div = (u64)10 * NSEC_PER_SEC * dclk_div * pc->data->prescaler;
+		delay_ns = DIV_ROUND_UP_ULL(div, pc->clk_rate);
+	}
 
 	local_irq_save(flags);
-	/*
-	 * Lock the period and duty of previous configuration, then
-	 * change the duty and period, that would not be effective.
-	 */
+
 	ctrl = readl_relaxed(pc->base + pc->data->regs.ctrl);
 	if (pc->data->vop_pwm) {
 		if (pc->vop_pwm_en)
@@ -191,6 +209,19 @@ static void rockchip_pwm_config(struct pwm_chip *chip, struct pwm_device *pwm,
 #ifdef CONFIG_PWM_ROCKCHIP_ONESHOT
 	if (state->oneshot_count > 0 && state->oneshot_count <= PWM_ONESHOT_COUNT_MAX) {
 		u32 int_ctrl;
+
+		/*
+		 * This is a workaround, an uncertain waveform will be
+		 * generated after oneshot ends. It is needed to enable
+		 * the dclk scale function to resolve it. It doesn't
+		 * matter what the scale factor is, just make sure the
+		 * scale function is turned on, for which we set scale
+		 * factor to 2.
+		 */
+		ctrl &= ~PWM_SCALE_MASK;
+		ctrl |= (dclk_div / 2) << PWM_SCALE_SHIFT;
+		ctrl &= ~PWM_CLK_SEL_MASK;
+		ctrl |= PWM_SEL_SCALED_CLOCK;
 
 		pc->oneshot_en = true;
 		ctrl &= ~PWM_MODE_MASK;
@@ -204,6 +235,10 @@ static void rockchip_pwm_config(struct pwm_chip *chip, struct pwm_device *pwm,
 		writel_relaxed(int_ctrl, pc->base + PWM_REG_INT_EN(pc->channel_id));
 	} else {
 		u32 int_ctrl;
+
+		ctrl &= ~PWM_SCALE_MASK;
+		ctrl &= ~PWM_CLK_SEL_MASK;
+		ctrl |= PWM_SEL_NO_SCALED_CLOCK;
 
 		if (state->oneshot_count)
 			dev_err(chip->dev, "Oneshot_count must be between 1 and 256.\n");
@@ -220,6 +255,10 @@ static void rockchip_pwm_config(struct pwm_chip *chip, struct pwm_device *pwm,
 	}
 #endif
 
+	/*
+	 * Lock the period and duty of previous configuration, then
+	 * change the duty and period, that would not be effective.
+	 */
 	if (pc->data->supports_lock) {
 		ctrl |= PWM_LOCK_EN;
 		writel_relaxed(ctrl, pc->base + pc->data->regs.ctrl);
@@ -237,12 +276,14 @@ static void rockchip_pwm_config(struct pwm_chip *chip, struct pwm_device *pwm,
 	}
 
 	/*
-	 * Unlock and set polarity at the same time,
-	 * the configuration of duty, period and polarity
-	 * would be effective together at next period.
+	 * Unlock and set polarity at the same time, the configuration of duty,
+	 * period and polarity would be effective together at next period. It
+	 * takes 10 dclk cycles to make sure lock works before unlocking.
 	 */
-	if (pc->data->supports_lock)
+	if (pc->data->supports_lock) {
 		ctrl &= ~PWM_LOCK_EN;
+		ndelay(delay_ns);
+	}
 
 	writel(ctrl, pc->base + pc->data->regs.ctrl);
 	local_irq_restore(flags);
