@@ -250,6 +250,7 @@ static struct {
 
 	{ "LC116LF1L01",&k116e,	CTP_FT5526_KR },
 	{ "LC116LF1L02",&k116e,	CTP_FT5526_KR },
+	{ "LM116LF3L01",&k116e,	CTP_FT5526_KR },
 	{ "TST101WUIH", &k101d,	CTP_FT5X06 },
 
 	{ "EDID",	NULL,	CTP_AUTO    },
