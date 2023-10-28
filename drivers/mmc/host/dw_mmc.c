@@ -246,7 +246,7 @@ static void dw_mci_wait_while_busy(struct dw_mci *host, u32 cmd_flags)
 	 * ...also allow sending for SDMMC_CMD_VOLT_SWITCH where busy is
 	 * expected.
 	 */
-#ifdef CONFIG_ROCKCHIP_THUNDER_BOOT
+#ifdef CONFIG_ROCKCHIP_THUNDER_BOOT_MMC
 	if (host->slot->mmc->restrict_caps & RESTRICT_CARD_TYPE_EMMC)
 		delay = 0;
 #endif
@@ -1508,6 +1508,9 @@ static void dw_mci_set_ios(struct mmc_host *mmc, struct mmc_ios *ios)
 
 	switch (ios->power_mode) {
 	case MMC_POWER_UP:
+		if (!IS_ERR_OR_NULL(slot->host->pinctrl))
+			pinctrl_select_state(slot->host->pinctrl, slot->host->idle_state);
+
 		if (!IS_ERR(mmc->supply.vmmc)) {
 			ret = mmc_regulator_set_ocr(mmc, mmc->supply.vmmc,
 					ios->vdd);
@@ -1524,6 +1527,9 @@ static void dw_mci_set_ios(struct mmc_host *mmc, struct mmc_ios *ios)
 		mci_writel(slot->host, PWREN, regs);
 		break;
 	case MMC_POWER_ON:
+		if (!IS_ERR_OR_NULL(slot->host->pinctrl))
+			pinctrl_select_state(slot->host->pinctrl, slot->host->normal_state);
+
 		if (!slot->host->vqmmc_enabled) {
 			if (!IS_ERR(mmc->supply.vqmmc)) {
 				ret = regulator_enable(mmc->supply.vqmmc);
@@ -1548,14 +1554,20 @@ static void dw_mci_set_ios(struct mmc_host *mmc, struct mmc_ios *ios)
 
 		break;
 	case MMC_POWER_OFF:
+		if (!IS_ERR_OR_NULL(slot->host->pinctrl))
+			pinctrl_select_state(slot->host->pinctrl, slot->host->idle_state);
+
 		/* Turn clock off before power goes down */
 		dw_mci_setup_bus(slot, false);
 
 		if (!IS_ERR(mmc->supply.vmmc))
 			mmc_regulator_set_ocr(mmc, mmc->supply.vmmc, 0);
 
-		if (!IS_ERR(mmc->supply.vqmmc) && slot->host->vqmmc_enabled)
+		if (!IS_ERR(mmc->supply.vqmmc) && slot->host->vqmmc_enabled) {
+			ios->signal_voltage = MMC_SIGNAL_VOLTAGE_330;
+			mmc_regulator_set_vqmmc(mmc, ios);
 			regulator_disable(mmc->supply.vqmmc);
+		}
 		slot->host->vqmmc_enabled = false;
 
 		regs = mci_readl(slot->host, PWREN);
@@ -2102,13 +2114,14 @@ static void dw_mci_tasklet_func(unsigned long priv)
 				 * delayed. Allowing the transfer to take place
 				 * avoids races and keeps things simple.
 				 */
-				if (err != -ETIMEDOUT) {
+				if (err != -ETIMEDOUT &&
+				    host->dir_status == DW_MCI_RECV_STATUS) {
 					state = STATE_SENDING_DATA;
 					continue;
 				}
 
-				dw_mci_stop_dma(host);
 				send_stop_abort(host, data);
+				dw_mci_stop_dma(host);
 				state = STATE_SENDING_STOP;
 				break;
 			}
@@ -2132,10 +2145,10 @@ static void dw_mci_tasklet_func(unsigned long priv)
 			 */
 			if (test_and_clear_bit(EVENT_DATA_ERROR,
 					       &host->pending_events)) {
-				dw_mci_stop_dma(host);
 				if (!(host->data_status & (SDMMC_INT_DRTO |
 							   SDMMC_INT_EBE)))
 					send_stop_abort(host, data);
+				dw_mci_stop_dma(host);
 				state = STATE_DATA_ERROR;
 				break;
 			}
@@ -2171,10 +2184,10 @@ static void dw_mci_tasklet_func(unsigned long priv)
 			 */
 			if (test_and_clear_bit(EVENT_DATA_ERROR,
 					       &host->pending_events)) {
-				dw_mci_stop_dma(host);
 				if (!(host->data_status & (SDMMC_INT_DRTO |
 							   SDMMC_INT_EBE)))
 					send_stop_abort(host, data);
+				dw_mci_stop_dma(host);
 				state = STATE_DATA_ERROR;
 				break;
 			}
@@ -3268,6 +3281,22 @@ static struct dw_mci_board *dw_mci_parse_dt(struct dw_mci *host)
 			return ERR_PTR(ret);
 	}
 
+	host->pinctrl = devm_pinctrl_get(host->dev);
+	if (!IS_ERR(host->pinctrl)) {
+		host->normal_state = pinctrl_lookup_state(host->pinctrl, "normal");
+		if (IS_ERR(host->normal_state))
+			dev_warn(dev, "No normal pinctrl state\n");
+
+		host->idle_state = pinctrl_lookup_state(host->pinctrl, "idle");
+		if (IS_ERR(host->idle_state))
+			dev_warn(dev, "No idle pinctrl state\n");
+
+		if (!IS_ERR(host->normal_state) && !IS_ERR(host->idle_state))
+			pinctrl_select_state(host->pinctrl, host->idle_state);
+		else
+			host->pinctrl = NULL;
+	}
+
 	return pdata;
 }
 
@@ -3325,7 +3354,7 @@ int dw_mci_probe(struct dw_mci *host)
 			return ret;
 		}
 	}
-#ifdef CONFIG_ROCKCHIP_THUNDER_BOOT
+#ifdef CONFIG_ROCKCHIP_THUNDER_BOOT_MMC
 	if (device_property_read_bool(host->dev, "supports-emmc")) {
 		if (readl_poll_timeout(host->regs + SDMMC_STATUS,
 				fifo_size,

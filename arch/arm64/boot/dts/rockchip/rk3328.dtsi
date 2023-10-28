@@ -286,7 +286,7 @@
 	};
 
 	pdm: pdm@ff040000 {
-		compatible = "rockchip,pdm";
+		compatible = "rockchip,rk3328-pdm";
 		reg = <0x0 0xff040000 0x0 0x1000>;
 		clocks = <&cru SCLK_PDM>, <&cru HCLK_PDM>;
 		clock-names = "pdm_clk", "pdm_hclk";
@@ -663,7 +663,7 @@
 
 	gpu: gpu@ff300000 {
 		compatible = "arm,mali-450";
-		reg = <0x0 0xff300000 0x0 0x40000>;
+		reg = <0x0 0xff300000 0x0 0x30000>;
 
 		interrupts = <GIC_SPI 90 IRQ_TYPE_LEVEL_HIGH>,
 			     <GIC_SPI 87 IRQ_TYPE_LEVEL_HIGH>,
@@ -1006,6 +1006,7 @@
 		reg-io-width = <4>;
 		interrupts = <GIC_SPI 35 IRQ_TYPE_LEVEL_HIGH>,
 			     <GIC_SPI 71 IRQ_TYPE_LEVEL_HIGH>;
+		interrupt-names = "hdmi", "hdmi_wakeup";
 		clocks = <&cru PCLK_HDMI>,
 			 <&cru SCLK_HDMI_SFC>,
 			 <&cru SCLK_RTC32K>,

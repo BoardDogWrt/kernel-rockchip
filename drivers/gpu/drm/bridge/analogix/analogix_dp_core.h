@@ -73,6 +73,7 @@ enum pattern_set {
 	D10_2,
 	TRAINING_PTN1,
 	TRAINING_PTN2,
+	TRAINING_PTN3,
 	DP_NONE
 };
 
@@ -170,7 +171,6 @@ struct analogix_dp_device {
 	struct drm_connector	connector;
 	struct drm_bridge	*bridge;
 	struct drm_dp_aux       aux;
-	struct clk		*clock;
 	unsigned int		irq;
 	void __iomem		*reg_base;
 
@@ -180,6 +180,7 @@ struct analogix_dp_device {
 	bool			phy_enabled;
 	int			dpms_mode;
 	struct gpio_desc	*hpd_gpiod;
+	int			hpd_irq;
 	bool                    force_hpd;
 	bool			psr_enable;
 	bool			fast_train_enable;

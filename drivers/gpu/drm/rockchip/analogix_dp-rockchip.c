@@ -299,9 +299,12 @@ static void rockchip_dp_drm_encoder_enable(struct drm_encoder *encoder)
 		DRM_DEV_ERROR(dp->dev, "Could not write to GRF: %d\n", ret);
 }
 
-static void rockchip_dp_drm_encoder_nop(struct drm_encoder *encoder)
+static void rockchip_dp_drm_encoder_disable(struct drm_encoder *encoder)
 {
-	/* do nothing */
+	struct drm_crtc *crtc = encoder->crtc;
+	struct rockchip_crtc_state *s = to_rockchip_crtc_state(crtc->state);
+
+	s->output_if &= ~VOP_OUTPUT_IF_eDP0;
 }
 
 static int
@@ -400,7 +403,7 @@ static struct drm_encoder_helper_funcs rockchip_dp_encoder_helper_funcs = {
 	.mode_fixup = rockchip_dp_drm_encoder_mode_fixup,
 	.mode_set = rockchip_dp_drm_encoder_mode_set,
 	.enable = rockchip_dp_drm_encoder_enable,
-	.disable = rockchip_dp_drm_encoder_nop,
+	.disable = rockchip_dp_drm_encoder_disable,
 	.atomic_check = rockchip_dp_drm_encoder_atomic_check,
 	.loader_protect = rockchip_dp_drm_encoder_loader_protect,
 };
@@ -527,12 +530,6 @@ static int rockchip_dp_bind(struct device *dev, struct device *master,
 	if (ret < 0)
 		goto err_cleanup_encoder;
 
-	dp->adp = analogix_dp_bind(dev, dp->drm_dev, &dp->plat_data);
-	if (IS_ERR(dp->adp)) {
-		ret = PTR_ERR(dp->adp);
-		goto err_unreg_psr;
-	}
-
 	if (dp->data->audio) {
 		struct hdmi_codec_pdata codec_data = {
 			.ops = &rockchip_dp_audio_codec_ops,
@@ -552,11 +549,20 @@ static int rockchip_dp_bind(struct device *dev, struct device *master,
 		}
 	}
 
+	dp->adp = analogix_dp_bind(dev, dp->drm_dev, &dp->plat_data);
+	if (IS_ERR(dp->adp)) {
+		ret = PTR_ERR(dp->adp);
+		goto err_unreg_audio;
+	}
+
 	dp->sub_dev.connector = &dp->adp->connector;
 	dp->sub_dev.of_node = dev->of_node;
 	rockchip_drm_register_sub_dev(&dp->sub_dev);
 
 	return 0;
+err_unreg_audio:
+	if (dp->audio_pdev)
+		platform_device_unregister(dp->audio_pdev);
 err_unreg_psr:
 	rockchip_drm_psr_unregister(&dp->encoder);
 err_cleanup_encoder:
@@ -678,10 +684,12 @@ static const struct rockchip_dp_chip_data rk3399_edp = {
 	.lcdsel_big = HIWORD_UPDATE(0, RK3399_EDP_LCDC_SEL),
 	.lcdsel_lit = HIWORD_UPDATE(RK3399_EDP_LCDC_SEL, RK3399_EDP_LCDC_SEL),
 	.chip_type = RK3399_EDP,
+	.ssc = true,
 };
 
 static const struct rockchip_dp_chip_data rk3368_edp = {
 	.chip_type = RK3368_EDP,
+	.ssc = true,
 };
 
 static const struct rockchip_dp_chip_data rk3288_dp = {
@@ -689,6 +697,7 @@ static const struct rockchip_dp_chip_data rk3288_dp = {
 	.lcdsel_big = HIWORD_UPDATE(0, RK3288_EDP_LCDC_SEL),
 	.lcdsel_lit = HIWORD_UPDATE(RK3288_EDP_LCDC_SEL, RK3288_EDP_LCDC_SEL),
 	.chip_type = RK3288_DP,
+	.ssc = true,
 };
 
 static const struct rockchip_dp_chip_data rk3568_edp = {

@@ -1104,11 +1104,13 @@ static void dw_mipi_dsi_post_disable(struct dw_mipi_dsi *dsi)
 static void dw_mipi_dsi_encoder_disable(struct drm_encoder *encoder)
 {
 	struct dw_mipi_dsi *dsi = encoder_to_dsi(encoder);
+	struct drm_crtc *crtc = encoder->crtc;
+	struct rockchip_crtc_state *s = to_rockchip_crtc_state(crtc->state);
 
 	if (dsi->panel)
 		drm_panel_disable(dsi->panel);
 
-	if (dsi->pdata->soc_type == RK3568)
+	if (IS_ENABLED(CONFIG_CPU_RK3568) && dsi->pdata->soc_type == RK3568)
 		vop2_standby(encoder->crtc, 1);
 
 	dw_mipi_dsi_disable(dsi);
@@ -1116,8 +1118,13 @@ static void dw_mipi_dsi_encoder_disable(struct drm_encoder *encoder)
 		drm_panel_unprepare(dsi->panel);
 	dw_mipi_dsi_post_disable(dsi);
 
-	if (dsi->pdata->soc_type == RK3568)
+	if (IS_ENABLED(CONFIG_CPU_RK3568) && dsi->pdata->soc_type == RK3568)
 		vop2_standby(encoder->crtc, 0);
+
+	if (dsi->slave)
+		s->output_if &= ~(VOP_OUTPUT_IF_MIPI1 | VOP_OUTPUT_IF_MIPI0);
+	else
+		s->output_if &= ~(dsi->id ? VOP_OUTPUT_IF_MIPI1 : VOP_OUTPUT_IF_MIPI0);
 }
 
 static void dw_mipi_dsi_vop_routing(struct dw_mipi_dsi *dsi)
@@ -1352,7 +1359,7 @@ static void dw_mipi_dsi_encoder_enable(struct drm_encoder *encoder)
 
 	dw_mipi_dsi_vop_routing(dsi);
 
-	if (dsi->pdata->soc_type == RK3568)
+	if (IS_ENABLED(CONFIG_CPU_RK3568) && dsi->pdata->soc_type == RK3568)
 		vop2_standby(encoder->crtc, 1);
 
 	dw_mipi_dsi_pre_enable(dsi);
@@ -1360,7 +1367,7 @@ static void dw_mipi_dsi_encoder_enable(struct drm_encoder *encoder)
 		drm_panel_prepare(dsi->panel);
 	dw_mipi_dsi_enable(dsi);
 
-	if (dsi->pdata->soc_type == RK3568)
+	if (IS_ENABLED(CONFIG_CPU_RK3568) && dsi->pdata->soc_type == RK3568)
 		vop2_standby(encoder->crtc, 0);
 
 	if (dsi->panel)

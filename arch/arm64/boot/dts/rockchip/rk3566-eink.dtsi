@@ -14,7 +14,7 @@
 		};
 
 		display_reserved: framebuffer@10900000 {
-			reg = <0x0 0x10900000 0x0 0x2000000>;
+			reg = <0x0 0x10900000 0x0 0x3300000>;
 		};
 	};
 
@@ -46,33 +46,15 @@
 };
 
 &dmc {
-	system-status-freq = <
-		/*system status         freq(KHz)*/
-		SYS_STATUS_NORMAL       528000
-		SYS_STATUS_REBOOT       528000
-		SYS_STATUS_SUSPEND      324000
-	>;
 	center-supply = <&vdd_logic>;
 	auto-freq-en = <0>;
+	system-status-level = <
+		/*system status         freq level*/
+		SYS_STATUS_NORMAL       DMC_FREQ_LEVEL_HIGH
+		SYS_STATUS_REBOOT       DMC_FREQ_LEVEL_HIGH
+		SYS_STATUS_SUSPEND      DMC_FREQ_LEVEL_LOW
+	>;
 	status = "okay";
-};
-
-&dmc_opp_table {
-	opp-324000000 {
-		opp-microvolt = <875000>;
-	};
-	opp-528000000 {
-		opp-microvolt = <875000>;
-	};
-	opp-780000000 {
-		status = "disabled";
-	};
-	opp-920000000 {
-		status = "disabled";
-	};
-	opp-1056000000 {
-		status = "disabled";
-	};
 };
 
 &ebc {
@@ -84,14 +66,24 @@
 };
 
 &gpu_opp_table {
-	opp-100000000 {
-		opp-hz = /bits/ 64 <100000000>;
-		opp-microvolt = <825000>;
-	};
-	opp-150000000 {
-		opp-hz = /bits/ 64 <150000000>;
-		opp-microvolt = <825000>;
-	};
+	/delete-node/ opp-200000000;
+	/delete-node/ opp-300000000;
+};
+
+&lpddr4_params {
+	/* freq info, freq_0 is final frequency, unit: MHz */
+	freq_0 = <528>;
+	freq_1 = <324>;
+	freq_2 = <324>;
+	freq_3 = <324>;
+};
+
+&lpddr4x_params {
+	/* freq info, freq_0 is final frequency, unit: MHz */
+	freq_0 = <528>;
+	freq_1 = <324>;
+	freq_2 = <324>;
+	freq_3 = <324>;
 };
 
 &rockchip_suspend {

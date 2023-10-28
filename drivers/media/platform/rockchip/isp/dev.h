@@ -45,6 +45,7 @@
 #include "isp_stats.h"
 #include "isp_mipi_luma.h"
 #include "procfs.h"
+#include "version.h"
 
 #define DRIVER_NAME "rkisp"
 #define ISP_VDEV_NAME DRIVER_NAME  "_ispdev"
@@ -228,6 +229,7 @@ struct rkisp_device {
 	bool send_fbcgain;
 	struct rkisp_ispp_buf *cur_fbcgain;
 	struct rkisp_buffer *cur_spbuf;
+	bool is_thunderboot;
 
 	struct kfifo rdbk_kfifo;
 	spinlock_t rdbk_lock;
@@ -237,5 +239,6 @@ struct rkisp_device {
 	int rdbk_cnt_x3;
 	u32 rd_mode;
 	u8 filt_state[RDBK_F_MAX];
+	bool is_probe_end;
 };
 #endif

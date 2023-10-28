@@ -47,7 +47,15 @@ static bool analogix_dp_bandwidth_ok(struct analogix_dp_device *dp,
 				     const struct drm_display_mode *mode,
 				     unsigned int rate, unsigned int lanes)
 {
+	const struct drm_display_info *info;
 	u32 max_bw, req_bw, bpp = 24;
+
+	if (dp->plat_data->skip_connector)
+		return true;
+
+	info = &dp->connector.display_info;
+	if (info->bpc)
+		bpp = 3 * info->bpc;
 
 	req_bw = mode->clock * bpp / 8;
 	max_bw = lanes * rate;
@@ -509,11 +517,25 @@ static void analogix_dp_get_adjust_training_lane(struct analogix_dp_device *dp,
 	}
 }
 
+static bool analogix_dp_tps3_supported(struct analogix_dp_device *dp)
+{
+	bool source_tps3_supported, sink_tps3_supported;
+	u8 dpcd = 0;
+
+	source_tps3_supported =
+		dp->video_info.max_link_rate == DP_LINK_BW_5_4;
+	drm_dp_dpcd_readb(&dp->aux, DP_MAX_LANE_COUNT, &dpcd);
+	sink_tps3_supported = dpcd & DP_TPS3_SUPPORTED;
+
+	return source_tps3_supported && sink_tps3_supported;
+}
+
 static int analogix_dp_process_clock_recovery(struct analogix_dp_device *dp)
 {
 	int lane, lane_count, retval;
 	u8 voltage_swing, pre_emphasis, training_lane;
 	u8 link_status[2], adjust_request[2];
+	u8 training_pattern = TRAINING_PTN2;
 
 	usleep_range(100, 101);
 
@@ -529,12 +551,16 @@ static int analogix_dp_process_clock_recovery(struct analogix_dp_device *dp)
 		return retval;
 
 	if (analogix_dp_clock_recovery_ok(link_status, lane_count) == 0) {
-		/* set training pattern 2 for EQ */
-		analogix_dp_set_training_pattern(dp, TRAINING_PTN2);
+		if (analogix_dp_tps3_supported(dp))
+			training_pattern = TRAINING_PTN3;
+
+		/* set training pattern for EQ */
+		analogix_dp_set_training_pattern(dp, training_pattern);
 
 		retval = drm_dp_dpcd_writeb(&dp->aux, DP_TRAINING_PATTERN_SET,
 					    DP_LINK_SCRAMBLING_DISABLE |
-						DP_TRAINING_PATTERN_2);
+					    (training_pattern == TRAINING_PTN3 ?
+					     DP_TRAINING_PATTERN_3 : DP_TRAINING_PATTERN_2));
 		if (retval < 0)
 			return retval;
 
@@ -1099,6 +1125,8 @@ static int analogix_dp_loader_protect(struct drm_connector *connector, bool on)
 			}
 		}
 
+		analogix_dp_phy_power_on(dp);
+
 		ret = analogix_dp_detect_sink_psr(dp);
 		if (ret)
 			return ret;
@@ -1248,12 +1276,6 @@ static int analogix_dp_set_bridge(struct analogix_dp_device *dp)
 
 	pm_runtime_get_sync(dp->dev);
 
-	ret = clk_prepare_enable(dp->clock);
-	if (ret < 0) {
-		DRM_ERROR("Failed to prepare_enable the clock clk [%d]\n", ret);
-		goto out_dp_clk_pre;
-	}
-
 	if (dp->plat_data->power_on_start)
 		dp->plat_data->power_on_start(dp->plat_data);
 
@@ -1293,8 +1315,6 @@ out_dp_init:
 	analogix_dp_phy_power_off(dp);
 	if (dp->plat_data->power_off)
 		dp->plat_data->power_off(dp->plat_data);
-	clk_disable_unprepare(dp->clock);
-out_dp_clk_pre:
 	pm_runtime_put_sync(dp->dev);
 
 	return ret;
@@ -1345,8 +1365,6 @@ static void analogix_dp_bridge_disable(struct drm_bridge *bridge)
 	analogix_dp_set_analog_power_down(dp, POWER_ALL, 1);
 	analogix_dp_phy_power_off(dp);
 
-	clk_disable_unprepare(dp->clock);
-
 	pm_runtime_put_sync(dp->dev);
 
 	if (dp->plat_data->panel) {
@@ -1380,16 +1398,12 @@ static void analogix_dp_bridge_mode_set(struct drm_bridge *bridge,
 	/* Input video dynamic_range & colorimetry */
 	vic = drm_match_cea_mode(mode);
 	if ((vic == 6) || (vic == 7) || (vic == 21) || (vic == 22) ||
-	    (vic == 2) || (vic == 3) || (vic == 17) || (vic == 18)) {
+	    (vic == 2) || (vic == 3) || (vic == 17) || (vic == 18))
 		video->dynamic_range = CEA;
-		video->ycbcr_coeff = COLOR_YCBCR601;
-	} else if (vic) {
+	else if (vic)
 		video->dynamic_range = CEA;
-		video->ycbcr_coeff = COLOR_YCBCR709;
-	} else {
+	else
 		video->dynamic_range = VESA;
-		video->ycbcr_coeff = COLOR_YCBCR709;
-	}
 
 	/* Input vide bpc and color_formats */
 	switch (display_info->bpc) {
@@ -1409,14 +1423,16 @@ static void analogix_dp_bridge_mode_set(struct drm_bridge *bridge,
 		video->color_depth = COLOR_8;
 		break;
 	}
-	if (display_info->color_formats & DRM_COLOR_FORMAT_YCRCB444)
+	if (display_info->color_formats & DRM_COLOR_FORMAT_YCRCB444) {
 		video->color_space = COLOR_YCBCR444;
-	else if (display_info->color_formats & DRM_COLOR_FORMAT_YCRCB422)
+		video->ycbcr_coeff = COLOR_YCBCR709;
+	} else if (display_info->color_formats & DRM_COLOR_FORMAT_YCRCB422) {
 		video->color_space = COLOR_YCBCR422;
-	else if (display_info->color_formats & DRM_COLOR_FORMAT_RGB444)
+		video->ycbcr_coeff = COLOR_YCBCR709;
+	} else {
 		video->color_space = COLOR_RGB;
-	else
-		video->color_space = COLOR_RGB;
+		video->ycbcr_coeff = COLOR_YCBCR601;
+	}
 
 	/*
 	 * NOTE: those property parsing code is used for providing backward
@@ -1504,9 +1520,12 @@ static int analogix_dp_dt_parse_pdata(struct analogix_dp_device *dp)
 	switch (dp->plat_data->dev_type) {
 	case RK3288_DP:
 	case RK3368_EDP:
-	case RK3399_EDP:
 	case RK3568_EDP:
 		video_info->max_link_rate = 0x0A;
+		video_info->max_lane_count = 0x04;
+		break;
+	case RK3399_EDP:
+		video_info->max_link_rate = 0x14;
 		video_info->max_lane_count = 0x04;
 		break;
 	case EXYNOS_DP:
@@ -1628,14 +1647,6 @@ analogix_dp_bind(struct device *dev, struct drm_device *drm_dev,
 		}
 	}
 
-	dp->clock = devm_clk_get(&pdev->dev, "dp");
-	if (IS_ERR(dp->clock)) {
-		dev_err(&pdev->dev, "failed to get clock\n");
-		return ERR_CAST(dp->clock);
-	}
-
-	clk_prepare_enable(dp->clock);
-
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 
 	dp->reg_base = devm_ioremap_resource(&pdev->dev, res);
@@ -1656,9 +1667,11 @@ analogix_dp_bind(struct device *dev, struct drm_device *drm_dev,
 	}
 
 	if (dp->hpd_gpiod) {
-		ret = devm_request_threaded_irq(dev,
-						gpiod_to_irq(dp->hpd_gpiod),
-						NULL,
+		dp->hpd_irq = gpiod_to_irq(dp->hpd_gpiod);
+		if (dp->hpd_irq < 0)
+			return ERR_PTR(-EINVAL);
+
+		ret = devm_request_threaded_irq(dev, dp->hpd_irq, NULL,
 						analogix_dp_hpd_irq_handler,
 						IRQF_TRIGGER_RISING |
 						IRQF_TRIGGER_FALLING |
@@ -1729,14 +1742,14 @@ void analogix_dp_unbind(struct analogix_dp_device *dp)
 
 	drm_dp_aux_unregister(&dp->aux);
 	pm_runtime_disable(dp->dev);
-	clk_disable_unprepare(dp->clock);
 }
 EXPORT_SYMBOL_GPL(analogix_dp_unbind);
 
 #ifdef CONFIG_PM
 int analogix_dp_suspend(struct analogix_dp_device *dp)
 {
-	clk_disable_unprepare(dp->clock);
+	if (dp->hpd_gpiod)
+		disable_irq(dp->hpd_irq);
 
 	if (dp->plat_data->panel) {
 		if (drm_panel_unprepare(dp->plat_data->panel))
@@ -1749,20 +1762,15 @@ EXPORT_SYMBOL_GPL(analogix_dp_suspend);
 
 int analogix_dp_resume(struct analogix_dp_device *dp)
 {
-	int ret;
-
-	ret = clk_prepare_enable(dp->clock);
-	if (ret < 0) {
-		DRM_ERROR("Failed to prepare_enable the clock clk [%d]\n", ret);
-		return ret;
-	}
-
 	if (dp->plat_data->panel) {
 		if (drm_panel_prepare(dp->plat_data->panel)) {
 			DRM_ERROR("failed to setup the panel\n");
 			return -EBUSY;
 		}
 	}
+
+	if (dp->hpd_gpiod)
+		enable_irq(dp->hpd_irq);
 
 	return 0;
 }

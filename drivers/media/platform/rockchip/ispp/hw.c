@@ -16,6 +16,7 @@
 #include <linux/reset.h>
 #include <media/videobuf2-dma-contig.h>
 #include <media/videobuf2-dma-sg.h>
+#include <soc/rockchip/rockchip_iommu.h>
 
 #include "common.h"
 #include "dev.h"
@@ -40,10 +41,6 @@ struct irqs_data {
 
 void rkispp_soft_reset(struct rkispp_hw_dev *hw)
 {
-	struct iommu_domain *domain = iommu_get_domain_for_dev(hw->dev);
-
-	if (domain)
-		iommu_detach_device(domain, hw->dev);
 	writel(GLB_SOFT_RST_ALL, hw->base_addr + RKISPP_CTRL_RESET);
 	udelay(10);
 	if (hw->reset) {
@@ -52,8 +49,12 @@ void rkispp_soft_reset(struct rkispp_hw_dev *hw)
 		reset_control_deassert(hw->reset);
 		udelay(20);
 	}
-	if (domain)
-		iommu_attach_device(domain, hw->dev);
+
+	/* refresh iommu after reset */
+	if (hw->is_mmu) {
+		rockchip_iommu_disable(hw->dev);
+		rockchip_iommu_enable(hw->dev);
+	}
 
 	writel(SW_SCL_BYPASS, hw->base_addr + RKISPP_SCL0_CTRL);
 	writel(SW_SCL_BYPASS, hw->base_addr + RKISPP_SCL1_CTRL);
@@ -61,7 +62,11 @@ void rkispp_soft_reset(struct rkispp_hw_dev *hw)
 	writel(OTHER_FORCE_UPD, hw->base_addr + RKISPP_CTRL_UPDATE);
 	writel(GATE_DIS_ALL, hw->base_addr + RKISPP_CTRL_CLKGATE);
 	writel(SW_FEC2DDR_DIS, hw->base_addr + RKISPP_FEC_CORE_CTRL);
-	writel(0x6ffffff, hw->base_addr + RKISPP_CTRL_INT_MSK);
+	writel(NR_LOST_ERR | TNR_LOST_ERR | FBCH_EMPTY_NR |
+		FBCH_EMPTY_TNR | FBCD_DEC_ERR_NR | FBCD_DEC_ERR_TNR |
+		BUS_ERR_NR | BUS_ERR_TNR | SCL2_INT | SCL1_INT |
+		SCL0_INT | FEC_INT | ORB_INT | SHP_INT | NR_INT | TNR_INT,
+		hw->base_addr + RKISPP_CTRL_INT_MSK);
 	writel(GATE_DIS_NR, hw->base_addr + RKISPP_CTRL_CLKGATE);
 }
 
@@ -323,13 +328,12 @@ static int rkispp_hw_probe(struct platform_device *pdev)
 	atomic_set(&hw_dev->refcnt, 0);
 	INIT_LIST_HEAD(&hw_dev->list);
 	hw_dev->is_idle = true;
-	hw_dev->is_single = true;
+	hw_dev->is_single = false;
 	hw_dev->is_fec_ext = false;
 	hw_dev->is_dma_contig = true;
 	hw_dev->is_dma_sg_ops = false;
 	hw_dev->is_shutdown = false;
 	hw_dev->is_first = true;
-	hw_dev->first_frame_dma = -1;
 	hw_dev->is_mmu = is_iommu_enable(dev);
 	ret = of_reserved_mem_device_init(dev);
 	if (ret) {

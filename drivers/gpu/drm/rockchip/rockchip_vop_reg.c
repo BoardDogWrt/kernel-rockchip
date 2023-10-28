@@ -414,6 +414,8 @@ static const struct vop_win_phy rk3368_win23_data = {
 	.src_alpha_ctl = VOP_REG(RK3368_WIN2_SRC_ALPHA_CTRL, 0xffff, 0),
 	.global_alpha_val = VOP_REG(RK3368_WIN2_SRC_ALPHA_CTRL, 0xff, 16),
 	.dst_alpha_ctl = VOP_REG(RK3368_WIN2_DST_ALPHA_CTRL, 0xffffffff, 0),
+	.color_key = VOP_REG(RK3368_WIN2_COLOR_KEY, 0xffffff, 0),
+	.color_key_en = VOP_REG(RK3368_WIN2_COLOR_KEY, 0x1, 24),
 };
 
 static const struct vop_win_phy rk3368_area1_data = {
@@ -625,6 +627,8 @@ static const struct vop_win_phy rk3399_win01_data = {
 	.global_alpha_val = VOP_REG(RK3288_WIN0_SRC_ALPHA_CTRL, 0xff, 16),
 	.dst_alpha_ctl = VOP_REG(RK3288_WIN0_DST_ALPHA_CTRL, 0xffffffff, 0),
 	.channel = VOP_REG_VER(RK3288_WIN0_CTRL2, 0xff, 0, 3, 8, 8),
+	.color_key = VOP_REG(RK3288_WIN0_COLOR_KEY, 0x3fffffff, 0),
+	.color_key_en = VOP_REG(RK3288_WIN0_COLOR_KEY, 0x1, 31),
 };
 
 static const struct vop_win_data rk3399_vop_win_data[] = {
@@ -1350,8 +1354,9 @@ static const struct vop_win_phy rk3366_lit_win0_data = {
 	.alpha_mode = VOP_REG(RK3366_LIT_WIN0_ALPHA_CTRL, 0x1, 1),
 	.alpha_en = VOP_REG(RK3366_LIT_WIN0_ALPHA_CTRL, 0x1, 0),
 	.global_alpha_val = VOP_REG(RK3366_LIT_WIN0_ALPHA_CTRL, 0xff, 4),
-	.key_color = VOP_REG(RK3366_LIT_WIN0_COLOR_KEY, 0xffffff, 0),
-	.key_en = VOP_REG(RK3366_LIT_WIN0_COLOR_KEY, 0x1, 24),
+	.color_key = VOP_REG(RK3366_LIT_WIN0_COLOR_KEY, 0xffffff, 0),
+	.color_key_en = VOP_REG(RK3366_LIT_WIN0_COLOR_KEY, 0x1, 24),
+	.channel = VOP_REG(RK3366_LIT_WIN0_CTRL0, 0xff, 12),
 };
 
 static const struct vop_win_phy rk3366_lit_win1_data = {
@@ -1370,8 +1375,9 @@ static const struct vop_win_phy rk3366_lit_win1_data = {
 	.alpha_mode = VOP_REG(RK3366_LIT_WIN1_ALPHA_CTRL, 0x1, 1),
 	.alpha_en = VOP_REG(RK3366_LIT_WIN1_ALPHA_CTRL, 0x1, 0),
 	.global_alpha_val = VOP_REG(RK3366_LIT_WIN1_ALPHA_CTRL, 0xff, 4),
-	.key_color = VOP_REG(RK3366_LIT_WIN1_COLOR_KEY, 0xffffff, 0),
-	.key_en = VOP_REG(RK3366_LIT_WIN1_COLOR_KEY, 0x1, 24),
+	.color_key = VOP_REG(RK3366_LIT_WIN1_COLOR_KEY, 0xffffff, 0),
+	.color_key_en = VOP_REG(RK3366_LIT_WIN1_COLOR_KEY, 0x1, 24),
+	.channel = VOP_REG(RK3366_LIT_WIN1_CTRL1, 0xf, 8),
 };
 
 static const struct vop_win_data rk3366_vop_lit_win_data[] = {
@@ -1523,6 +1529,8 @@ static const struct vop_win_phy px30_win23_data = {
 	.alpha_en = VOP_REG(RK3368_WIN2_SRC_ALPHA_CTRL, 0x1, 0),
 	.global_alpha_val = VOP_REG(RK3368_WIN2_SRC_ALPHA_CTRL, 0xff, 4),
 	.channel = VOP_REG(RK3368_WIN2_CTRL1, 0xf, 8),
+	.color_key = VOP_REG(RK3368_WIN2_COLOR_KEY, 0xffffff, 0),
+	.color_key_en = VOP_REG(RK3368_WIN2_COLOR_KEY, 0x1, 24),
 };
 
 static const struct vop_win_data px30_vop_big_win_data[] = {
@@ -1766,36 +1774,58 @@ static const struct vop_data rv1126_vop = {
 };
 
 static const struct of_device_id vop_driver_dt_match[] = {
+#if IS_ENABLED(CONFIG_CPU_RK3036)
 	{ .compatible = "rockchip,rk3036-vop",
 	  .data = &rk3036_vop },
+#endif
+#if IS_ENABLED(CONFIG_CPU_RK30XX)
 	{ .compatible = "rockchip,rk3066-vop",
 	  .data = &rk3066_vop },
+#endif
+#if IS_ENABLED(CONFIG_CPU_RK312X)
 	{ .compatible = "rockchip,rk3126-vop",
 	  .data = &rk3126_vop },
+#endif
+#if IS_ENABLED(CONFIG_CPU_PX30)
 	{ .compatible = "rockchip,px30-vop-lit",
 	  .data = &px30_vop_lit },
 	{ .compatible = "rockchip,px30-vop-big",
 	  .data = &px30_vop_big },
+#endif
+#if IS_ENABLED(CONFIG_CPU_RK3308)
 	{ .compatible = "rockchip,rk3308-vop",
 	  .data = &rk3308_vop },
+#endif
+#if IS_ENABLED(CONFIG_CPU_RV1126)
 	{ .compatible = "rockchip,rv1126-vop",
 	  .data = &rv1126_vop },
+#endif
+#if IS_ENABLED(CONFIG_CPU_RK3288)
 	{ .compatible = "rockchip,rk3288-vop-big",
 	  .data = &rk3288_vop_big },
 	{ .compatible = "rockchip,rk3288-vop-lit",
 	  .data = &rk3288_vop_lit },
+#endif
+#if IS_ENABLED(CONFIG_CPU_RK3368)
 	{ .compatible = "rockchip,rk3368-vop",
 	  .data = &rk3368_vop },
 	{ .compatible = "rockchip,rk3366-vop",
 	  .data = &rk3366_vop },
+#endif
+#if IS_ENABLED(CONFIG_CPU_RK3399)
 	{ .compatible = "rockchip,rk3399-vop-big",
 	  .data = &rk3399_vop_big },
 	{ .compatible = "rockchip,rk3399-vop-lit",
 	  .data = &rk3399_vop_lit },
+#endif
+#if IS_ENABLED(CONFIG_CPU_RK322X)
 	{ .compatible = "rockchip,rk3228-vop",
 	  .data = &rk3228_vop },
+#endif
+#if IS_ENABLED(CONFIG_CPU_RK3328)
 	{ .compatible = "rockchip,rk3328-vop",
 	  .data = &rk3328_vop },
+#endif
 	{},
 };
 MODULE_DEVICE_TABLE(of, vop_driver_dt_match);

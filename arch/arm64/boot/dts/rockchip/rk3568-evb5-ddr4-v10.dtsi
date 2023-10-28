@@ -52,15 +52,14 @@
 		vin-supply = <&vcc3v3_sys>;
 	};
 
-	pcie30_3v3: gpio-regulator {
-		compatible = "regulator-gpio";
-		regulator-name = "pcie30_3v3";
-		regulator-min-microvolt = <100000>;
+	vcc3v3_pcie: gpio-regulator {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc3v3_pcie";
+		regulator-min-microvolt = <3300000>;
 		regulator-max-microvolt = <3300000>;
-		gpios = <&gpio0 RK_PD4 GPIO_ACTIVE_HIGH>;
-		gpios-states = <0x1>;
-		states = <100000 0x0
-			  3300000 0x1>;
+		gpio = <&gpio0 RK_PD4 GPIO_ACTIVE_HIGH>;
+		startup-delay-us = <5000>;
+		vin-supply = <&dc_12v>;
 	};
 
 	vcc3v3_bu: vcc3v3-bu {
@@ -85,16 +84,19 @@
 	};
 };
 
+&bt_sound {
+	status = "disabled";
+	simple-audio-card,cpu {
+		sound-dai = <&i2s2_2ch>;
+	};
+};
+
 &combphy0_us {
 	status = "okay";
 };
 
-&combphy1_usq {
-	rockchip,sgmii-mac-sel = <0>;
-	status = "okay";
-};
-
 &combphy2_psq {
+	rockchip,sgmii-mac-sel = <0>;
 	status = "okay";
 };
 
@@ -140,28 +142,6 @@
 			};
 		};
 	};
-};
-
-&dmc {
-	system-status-freq = <
-		/*system status         freq(KHz)*/
-		SYS_STATUS_NORMAL       780000
-		SYS_STATUS_REBOOT       1056000
-		SYS_STATUS_SUSPEND      324000
-		SYS_STATUS_VIDEO_4K     780000
-		SYS_STATUS_VIDEO_4K_10B 780000
-		SYS_STATUS_BOOST        1056000
-		SYS_STATUS_ISP          1056000
-		SYS_STATUS_PERFORMANCE  1056000
-	>;
-};
-
-&dmc_opp_table {
-	opp-1056000000 {
-		opp-hz = /bits/ 64 <1056000000>;
-		opp-microvolt = <900000>;
-	};
-	/delete-node/ opp-1560000000;
 };
 
 /*
@@ -239,7 +219,7 @@
 	pinctrl-0 = <&gmac0_miim>;
 
 	power-domains = <&power RK3568_PD_PIPE>;
-	phys = <&combphy1_usq PHY_TYPE_SGMII>;
+	phys = <&combphy2_psq PHY_TYPE_SGMII>;
 	phy-handle = <&sgmii_phy>;
 
 	status = "okay";
@@ -383,6 +363,12 @@
 	status = "disabled";
 };
 
+&i2s2_2ch {
+	pinctrl-0 = <&i2s2m0_sclktx &i2s2m0_lrcktx &i2s2m0_sdi &i2s2m0_sdo>;
+	rockchip,bclk-fs = <32>;
+	status = "disabled";
+};
+
 &mdio0 {
 	sgmii_phy: phy@1 {
 		compatible = "ethernet-phy-ieee802.3-c22";
@@ -411,7 +397,7 @@
 
 &pcie3x2 {
 	reset-gpios = <&gpio2 RK_PD6 GPIO_ACTIVE_HIGH>;
-	vpcie3v3-supply = <&pcie30_3v3>;
+	vpcie3v3-supply = <&vcc3v3_pcie>;
 	status = "okay";
 };
 
@@ -494,10 +480,6 @@
 &route_dsi0 {
 	status = "okay";
 	connect = <&vp1_out_dsi0>;
-};
-
-&sata2 {
-	status = "okay";
 };
 
 &sdmmc2 {

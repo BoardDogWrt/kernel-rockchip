@@ -14,7 +14,9 @@
  */
 #include <linux/module.h>
 #include <linux/string.h>
+#include <linux/extcon-provider.h>
 #include <sound/core.h>
+#include <sound/jack.h>
 #include <sound/pcm.h>
 #include <sound/pcm_params.h>
 #include <sound/soc.h>
@@ -276,6 +278,11 @@ static const struct hdmi_codec_cea_spk_alloc hdmi_codec_channel_alloc[] = {
 	  .mask = FL | FR | LFE | FC | RL | RR | FLC | FRC },
 };
 
+static const unsigned int hdmi_extcon_cable[] = {
+	EXTCON_DISP_HDMI_AUDIO,
+	EXTCON_NONE,
+};
+
 struct hdmi_codec_priv {
 	struct hdmi_codec_pdata hcd;
 	struct snd_soc_dai_driver *daidrv;
@@ -286,10 +293,14 @@ struct hdmi_codec_priv {
 	struct snd_pcm_chmap *chmap_info;
 	unsigned int chmap_idx;
 	unsigned int mode;
+	struct snd_soc_jack *jack;
+	struct extcon_dev *edev;
+	unsigned int jack_status;
 };
 
 static const struct snd_soc_dapm_widget hdmi_widgets[] = {
 	SND_SOC_DAPM_OUTPUT("TX"),
+	SND_SOC_DAPM_OUTPUT("RX"),
 };
 
 enum {
@@ -445,6 +456,7 @@ static int hdmi_codec_startup(struct snd_pcm_substream *substream,
 			      struct snd_soc_dai *dai)
 {
 	struct hdmi_codec_priv *hcp = snd_soc_dai_get_drvdata(dai);
+	bool tx = substream->stream == SNDRV_PCM_STREAM_PLAYBACK;
 	int ret = 0;
 
 	dev_dbg(dai->dev, "%s()\n", __func__);
@@ -463,7 +475,7 @@ static int hdmi_codec_startup(struct snd_pcm_substream *substream,
 		}
 	}
 
-	if (hcp->hcd.ops->get_eld) {
+	if (tx && hcp->hcd.ops->get_eld) {
 		ret = hcp->hcd.ops->get_eld(dai->dev->parent, hcp->hcd.data,
 					    hcp->eld, sizeof(hcp->eld));
 
@@ -493,7 +505,8 @@ static void hdmi_codec_shutdown(struct snd_pcm_substream *substream,
 	WARN_ON(hcp->current_stream != substream);
 
 	hcp->chmap_idx = HDMI_CODEC_CHMAP_IDX_UNKNOWN;
-	hcp->hcd.ops->audio_shutdown(dai->dev->parent, hcp->hcd.data);
+	if (hcp->hcd.ops->audio_shutdown)
+		hcp->hcd.ops->audio_shutdown(dai->dev->parent, hcp->hcd.data);
 
 	mutex_lock(&hcp->current_stream_lock);
 	hcp->current_stream = NULL;
@@ -741,14 +754,95 @@ static int hdmi_codec_pcm_new(struct snd_soc_pcm_runtime *rtd,
 static int hdmi_dai_probe(struct snd_soc_dai *dai)
 {
 	struct snd_soc_dapm_context *dapm;
-	struct snd_soc_dapm_route route = {
-		.sink = "TX",
-		.source = dai->driver->playback.stream_name,
+	struct snd_soc_dapm_route route[] = {
+		{
+			.sink = "TX",
+			.source = dai->driver->playback.stream_name,
+		},
+		{
+			.sink = dai->driver->capture.stream_name,
+			.source = "RX",
+		},
 	};
 
 	dapm = snd_soc_component_get_dapm(dai->component);
+	return snd_soc_dapm_add_routes(dapm, route, 2);
+}
 
-	return snd_soc_dapm_add_routes(dapm, &route, 1);
+static void hdmi_codec_jack_report(struct hdmi_codec_priv *hcp,
+				   unsigned int jack_status)
+{
+	if (hcp->jack && jack_status != hcp->jack_status) {
+		snd_soc_jack_report(hcp->jack, jack_status, SND_JACK_LINEOUT);
+		hcp->jack_status = jack_status;
+	}
+}
+
+static void plugged_cb(struct device *dev, bool plugged)
+{
+	struct hdmi_codec_priv *hcp = dev_get_drvdata(dev);
+
+	if (plugged) {
+		hdmi_codec_jack_report(hcp, SND_JACK_LINEOUT);
+		extcon_set_state_sync(hcp->edev,
+				      EXTCON_DISP_HDMI_AUDIO, true);
+	} else {
+		hdmi_codec_jack_report(hcp, 0);
+		extcon_set_state_sync(hcp->edev,
+				      EXTCON_DISP_HDMI_AUDIO, false);
+	}
+
+	mutex_lock(&hcp->current_stream_lock);
+	if (hcp->current_stream) {
+		/*
+		 * Workaround for HDMIIN and HDMIOUT plug-{in,out} when streaming.
+		 *
+		 * Actually, we should do stop stream both for HDMI_{OUT,IN} on
+		 * plug-{out,in} event. but for better experience and depop stream,
+		 * we optimize as follows:
+		 *
+		 * a) Do stop stream for HDMIIN on plug-out when streaming.
+		 * because HDMIIN work as SLAVE mode, CLK lost after HDMI cable
+		 * plugged out which will make stream stuck until ALSA timeout(10s).
+		 * so, for better experience, we should stop stream at the moment.
+		 *
+		 * b) Do stop stream for HDMIOUT on plug-in when streaming.
+		 * because HDMIOUT work as MASTER mode, there is no clk-issue like
+		 * HDMIIN, but, on HDR situation, HDMI will be reconfigured which
+		 * make HDMI audio configure lost, especially for NLPCM/HBR bitstream
+		 * which require IEC937 packet alignment, so, for this situation,
+		 * we stop stream to notify user to re-open and configure sound card
+		 * and then go on streaming.
+		 */
+		int stream = hcp->current_stream->stream;
+
+		if (stream == SNDRV_PCM_STREAM_PLAYBACK && plugged)
+			snd_pcm_stop(hcp->current_stream, SNDRV_PCM_STATE_SETUP);
+		else if (stream == SNDRV_PCM_STREAM_CAPTURE && !plugged)
+			snd_pcm_stop(hcp->current_stream, SNDRV_PCM_STATE_DISCONNECTED);
+
+		dev_dbg(dev, "stream[%d]: %s\n", stream, plugged ? "plug in" : "plug out");
+	}
+	mutex_unlock(&hcp->current_stream_lock);
+}
+
+static int hdmi_codec_set_jack(struct snd_soc_component *component,
+			       struct snd_soc_jack *jack,
+			       void *data)
+{
+	struct hdmi_codec_priv *hcp = snd_soc_component_get_drvdata(component);
+	int ret = -EOPNOTSUPP;
+
+	if (hcp->hcd.ops->hook_plugged_cb) {
+		hcp->jack = jack;
+		ret = hcp->hcd.ops->hook_plugged_cb(component->dev->parent,
+						    hcp->hcd.data,
+						    plugged_cb,
+						    component->dev);
+		if (ret)
+			hcp->jack = NULL;
+	}
+	return ret;
 }
 
 static const struct snd_soc_dai_driver hdmi_i2s_dai = {
@@ -757,6 +851,14 @@ static const struct snd_soc_dai_driver hdmi_i2s_dai = {
 	.probe = hdmi_dai_probe,
 	.playback = {
 		.stream_name = "I2S Playback",
+		.channels_min = 2,
+		.channels_max = 8,
+		.rates = HDMI_RATES,
+		.formats = I2S_FORMATS,
+		.sig_bits = 24,
+	},
+	.capture = {
+		.stream_name = "Capture",
 		.channels_min = 2,
 		.channels_max = 8,
 		.rates = HDMI_RATES,
@@ -773,6 +875,13 @@ static const struct snd_soc_dai_driver hdmi_spdif_dai = {
 	.probe = hdmi_dai_probe,
 	.playback = {
 		.stream_name = "SPDIF Playback",
+		.channels_min = 2,
+		.channels_max = 2,
+		.rates = HDMI_RATES,
+		.formats = SPDIF_FORMATS,
+	},
+	.capture = {
+		.stream_name = "Capture",
 		.channels_min = 2,
 		.channels_max = 2,
 		.rates = HDMI_RATES,
@@ -802,6 +911,7 @@ static const struct snd_soc_component_driver hdmi_driver = {
 	.use_pmdown_time	= 1,
 	.endianness		= 1,
 	.non_legacy_dai_naming	= 1,
+	.set_jack		= hdmi_codec_set_jack,
 };
 
 static int hdmi_codec_probe(struct platform_device *pdev)
@@ -820,8 +930,7 @@ static int hdmi_codec_probe(struct platform_device *pdev)
 	}
 
 	dai_count = hcd->i2s + hcd->spdif;
-	if (dai_count < 1 || !hcd->ops || !hcd->ops->hw_params ||
-	    !hcd->ops->audio_shutdown) {
+	if (dai_count < 1 || !hcd->ops || !hcd->ops->hw_params) {
 		dev_err(dev, "%s: Invalid parameters\n", __func__);
 		return -EINVAL;
 	}
@@ -851,6 +960,18 @@ static int hdmi_codec_probe(struct platform_device *pdev)
 	}
 
 	dev_set_drvdata(dev, hcp);
+
+	hcp->edev = devm_extcon_dev_allocate(&pdev->dev, hdmi_extcon_cable);
+	if (IS_ERR(hcp->edev)) {
+		dev_err(&pdev->dev, "Failed to allocate extcon device\n");
+		return -ENOMEM;
+	}
+
+	ret = devm_extcon_dev_register(&pdev->dev, hcp->edev);
+	if (ret < 0) {
+		dev_err(&pdev->dev, "Failed to register extcon device\n");
+		return ret;
+	}
 
 	ret = devm_snd_soc_register_component(dev, &hdmi_driver, hcp->daidrv,
 				     dai_count);
