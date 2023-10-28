@@ -507,6 +507,7 @@
 
 &route_hdmi {
 	status = "okay";
+	connect = <&vopb_out_hdmi>;
 	logo,mode = "center";
 };
 
