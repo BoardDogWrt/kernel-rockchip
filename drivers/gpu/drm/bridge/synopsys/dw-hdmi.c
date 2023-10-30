@@ -3540,10 +3540,12 @@ static void dw_hdmi_bridge_disable(struct drm_bridge *bridge)
 		hdmi->plat_data->dclk_set(hdmi->plat_data->phy_data, false, 0);
 	mutex_unlock(&hdmi->mutex);
 
-	mutex_lock(&hdmi->i2c->lock);
-	if (hdmi->plat_data->set_ddc_io)
-		hdmi->plat_data->set_ddc_io(data, false);
-	mutex_unlock(&hdmi->i2c->lock);
+	if (hdmi->i2c) {
+		mutex_lock(&hdmi->i2c->lock);
+		if (hdmi->plat_data->set_ddc_io)
+			hdmi->plat_data->set_ddc_io(data, false);
+		mutex_unlock(&hdmi->i2c->lock);
+	}
 }
 
 static void dw_hdmi_bridge_enable(struct drm_bridge *bridge)

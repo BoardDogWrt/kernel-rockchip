@@ -740,7 +740,11 @@ static int rockchip_hdmi_parse_dt(struct rockchip_hdmi *hdmi)
 
 	hdmi->p = devm_pinctrl_get(hdmi->dev);
 	if (IS_ERR(hdmi->p)) {
-		dev_err(hdmi->dev, "could not get pinctrl\n");
+		dev_warn(hdmi->dev, "could not get pinctrl\n");
+		if (PTR_ERR(hdmi->p) == -ENODEV) {
+			hdmi->p = NULL;
+			return 0;
+		}
 		return PTR_ERR(hdmi->p);
 	}
 
