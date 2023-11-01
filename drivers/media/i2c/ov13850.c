@@ -919,6 +919,16 @@ static void ov13850_get_module_inf(struct ov13850 *ov13850,
 	strlcpy(inf->base.lens, ov13850->len_name, sizeof(inf->base.lens));
 }
 
+static void ov13850_get_module_inf_v1(struct ov13850 *ov13850,
+				   struct rkmodule_inf_v1 *inf)
+{
+	memset(inf, 0, sizeof(*inf));
+	strlcpy(inf->base.sensor, OV13850_NAME, sizeof(inf->base.sensor));
+	strlcpy(inf->base.module, ov13850->module_name,
+		sizeof(inf->base.module));
+	strlcpy(inf->base.lens, ov13850->len_name, sizeof(inf->base.lens));
+}
+
 static long ov13850_ioctl(struct v4l2_subdev *sd, unsigned int cmd, void *arg)
 {
 	struct ov13850 *ov13850 = to_ov13850(sd);
@@ -928,6 +938,9 @@ static long ov13850_ioctl(struct v4l2_subdev *sd, unsigned int cmd, void *arg)
 	switch (cmd) {
 	case RKMODULE_GET_MODULE_INFO:
 		ov13850_get_module_inf(ov13850, (struct rkmodule_inf *)arg);
+		break;
+	case RKMODULE_GET_MODULE_INFO_V1:
+		ov13850_get_module_inf_v1(ov13850, (struct rkmodule_inf_v1 *)arg);
 		break;
 	case RKMODULE_SET_QUICK_STREAM:
 

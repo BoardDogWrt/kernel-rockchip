@@ -1995,6 +1995,16 @@ static void tc35874x_get_module_inf(struct tc35874x_state *tc35874x,
 	strlcpy(inf->base.lens, tc35874x->len_name, sizeof(inf->base.lens));
 }
 
+static void tc35874x_get_module_inf_v1(struct tc35874x_state *tc35874x,
+				  struct rkmodule_inf_v1 *inf)
+{
+	memset(inf, 0, sizeof(*inf));
+	strlcpy(inf->base.sensor, TC35874X_NAME, sizeof(inf->base.sensor));
+	strlcpy(inf->base.module, tc35874x->module_name,
+		sizeof(inf->base.module));
+	strlcpy(inf->base.lens, tc35874x->len_name, sizeof(inf->base.lens));
+}
+
 static long tc35874x_ioctl(struct v4l2_subdev *sd, unsigned int cmd, void *arg)
 {
 	struct tc35874x_state *tc35874x = to_state(sd);
@@ -2003,6 +2013,9 @@ static long tc35874x_ioctl(struct v4l2_subdev *sd, unsigned int cmd, void *arg)
 	switch (cmd) {
 	case RKMODULE_GET_MODULE_INFO:
 		tc35874x_get_module_inf(tc35874x, (struct rkmodule_inf *)arg);
+		break;
+	case RKMODULE_GET_MODULE_INFO_V1:
+		tc35874x_get_module_inf_v1(tc35874x, (struct rkmodule_inf_v1 *)arg);
 		break;
 	default:
 		ret = -ENOIOCTLCMD;

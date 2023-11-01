@@ -800,6 +800,16 @@ static void ov4689_get_module_inf(struct ov4689 *ov4689,
 	strlcpy(inf->base.lens, ov4689->len_name, sizeof(inf->base.lens));
 }
 
+static void ov4689_get_module_inf_v1(struct ov4689 *ov4689,
+				  struct rkmodule_inf_v1 *inf)
+{
+	memset(inf, 0, sizeof(*inf));
+	strlcpy(inf->base.sensor, OV4689_NAME, sizeof(inf->base.sensor));
+	strlcpy(inf->base.module, ov4689->module_name,
+		sizeof(inf->base.module));
+	strlcpy(inf->base.lens, ov4689->len_name, sizeof(inf->base.lens));
+}
+
 static int ov4689_set_hdrae(struct ov4689 *ov4689,
 			    struct preisp_hdrae_exp_s *ae)
 {
@@ -886,6 +896,9 @@ static long ov4689_ioctl(struct v4l2_subdev *sd, unsigned int cmd, void *arg)
 	switch (cmd) {
 	case RKMODULE_GET_MODULE_INFO:
 		ov4689_get_module_inf(ov4689, (struct rkmodule_inf *)arg);
+		break;
+	case RKMODULE_GET_MODULE_INFO_V1:
+		ov4689_get_module_inf_v1(ov4689, (struct rkmodule_inf_v1 *)arg);
 		break;
 	case RKMODULE_GET_HDR_CFG:
 		hdr = (struct rkmodule_hdr_cfg *)arg;

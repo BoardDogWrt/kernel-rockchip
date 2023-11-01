@@ -18,6 +18,7 @@
 
 #define RKMODULE_NAME_LEN		32
 #define RKMODULE_LSCDATA_LEN		289
+#define RKMODULE_LSCDATA_LEN_V1		441
 
 #define RKMODULE_MAX_VC_CH		4
 
@@ -60,6 +61,9 @@
 
 #define RKMODULE_GET_MODULE_INFO	\
 	_IOR('V', BASE_VIDIOC_PRIVATE + 0, struct rkmodule_inf)
+
+#define RKMODULE_GET_MODULE_INFO_V1	\
+	_IOR('V', BASE_VIDIOC_PRIVATE + 0, struct rkmodule_inf_v1)
 
 #define RKMODULE_AWB_CFG	\
 	_IOW('V', BASE_VIDIOC_PRIVATE + 1, struct rkmodule_awb_cfg)
@@ -271,6 +275,19 @@ struct rkmodule_lsc_inf {
 	__u16 table_size;
 } __attribute__ ((packed));
 
+struct rkmodule_lsc_inf_v1 {
+	__u32 flag;
+
+	__u16 lsc_w;
+	__u16 lsc_h;
+	__u16 decimal_bits;
+
+	__u16 lsc_r[RKMODULE_LSCDATA_LEN_V1];
+	__u16 lsc_b[RKMODULE_LSCDATA_LEN_V1];
+	__u16 lsc_gr[RKMODULE_LSCDATA_LEN_V1];
+	__u16 lsc_gb[RKMODULE_LSCDATA_LEN_V1];
+} __attribute__ ((packed));
+
 /**
  * enum rkmodule_af_dir - enum of module af otp direction
  */
@@ -297,6 +314,14 @@ struct rkmodule_af_inf {
 	__u32 flag;
 	__u32 dir_cnt;
 	struct rkmodule_af_otp af_otp[RKMODULE_AF_OTP_MAX_LEN];
+} __attribute__ ((packed));
+
+struct rkmodule_af_inf_v1 {
+    __u32 flag;
+
+    __u32 vcm_start;
+    __u32 vcm_end;
+    __u32 vcm_dir;
 } __attribute__ ((packed));
 
 /**
@@ -350,6 +375,14 @@ struct rkmodule_inf {
 	struct rkmodule_af_inf af;
 	struct rkmodule_pdaf_inf pdaf;
 	struct rkmodule_otp_module_inf module_inf;
+} __attribute__ ((packed));
+
+struct rkmodule_inf_v1 {
+    struct rkmodule_base_inf base;
+    struct rkmodule_fac_inf fac;
+    struct rkmodule_awb_inf awb;
+    struct rkmodule_lsc_inf_v1 lsc;
+    struct rkmodule_af_inf_v1 af;
 } __attribute__ ((packed));
 
 /**
