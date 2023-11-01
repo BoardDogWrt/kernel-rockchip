@@ -80,6 +80,15 @@
 		regulator-max-microvolt = <5000000>;
 	};
 
+	vccadc_ref: vccadc-ref {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc1v8_sys";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <1800000>;
+		regulator-max-microvolt = <1800000>;
+	};
+
 	vcc_sd: vcc-sd {
 		compatible = "regulator-fixed";
 		enable-active-high;
@@ -949,6 +958,7 @@
 };
 
 &saradc {
+	vref-supply = <&vccadc_ref>;
 	status = "okay";
 };
 
