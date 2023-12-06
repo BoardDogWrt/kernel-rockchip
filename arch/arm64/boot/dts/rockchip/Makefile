@@ -22,7 +22,8 @@ dtb-$(CONFIG_ARCH_ROCKCHIP) += \
 	rk3328-nanopi-r2-rev06.dtb \
 	rk3328-nanopi-r2-rev20.dtb \
 	rk3328-nanopi-r2-rev21.dtb \
-	rk3328-nanopi-r2-rev22.dtb
+	rk3328-nanopi-r2-rev22.dtb \
+	rk3328-nanopi-r2-rev24.dtb
 
 else
 
