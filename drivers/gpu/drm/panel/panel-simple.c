@@ -1059,11 +1059,18 @@ static void panel_simple_shutdown(struct device *dev)
 	drm_panel_unprepare(&panel->base);
 }
 
+
 int panel_simple_loader_protect(struct drm_panel *panel)
 {
-	struct panel_simple *p = to_panel_simple(panel);
+	struct panel_simple *p;
 	int err;
 
+	if (panel->funcs != &panel_simple_funcs) {
+		dev_dbg(panel->dev, "not simple-panel\n");
+		return 0;
+	}
+
+	p = to_panel_simple(panel);
 	err = pm_runtime_get_sync(panel->dev);
 	if (err < 0) {
 		pm_runtime_put_autosuspend(panel->dev);
