@@ -15,6 +15,7 @@
 #include <linux/regulator/consumer.h>
 
 #include <video/mipi_display.h>
+#include <video/of_display_timing.h>
 #include <video/of_videomode.h>
 #include <video/videomode.h>
 
@@ -136,6 +137,7 @@ struct rad_panel {
 	bool prepared;
 	bool enabled;
 
+	const struct drm_display_mode *mode;
 	const struct rad_platform_data *pdata;
 };
 
@@ -479,13 +481,14 @@ static int rad_panel_disable(struct drm_panel *panel)
 static int rad_panel_get_modes(struct drm_panel *panel,
 			       struct drm_connector *connector)
 {
+	struct rad_panel *rad = to_rad_panel(panel);
 	struct drm_display_mode *mode;
 
-	mode = drm_mode_duplicate(connector->dev, &default_mode);
+	mode = drm_mode_duplicate(connector->dev, rad->mode);
 	if (!mode) {
 		dev_err(panel->dev, "failed to add mode %ux%u@%u\n",
-			default_mode.hdisplay, default_mode.vdisplay,
-			drm_mode_vrefresh(&default_mode));
+			rad->mode->hdisplay, rad->mode->vdisplay,
+			drm_mode_vrefresh(rad->mode));
 		return -ENOMEM;
 	}
 
@@ -575,6 +578,7 @@ static int rad_panel_probe(struct mipi_dsi_device *dsi)
 	struct device *dev = &dsi->dev;
 	const struct of_device_id *of_id = of_match_device(rad_of_match, dev);
 	struct device_node *np = dev->of_node;
+	struct device_node *child;
 	struct rad_panel *panel;
 	struct backlight_properties bl_props;
 	int ret;
@@ -591,9 +595,23 @@ static int rad_panel_probe(struct mipi_dsi_device *dsi)
 
 	panel->dsi = dsi;
 	panel->pdata = of_id->data;
+	panel->mode = &default_mode;
 
 	dsi->format = MIPI_DSI_FMT_RGB888;
 	dsi->mode_flags = MIPI_DSI_MODE_VIDEO_HSE | MIPI_DSI_MODE_NO_EOT_PACKET;
+
+	child = of_get_child_by_name(np, "display-timings");
+	of_node_put(child);
+	if (child) {
+		struct drm_display_mode *mode;
+
+		mode = devm_kzalloc(dev, sizeof(*mode), GFP_KERNEL);
+		if (!mode)
+			return -ENOMEM;
+
+		if (!of_get_drm_display_mode(np, mode, NULL, OF_USE_NATIVE_MODE))
+			panel->mode = mode;
+	}
 
 	ret = of_property_read_u32(np, "video-mode", &video_mode);
 	if (!ret) {
