@@ -299,6 +299,9 @@ static int rad_panel_prepare(struct drm_panel *panel)
 	if (ret)
 		return ret;
 
+	if (rad->reset)
+		gpiod_direction_output(rad->reset, 1);
+
 	/* At lest 10ms needed between power-on and reset-out as RM specifies */
 	usleep_range(10000, 12000);
 
@@ -623,6 +626,28 @@ static const struct drm_panel_funcs rad_panel_funcs = {
 	.get_modes = rad_panel_get_modes,
 };
 
+int panel_rad_loader_protect(struct drm_panel *panel)
+{
+	struct rad_panel *p;
+	int err;
+
+	if (panel->funcs != &rad_panel_funcs) {
+		dev_dbg(panel->dev, "not rad-panel\n");
+		return -ENODEV;
+	}
+
+	p = to_rad_panel(panel);
+	err = regulator_bulk_enable(p->num_supplies, p->supplies);
+	if (err)
+		return err;
+
+	p->prepared = true;
+	p->enabled = true;
+
+	return 0;
+}
+EXPORT_SYMBOL(panel_rad_loader_protect);
+
 static const char * const rad_supply_names[] = {
 	"v3p3",
 	"v1p8",
@@ -746,14 +771,13 @@ static int rad_panel_probe(struct mipi_dsi_device *dsi)
 	}
 
 	panel->reset = devm_gpiod_get_optional(dev, "reset",
-					       GPIOD_OUT_LOW |
+					       GPIOD_ASIS |
 					       GPIOD_FLAGS_BIT_NONEXCLUSIVE);
 	if (IS_ERR(panel->reset)) {
 		ret = PTR_ERR(panel->reset);
 		dev_err(dev, "Failed to get reset gpio (%d)\n", ret);
 		return ret;
 	}
-	gpiod_set_value_cansleep(panel->reset, 1);
 
 	memset(&bl_props, 0, sizeof(bl_props));
 	bl_props.type = BACKLIGHT_RAW;

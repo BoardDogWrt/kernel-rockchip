@@ -16,4 +16,14 @@ static inline int panel_simple_loader_protect(struct drm_panel *panel)
 	return 0;
 }
 #endif
+
+#if IS_REACHABLE(CONFIG_DRM_PANEL_RAYDIUM_RM67191)
+int panel_rad_loader_protect(struct drm_panel *panel);
+#else
+static inline int panel_rad_loader_protect(struct drm_panel *panel)
+{
+	return 0;
+}
 #endif
+
+#endif /* PANEL_SIMPLE_H */

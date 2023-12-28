@@ -967,8 +967,10 @@ static int dw_mipi_dsi2_encoder_loader_protect(struct drm_encoder *encoder,
 {
 	struct dw_mipi_dsi2 *dsi2 = encoder_to_dsi2(encoder);
 
-	if (dsi2->panel)
+	if (dsi2->panel) {
+		panel_rad_loader_protect(dsi2->panel);
 		panel_simple_loader_protect(dsi2->panel);
+	}
 
 	dw_mipi_dsi2_loader_protect(dsi2, on);
 
