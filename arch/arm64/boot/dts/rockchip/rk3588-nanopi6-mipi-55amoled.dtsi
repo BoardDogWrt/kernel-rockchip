@@ -1,0 +1,75 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/*
+ * Copyright (c) 2023 FriendlyElec Computer Tech. Co., Ltd.
+ * (http://www.friendlyelec.com)
+ *
+ * Copyright (c) 2022 Rockchip Electronics Co., Ltd.
+ */
+
+&mipi_dcphy1 {
+	status = "okay";
+};
+
+&dsi1_in_vp3 {
+	status = "okay";
+};
+
+&dsi1 {
+	status = "okay";
+
+	dsi1_panel: panel@0 {
+		compatible = "zhot,zh055oe041";
+		reg = <0>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&lcd_rst1_gpio>;
+		reset-gpios = <&gpio4 RK_PA3 GPIO_ACTIVE_LOW>;
+
+		dsi-lanes = <4>;
+		video-mode = <0>;
+		width-mm = <68>;
+		height-mm = <121>;
+
+		display-timings {
+			native-mode = <&dsi_timing1>;
+			dsi_timing1: timing0 {
+				clock-frequency = <133711000>;
+				hactive = <1080>;
+				vactive = <1920>;
+				hfront-porch = <26>;
+				hsync-len = <4>;
+				hback-porch = <34>;
+				vfront-porch = <8>;
+				vsync-len = <4>;
+				vback-porch = <16>;
+				hsync-active = <0>;
+				vsync-active = <0>;
+				de-active = <0>;
+				pixelclk-active = <0>;
+			};
+		};
+
+		ports {
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			port@0 {
+				reg = <0>;
+				panel_in_dsi1: endpoint {
+					remote-endpoint = <&dsi_out_panel>;
+				};
+			};
+		};
+	};
+
+	ports {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		port@1 {
+			reg = <1>;
+			dsi_out_panel: endpoint {
+				remote-endpoint = <&panel_in_dsi1>;
+			};
+		};
+	};
+};
