@@ -1633,21 +1633,17 @@ static int rknpu_register_irq(struct platform_device *pdev,
 {
 	const struct rknpu_config *config = rknpu_dev->config;
 	struct device *dev = &pdev->dev;
-	struct resource *res;
 	int i, ret, irq;
 
-	res = platform_get_resource_byname(pdev, IORESOURCE_IRQ,
-					   config->irqs[0].name);
-	if (res) {
+	irq = platform_get_irq_byname_optional(pdev,
+					       config->irqs[0].name);
+	if (irq > 0) {
 		/* there are irq names in dts */
 		for (i = 0; i < config->num_irqs; i++) {
 			irq = platform_get_irq_byname(pdev,
 						      config->irqs[i].name);
-			if (irq < 0) {
-				LOG_DEV_ERROR(dev, "no npu %s in dts\n",
-					      config->irqs[i].name);
+			if (irq < 0)
 				return irq;
-			}
 
 			ret = devm_request_irq(dev, irq,
 					       config->irqs[i].irq_hdl,
