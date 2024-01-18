@@ -38,6 +38,7 @@ modules.builtin
 Module.symvers
 *.dwo
 *.su
+.config_done
 
 #
 # Top-level generic files
