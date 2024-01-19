@@ -11,15 +11,15 @@ HERE=`pwd`
 
 # CROSS="aarch64-linux-"
 
-MOD_PATH="../live-update"
+OUT_DIR="../live-update"
 KRNL_VER="`make -j8 ARCH=arm64 CROSS_COMPILE=${CROSS} kernelrelease`"
 
 echo "-----------------------------------"
 echo "KRNL_VER: $KRNL_VER"
-echo "MOD_PATH: $MOD_PATH"
+echo "OUT_DIR: $OUT_DIR"
 echo "-----------------------------------"
 
-mkdir -p ${MOD_PATH}
+mkdir -p ${OUT_DIR}
 
 if [ ! -f .config_done ] ; then
     make -j4 ARCH=arm64 CROSS_COMPILE=${CROSS} kernelrelease || exit 1
@@ -27,29 +27,19 @@ if [ ! -f .config_done ] ; then
     touch .config_done
 fi
 
-if [ -e ${CROSS} ] ; then
-    # Local Build
-    make -j4 ARCH=arm64 all modules dtbs || exit 1
-    make -j4 ARCH=arm64 INSTALL_MOD_PATH=${MOD_PATH} modules_install || exit 1
-    make -j4 ARCH=arm64 nanopi4-images   || exit 1
-else 
-    # Bit Power Build Host
-    make -j8 ARCH=arm64 CROSS_COMPILE=${CROSS} all modules dtbs || exit 1
-    make -j8 ARCH=arm64 CROSS_COMPILE=${CROSS} INSTALL_MOD_PATH=${MOD_PATH} modules_install || exit 1
-    make -j8 ARCH=arm64 CROSS_COMPILE=${CROSS} nanopi4-images   || exit 1
-fi
+# Bit Power Build Host
+make -j4 ARCH=arm64 CROSS_COMPILE=${CROSS} all modules dtbs || exit 1
+make -j4 ARCH=arm64 CROSS_COMPILE=${CROSS} INSTALL_OUT_DIR=${OUT_DIR} modules_install || exit 1
+make -j4 ARCH=arm64 CROSS_COMPILE=${CROSS} nanopi4-images   || exit 1
 
-rm -vf ${MOD_PATH}/lib/modules/$KRNL_VER/source
-rm -vf ${MOD_PATH}/lib/modules/$KRNL_VER/build
+rm -vf ${OUT_DIR}/lib/modules/$KRNL_VER/source
+rm -vf ${OUT_DIR}/lib/modules/$KRNL_VER/build
 
 if [ ! -e ${REMOTE} ] ; then
-##
-## Do it - skip existing target
-#debug:  --list-only"
-#-avz
+    #debug:  --list-only /// #-avz
     OPTS="-zvrau"
     OPTS="-arluvt"
-    SOURCE="${MOD_PATH}/lib"
+    SOURCE="${OUT_DIR}/lib"
     TARGET="root@${REMOTE}:/mnt/ssd/sys-update/"
     INCLUDE=""
     EXCLUDE=""
@@ -61,7 +51,7 @@ if [ ! -e ${REMOTE} ] ; then
             root@${REMOTE}:/mnt/ssd/sys-update/
 else
     mkdir -p /mnt/ssd/sys-update/lib
-    cp -Rpvu ${MOD_PATH}/lib/*       /mnt/ssd/sys-update/lib/
+    cp -Rpvu ${OUT_DIR}/lib/*        /mnt/ssd/sys-update/lib/
     cp -Rpvu resource.img kernel.img /mnt/ssd/sys-update/
 fi
 
