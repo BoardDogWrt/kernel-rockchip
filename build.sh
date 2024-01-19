@@ -61,7 +61,8 @@ if [ ! -e ${REMOTE} ] ; then
             root@${REMOTE}:/mnt/ssd/sys-update/
 else
     mkdir -p /mnt/ssd/sys-update/lib
-    cp -Rpvu ${MOD_PATH}/lib/* /mnt/ssd/sys-update/lib/
+    cp -Rpvu ${MOD_PATH}/lib/*       /mnt/ssd/sys-update/lib/
+    cp -Rpvu resource.img kernel.img /mnt/ssd/sys-update/
 fi
 
 exit $?
