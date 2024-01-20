@@ -11721,19 +11721,20 @@ wl_cfg80211_change_station(
 		/*return -ENOTSUPP; DO NOT STOP, CANNOT KNOW IF SUCH AUTHENTICATOR IS REQUIRED HERE*/
 		/*go ahead*/
 	}
+	#endif
 
 	if (!(params->sta_flags_set & BIT(NL80211_STA_FLAG_AUTHORIZED))) {
-		WL_DBG(("WLC_SCB_AUTHORIZE Station is authorized, try to deauthorize station first.\n"));
+		WL_INFORM_MEM(("[%s] WLC_SCB_AUTHORIZE flag not set, recover state. " MACDBG "\n",
+		           		ndev->name, MAC2STRDBG(mac)));
 		err = wldev_ioctl_set(ndev, WLC_SCB_DEAUTHORIZE, mac, ETH_ALEN);
 		if (unlikely(err)) {
 			WL_ERR(("WLC_SCB_DEAUTHORIZE error (%d)\n", err));
+			return err;
 		} else {
 			WL_INFORM_MEM(("[%s] WLC_SCB_DEAUTHORIZE " MACDBG "\n",
 				ndev->name, MAC2STRDBG(mac)));
 		}
-		return err;
 	}
-	#endif
 
 	err = wldev_ioctl_set(ndev, WLC_SCB_AUTHORIZE, mac, ETH_ALEN);
 	if (unlikely(err)) {

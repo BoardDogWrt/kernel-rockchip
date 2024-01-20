@@ -13,20 +13,24 @@ SRC_DIR=`pwd`
 OS_HOST=`uname -m`
 
 if [ ${OS_HOST} == "x86_64" ] ; then
-    TOOL_CHAIN="/opt/FriendlyARM/toolchain/6.4-aarch64"
-	CROSS=aarch64-linux-
+    #using Ubuntu gcc-10-aarch64
+    #TOOL_CHAIN="/opt/FriendlyARM/toolchain/6.4-aarch64"
+	CC="aarch64-linux-gnu-gcc-10"
 	KRNL_ARCH="arm64"
 	REMOTE_SSHKEY="${HOME}/.ssh/id_rsa_tux_deploy" 
 	REMOTE_HOST="192.168.181.210" 
     REMOTE_TARGET="root@${REMOTE_HOST}:/mnt/ssd/emmc-update/"
-    if [[ ! ${PATH} =~ "${TOOL_CHAIN}" ]]; then
-        export PATH=${TOOL_CHAIN}/bin/:$PATH
+    if [ -e ${TOOL_CHAIN} ] ; then 
+        if [[ ! ${PATH} =~ "${TOOL_CHAIN}" ]]; then
+            export PATH=${TOOL_CHAIN}/bin/:$PATH
+        fi
     fi
     # Output directory
     UPDATE_DIR="${SRC_DIR}/../live-update"
 else
     UPDATE_DIR="/mnt/ssd/emmc-update"
 	KRNL_ARCH="arm64"
+    CC="gcc"
 fi
 
 # Used kernel branch
@@ -34,7 +38,7 @@ fi
 KRNL_BRANCH=`git branch`
 
 # Get kernel version
-KRNL_VER="`make -j4 ARCH=${KRNL_ARCH} CROSS_COMPILE=${CROSS} kernelrelease`"
+KRNL_VER="`make -j4 CC=${CC} ARCH=${KRNL_ARCH} kernelrelease`"
 
 echo "----------------------------------------------------"
 echo "SRC_DIR......: ${SRC_DIR}"
@@ -48,28 +52,30 @@ echo "TOOL_CHAIN...: ${TOOL_CHAIN}"
 echo "REMOTE_TARGET: ${REMOTE_TARGET}"
 echo "----------------------------------------------------"
 
+echo | ${CC} -dM -E -
+
 mkdir -p ${UPDATE_DIR}
 
 if [ ! -f .config ] ; then
     echo "----------------------------------------------------"
     echo "++ Configure kernel from eof_defconfig"
-    make -j4 ARCH=${KRNL_ARCH} CROSS_COMPILE=${CROSS} kernelrelease || exit 1
-    make -j4 ARCH=${KRNL_ARCH} CROSS_COMPILE=${CROSS} eof_defconfig
+    make -j4 CC=${CC} ARCH=${KRNL_ARCH} kernelrelease || exit 1
+    make -j4 CC=${CC} ARCH=${KRNL_ARCH} eof_defconfig
 fi
 
 # Bit Power Build Host
 echo "----------------------------------------------------"
 echo "++ Build kernel targets: Image modules dtbs"
-make -j4 ARCH=${KRNL_ARCH} CROSS_COMPILE=${CROSS} Image modules dtbs || exit 1
+make -j4 CC=${CC} ARCH=${KRNL_ARCH} Image modules dtbs || exit 1
 
 echo "----------------------------------------------------"
 echo "++ Install modules to: ${UPDATE_DIR}"
-make -j4 ARCH=${KRNL_ARCH} CROSS_COMPILE=${CROSS} \
+make -j4 CC=${CC} ARCH=${KRNL_ARCH} \
 		INSTALL_MOD_PATH=${UPDATE_DIR} modules_install || exit 1
 
 echo "----------------------------------------------------"
 echo "++ Generate nanopi4 kernel images..."
-make -j4 ARCH=${KRNL_ARCH} CROSS_COMPILE=${CROSS} nanopi4-images || exit 1
+make -j4 CC=${CC} ARCH=${KRNL_ARCH} nanopi4-images || exit 1
 
 rm -vf ${UPDATE_DIR}/lib/modules/$KRNL_VER/source
 rm -vf ${UPDATE_DIR}/lib/modules/$KRNL_VER/build
