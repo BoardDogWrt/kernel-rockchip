@@ -34,6 +34,10 @@
 #ifndef _wl_cfg80211_h_
 #define _wl_cfg80211_h_
 
+/*EOF:DEBUG*/
+#define DHD_DEBUG 1
+#define CUSTOMER_HW4_DEBUG 1
+
 #include <linux/wireless.h>
 #include <typedefs.h>
 #include <ethernet.h>
@@ -86,18 +90,15 @@ extern char *dhd_log_dump_get_timestamp(void);
 /* 0 invalidates all debug messages.  default is 1 */
 #define WL_DBG_LEVEL 0xFF
 
-#ifdef CUSTOMER_HW4_DEBUG
-#define CFG80211_ERROR_TEXT		"[dhd] CFG80211-INFO2) "
-#else
-#define CFG80211_ERROR_TEXT		"[dhd] CFG80211-ERROR) "
-#endif /* CUSTOMER_HW4_DEBUG */
+#define CFG80211_DEBUG_TEXT		"[dhd]"
+#define CFG80211_ERROR_TEXT		"[dhd]"
 
 #if defined(DHD_DEBUG)
 #ifdef DHD_LOG_DUMP
 #define	WL_ERR_MSG(x, args...)	\
 do {	\
 	if (wl_dbg_level & WL_DBG_ERR) {	\
-		printk(KERN_INFO CFG80211_ERROR_TEXT "%s : " x, __func__, ## args);	\
+		printk(KERN_ERR "%s : " x, __func__, ## args);	\
 		DHD_LOG_DUMP_WRITE("[%s] %s: ", dhd_log_dump_get_timestamp(), __func__);	\
 		DHD_LOG_DUMP_WRITE(x, ## args);	\
 	}	\
@@ -112,7 +113,7 @@ do {	\
 #define	WL_ERR_EX_MSG(x, args...)	\
 do {	\
 	if (wl_dbg_level & WL_DBG_ERR) {	\
-		printk(KERN_INFO CFG80211_ERROR_TEXT "%s : " x, __func__, ## args);	\
+		printk(KERN_ERR "%s : " x, __func__, ## args);	\
 		DHD_LOG_DUMP_WRITE_EX("[%s] %s: ", dhd_log_dump_get_timestamp(), __func__); \
 		DHD_LOG_DUMP_WRITE_EX(x, ## args); \
 	}	\
@@ -123,7 +124,7 @@ do {	\
 #define	WL_ERR_MSG(x, args...)									\
 do {										\
 	if (wl_dbg_level & WL_DBG_ERR) {				\
-		printk(KERN_INFO CFG80211_ERROR_TEXT "%s : " x, __func__, ## args);	\
+		printk(KERN_ERR "%s : " x, __func__, ## args);	\
 	}								\
 } while (0)
 #define WL_ERR(x) WL_ERR_MSG x
@@ -134,7 +135,7 @@ do {										\
 #define	WL_ERR_MSG(x, args...)									\
 do {										\
 	if ((wl_dbg_level & WL_DBG_ERR) && net_ratelimit()) {				\
-		printk(KERN_INFO CFG80211_ERROR_TEXT "%s : " x, __func__, ## args);	\
+		printk(KERN_ERR CFG80211_ERROR_TEXT "%s : " x, __func__, ## args);	\
 	}								\
 } while (0)
 #define WL_ERR(x) WL_ERR_MSG x
@@ -169,7 +170,7 @@ do {	\
 #define	WL_INFORM_MSG(x, args...)									\
 do {										\
 	if (wl_dbg_level & WL_DBG_INFO) {				\
-		printk(KERN_INFO "[dhd] CFG80211-INFO) %s : " x, __func__, ## args);	\
+		printk(KERN_INFO "[dhd] %s: " x, __func__, ## args);	\
 	}								\
 } while (0)
 #define WL_INFORM(x) WL_INFORM_MSG x
@@ -180,7 +181,7 @@ do {										\
 #define	WL_SCAN_MSG(x, args...)								\
 do {									\
 	if (wl_dbg_level & WL_DBG_SCAN) {			\
-		printk(KERN_INFO "[dhd] CFG80211-SCAN) %s :" x, __func__, ## args);	\
+		printk(KERN_INFO "[dhd] %s:" x, __func__, ## args);	\
 	}									\
 } while (0)
 #define WL_SCAN(x) WL_SCAN_MSG x
@@ -190,7 +191,7 @@ do {									\
 #define	WL_TRACE_MSG(x, args...)								\
 do {									\
 	if (wl_dbg_level & WL_DBG_TRACE) {			\
-		printk(KERN_INFO "[dhd] CFG80211-TRACE) %s :" x, __func__, ## args);	\
+		printk(KERN_DEBUG "[dhd] %s:" x, __func__, ## args);	\
 	}									\
 } while (0)
 #define WL_TRACE(x) WL_TRACE_MSG x
@@ -201,7 +202,7 @@ do {									\
 #define	WL_TRACE_HW4_MSG(x, args...)					\
 do {										\
 	if (wl_dbg_level & WL_DBG_ERR) {				\
-		printk(KERN_INFO "[dhd] CFG80211-TRACE) %s : " x, __func__, ## args);	\
+		printk(KERN_DEBUG "[dhd] %s: " x, __func__, ## args);	\
 	} 								\
 } while (0)
 #define WL_TRACE_HW4(x) WL_TRACE_HW4_MSG x
@@ -212,7 +213,7 @@ do {										\
 #define	WL_DBG_MSG(x, args...)								\
 do {									\
 	if (wl_dbg_level & WL_DBG_DBG) {			\
-		printk(KERN_INFO "[dhd] CFG80211-DEBUG) %s :" x, __func__, ## args);	\
+		printk(KERN_DEBUG "[dhd] %s:" x, __func__, ## args);	\
 	}									\
 } while (0)
 #define WL_DBG(x) WL_DBG_MSG x

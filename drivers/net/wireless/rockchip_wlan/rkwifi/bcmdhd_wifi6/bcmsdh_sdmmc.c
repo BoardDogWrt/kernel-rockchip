@@ -189,7 +189,7 @@ sdioh_sdmmc_card_enablefuncs(sdioh_info_t *sd)
 }
 
 /*
- *	Public entry points & extern's
+ * Public entry points & extern's
  */
 extern sdioh_info_t *
 sdioh_attach(osl_t *osh, struct sdio_func *func)

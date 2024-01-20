@@ -41,7 +41,7 @@
 extern const uint bcmsdh_msglevel;
 
 #define BCMSDH_ERROR(x) printf x
-#define BCMSDH_INFO(x)
+#define BCMSDH_INFO(x) printf x
 
 #if defined(BCMSDIO) && (defined(BCMSDIOH_STD) || defined(BCMSDIOH_BCM) || \
 	defined(BCMSDIOH_SPI))

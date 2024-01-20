@@ -30,6 +30,8 @@
 #ifndef _dhd_dbg_
 #define _dhd_dbg_
 
+/*EOF:DEBUG*/
+#define DHD_DEBUG 1
 
 #if defined(DHD_EFI) && defined(DHD_LOG_DUMP)
 extern void dhd_log_dump_print(const char *fmt, ...);

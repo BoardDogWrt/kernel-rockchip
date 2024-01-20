@@ -154,7 +154,7 @@ static int bcmsdh_sdmmc_probe(struct sdio_func *func,
 	if (func == NULL)
 		return -EINVAL;
 
-	sd_err(("%s: Enter num=%d\n", __FUNCTION__, func->num));
+	sd_trace(("%s: Enter num=%d\n", __FUNCTION__, func->num));
 	sd_info(("sdio_bcmsdh: func->class=%x\n", func->class));
 	sd_info(("sdio_vendor: 0x%04x\n", func->vendor));
 	sd_info(("sdio_device: 0x%04x\n", func->device));
