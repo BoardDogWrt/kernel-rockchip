@@ -9,30 +9,24 @@ if [ -d kernel -a ! -f Kbuild ] ; then
     cd kernel
 fi
 
-echo "----------------------------------------------------"
-
 SRC_DIR=`pwd`
 OS_HOST=`uname -m`
 
-# Output directory
-UPDATE_DIR="${SRC_DIR}/../live-update"
-
-echo "SRC_DIR......: ${SRC_DIR}"
-echo "UPDATE_DIR...: ${UPDATE_DIR}"
-echo "OS_HOST......: ${OS_HOST}"
-
 if [ ${OS_HOST} == "x86_64" ] ; then
-    export TOOL_CHAIN="/opt/FriendlyARM/toolchain/6.4-aarch64"
-	export CROSS=aarch64-linux-
-	export KRNL_ARCH="arm64"
-	export REMOTE_SSHKEY="${HOME}/.ssh/id_rsa_tux_deploy" 
-	export REMOTE_HOST="192.168.181.210" 
-    export REMOTE_TARGET="root@${REMOTE_HOST}:/mnt/ssd/emmc-update/"
+    TOOL_CHAIN="/opt/FriendlyARM/toolchain/6.4-aarch64"
+	CROSS=aarch64-linux-
+	KRNL_ARCH="arm64"
+	REMOTE_SSHKEY="${HOME}/.ssh/id_rsa_tux_deploy" 
+	REMOTE_HOST="192.168.181.210" 
+    REMOTE_TARGET="root@${REMOTE_HOST}:/mnt/ssd/emmc-update/"
     if [[ ! ${PATH} =~ "${TOOL_CHAIN}" ]]; then
         export PATH=${TOOL_CHAIN}/bin/:$PATH
     fi
+    # Output directory
+    UPDATE_DIR="${SRC_DIR}/../live-update"
 else
-	export KRNL_ARCH="arm64"
+    UPDATE_DIR="/mnt/ssd/emmc-update"
+	KRNL_ARCH="arm64"
 fi
 
 # Used kernel branch
@@ -40,8 +34,12 @@ fi
 KRNL_BRANCH=`git branch`
 
 # Get kernel version
-KRNL_VER="`make -j8 ARCH=${KRNL_ARCH} CROSS_COMPILE=${CROSS} kernelrelease`"
+KRNL_VER="`make -j4 ARCH=${KRNL_ARCH} CROSS_COMPILE=${CROSS} kernelrelease`"
 
+echo "----------------------------------------------------"
+echo "SRC_DIR......: ${SRC_DIR}"
+echo "OS_HOST......: ${OS_HOST}"
+echo "UPDATE_DIR...: ${UPDATE_DIR}"
 echo "KERNEL_VER...: ${KRNL_VER}"
 echo "KERNEL_ARCH..: ${KRNL_ARCH}"
 echo "KERNEL_BRANCH: ${KRNL_BRANCH}"
@@ -71,28 +69,20 @@ make -j4 ARCH=${KRNL_ARCH} CROSS_COMPILE=${CROSS} \
 
 echo "----------------------------------------------------"
 echo "++ Generate nanopi4 kernel images..."
-make -j4 ARCH=${KRNL_ARCH} CROSS_COMPILE=${CROSS} nanopi4-images   || exit 1
+make -j4 ARCH=${KRNL_ARCH} CROSS_COMPILE=${CROSS} nanopi4-images || exit 1
 
 rm -vf ${UPDATE_DIR}/lib/modules/$KRNL_VER/source
 rm -vf ${UPDATE_DIR}/lib/modules/$KRNL_VER/build
 
 if [ ! -e ${REMOTE_TARGET} ] ; then
-    #debug:  --list-only /// #-avz
-    #OPTS="-zvrau"
     eval $(ssh-agent) # Create agent and environment variables
     ssh-add ${REMOTE_SSHKEY}
     OPTS="-arluvt"
     SOURCE="${UPDATE_DIR}/lib"
-    INCLUDE=""
-    EXCLUDE=""
     echo "Enter manual following commands:"
-    echo "rsync: ${OPTS} ${SOURCE} -> ${REMOTE_TARGET}"
-    rsync ${OPTS} ${SYNC_OPT} ${INCLUDE} ${EXCLUDE} ${SOURCE} ${REMOTE_TARGET}
+    echo rsync ${OPTS} ${SOURCE} ${REMOTE_TARGET}
     echo "scp -r -i ${REMOTE_SSHKEY} resource.img kernel.img ${REMOTE_TARGET}"
-    scp -r -i ${REMOTE_SSHKEY} resource.img kernel.img ${REMOTE_TARGET}
 else
-    mkdir -p /mnt/ssd/emmc-update/lib
-    cp -Rpvu ${UPDATE_DIR}/lib/*     /mnt/ssd/emmc-update/lib/
     cp -Rpvu resource.img kernel.img /mnt/ssd/emmc-update/
 fi
 
