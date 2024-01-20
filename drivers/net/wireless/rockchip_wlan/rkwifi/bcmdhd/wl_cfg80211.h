@@ -34,10 +34,6 @@
 #ifndef _wl_cfg80211_h_
 #define _wl_cfg80211_h_
 
-/*EOF:DEBUG*/
-#define DHD_DEBUG 1
-#define CUSTOMER_HW4_DEBUG 1
-
 #include <linux/wireless.h>
 #include <typedefs.h>
 #include <ethernet.h>
