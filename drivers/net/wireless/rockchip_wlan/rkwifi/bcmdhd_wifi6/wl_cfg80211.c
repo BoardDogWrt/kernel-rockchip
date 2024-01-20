@@ -11707,7 +11707,15 @@ wl_cfg80211_change_station(
 	/* Processing only authorize/de-authorize flag for now 
 	 * Flag is set only if authentication server (radius server)
 	 * authorize the station
+	 * 
+	 * Commented out due in this case:
+	 * 1) Fresh boot
+	 * 2) Use iPhone and unlock from sleep
+	 * 3) Auto connect to WiFi.
+	 * The two WLC_SCB_DEAUTHORIZE will prevent the connect of
+	 * the iPhone.
 	 */
+	#if 0
 	if (!(params->sta_flags_mask & BIT(NL80211_STA_FLAG_AUTHORIZED))) {
 		WL_DBG(("WLC_SCB_AUTHORIZE Not authorised by IEEE 802.1X authenticator (radius server)\n"));
 		/*return -ENOTSUPP; DO NOT STOP, CANNOT KNOW IF SUCH AUTHENTICATOR IS REQUIRED HERE*/
@@ -11725,6 +11733,7 @@ wl_cfg80211_change_station(
 		}
 		return err;
 	}
+	#endif
 
 	err = wldev_ioctl_set(ndev, WLC_SCB_AUTHORIZE, mac, ETH_ALEN);
 	if (unlikely(err)) {
