@@ -99,7 +99,7 @@ do {	\
 } while (0)
 #define DHD_IOVAR_MEM(args) \
 do {	\
-	if (dhd_msg_level & DHD_ERROR_VAL) {	\
+	if (dhd_msg_level & DHD_TRACE_VAL) {	\
 		if (dhd_msg_level & DHD_IOVAR_MEM_VAL) {	\
 			printf args; \
 		}	\
@@ -109,7 +109,7 @@ do {	\
 } while (0)
 #define DHD_LOG_MEM(args) \
 do {	\
-	if (dhd_msg_level & DHD_ERROR_VAL) {	\
+	if (dhd_msg_level & DHD_TRACE_VAL) {	\
 		DHD_LOG_DUMP_WRITE("[%s]: ", dhd_log_dump_get_timestamp());	\
 		DHD_LOG_DUMP_WRITE args;	\
 	}	\
@@ -170,8 +170,8 @@ do {	\
 /* !DHD_LOG_DUMP */
 #define DHD_MSGTRACE_LOG(args)  do {if (dhd_msg_level & DHD_MSGTRACE_VAL) printf args;} while (0)
 #define DHD_ERROR_MEM(args)	DHD_ERROR(args)
-#define DHD_IOVAR_MEM(args)	DHD_ERROR(args)
-#define DHD_LOG_MEM(args)	DHD_ERROR(args)
+#define DHD_IOVAR_MEM(args)	DHD_TRACE(args)
+#define DHD_LOG_MEM(args)	DHD_TRACE(args)
 #define DHD_EVENT(args)		do {if (dhd_msg_level & DHD_EVENT_VAL) printf args;} while (0)
 #define DHD_ECNTR_LOG(args)	DHD_EVENT(args)
 #define DHD_PRSRV_MEM(args)	DHD_EVENT(args)
@@ -257,9 +257,10 @@ do {	\
 
 #define DHD_ERROR(args)		do {if (dhd_msg_level & DHD_ERROR_VAL) \
 								printf args;} while (0)
+#define DHD_INFO(args)		do {if (dhd_msg_level & DHD_INFO_VAL) \
+								printf args;} while (0)
+/* -- hard core -- */
 #define DHD_TRACE(args)
-#define DHD_INFO(args)
-
 #define DHD_DATA(args)
 #define DHD_CTL(args)
 #define DHD_TIMER(args)
@@ -287,12 +288,12 @@ do {	\
 #define DHD_DBGIF(args)
 
 #define DHD_ERROR_MEM(args)	DHD_ERROR(args)
-#define DHD_IOVAR_MEM(args)	DHD_ERROR(args)
-#define DHD_LOG_MEM(args)	DHD_ERROR(args)
+#define DHD_IOVAR_MEM(args)	DHD_TRACE(args)
+#define DHD_LOG_MEM(args)	DHD_TRACE(args)
 #define DHD_ERROR_EX(args)	DHD_ERROR(args)
 
-#define DHD_TRACE_HW4	DHD_TRACE
-#define DHD_INFO_HW4	DHD_INFO
+#define DHD_TRACE_HW4		DHD_TRACE
+#define DHD_INFO_HW4		DHD_INFO
 #define DHD_ERROR_NO_HW4	DHD_ERROR
 
 #define DHD_ERROR_ON()		0

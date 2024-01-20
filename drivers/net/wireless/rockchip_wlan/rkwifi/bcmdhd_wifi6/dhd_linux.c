@@ -11399,6 +11399,7 @@ dhd_preinit_ioctls(dhd_pub_t *dhd)
 		wnm_cap |= WL_WNM_ESTM;
 	}
 #endif /* WL_MBO && WL_OCE */
+
 	if (dhd_iovar(dhd, 0, "wnm", (char *)&wnm_cap, sizeof(wnm_cap), NULL, 0, TRUE) < 0) {
 		DHD_ERROR(("failed to set WNM capabilities\n"));
 	}

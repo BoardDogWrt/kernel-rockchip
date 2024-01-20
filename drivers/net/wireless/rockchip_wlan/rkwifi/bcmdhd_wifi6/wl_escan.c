@@ -10,25 +10,25 @@
 #define ESCAN_ERROR(name, arg1, args...) \
 	do { \
 		if (android_msg_level & ANDROID_ERROR_LEVEL) { \
-			printk(KERN_ERR DHD_LOG_PREFIX "[%s] ESCAN-ERROR) %s : " arg1, name, __func__, ## args); \
+			printk(KERN_ERR DHD_LOG_PREFIX "[%s] WL-ESCAN: %s : " arg1, name, __func__, ## args); \
 		} \
 	} while (0)
 #define ESCAN_TRACE(name, arg1, args...) \
 	do { \
 		if (android_msg_level & ANDROID_TRACE_LEVEL) { \
-			printk(KERN_INFO DHD_LOG_PREFIX "[%s] ESCAN-TRACE) %s : " arg1, name, __func__, ## args); \
+			printk(KERN_DEBUG DHD_LOG_PREFIX "[%s] WL-ESCAN: %s : " arg1, name, __func__, ## args); \
 		} \
 	} while (0)
 #define ESCAN_SCAN(name, arg1, args...) \
 	do { \
 		if (android_msg_level & ANDROID_SCAN_LEVEL) { \
-			printk(KERN_INFO DHD_LOG_PREFIX "[%s] ESCAN-SCAN) %s : " arg1, name, __func__, ## args); \
+			printk(KERN_INFO DHD_LOG_PREFIX "[%s] WL-ESCAN: %s : " arg1, name, __func__, ## args); \
 		} \
 	} while (0)
 #define ESCAN_DBG(name, arg1, args...) \
 	do { \
 		if (android_msg_level & ANDROID_DBG_LEVEL) { \
-			printk(KERN_INFO DHD_LOG_PREFIX "[%s] ESCAN-DBG) %s : " arg1, name, __func__, ## args); \
+			printk(KERN_DEBUG DHD_LOG_PREFIX "[%s] WL-ESCAN: %s : " arg1, name, __func__, ## args); \
 		} \
 	} while (0)
 

@@ -56,25 +56,25 @@ uint iw_msg_level = WL_ERROR_LEVEL;
 #define WL_ERROR_MSG(x, args...) \
 	do { \
 		if (iw_msg_level & WL_ERROR_LEVEL) { \
-			printk(KERN_ERR DHD_LOG_PREFIXS "WEXT-ERROR) %s : " x, __func__, ## args); \
+			printk(KERN_ERR DHD_LOG_PREFIXS "WL_IW: %s : " x, __func__, ## args); \
 		} \
 	} while (0)
 #define WL_TRACE_MSG(x, args...) \
 	do { \
 		if (iw_msg_level & WL_TRACE_LEVEL) { \
-			printk(KERN_INFO DHD_LOG_PREFIXS "WEXT-TRACE) %s : " x, __func__, ## args); \
+			printk(KERN_DEBUG DHD_LOG_PREFIXS "WL_IW: %s : " x, __func__, ## args); \
 		} \
 	} while (0)
 #define WL_SCAN_MSG(x, args...) \
 	do { \
 		if (iw_msg_level & WL_SCAN_LEVEL) { \
-			printk(KERN_INFO DHD_LOG_PREFIXS "WEXT-SCAN) %s : " x, __func__, ## args); \
+			printk(KERN_INFO DHD_LOG_PREFIXS "WL_IW: %s : " x, __func__, ## args); \
 		} \
 	} while (0)
 #define WL_WSEC_MSG(x, args...) \
 	do { \
 		if (iw_msg_level & WL_WSEC_LEVEL) { \
-			printk(KERN_INFO DHD_LOG_PREFIXS "WEXT-WSEC) %s : " x, __func__, ## args); \
+			printk(KERN_INFO DHD_LOG_PREFIXS "WL_IW: %s : " x, __func__, ## args); \
 		} \
 	} while (0)
 #define WL_ERROR(x) WL_ERROR_MSG x

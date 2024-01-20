@@ -48,19 +48,19 @@ uint dump_msg_level = 0;
 #define CONFIG_MSG(x, args...) \
 	do { \
 		if (config_msg_level & CONFIG_MSG_LEVEL) { \
-			printk(KERN_ERR DHD_LOG_PREFIXS "%s : " x, __func__, ## args); \
+			printk(KERN_INFO DHD_LOG_PREFIXS "%s : " x, __func__, ## args); \
 		} \
 	} while (0)
 #define CONFIG_ERROR(x, args...) \
 	do { \
 		if (config_msg_level & CONFIG_ERROR_LEVEL) { \
-			printk(KERN_ERR DHD_LOG_PREFIXS "CONFIG-ERROR) %s : " x, __func__, ## args); \
+			printk(KERN_ERR DHD_LOG_PREFIXS "CONFIG: %s : " x, __func__, ## args); \
 		} \
 	} while (0)
 #define CONFIG_TRACE(x, args...) \
 	do { \
 		if (config_msg_level & CONFIG_TRACE_LEVEL) { \
-			printk(KERN_INFO DHD_LOG_PREFIXS "CONFIG-TRACE) %s : " x, __func__, ## args); \
+			printk(KERN_DEBUG DHD_LOG_PREFIXS "CONFIG: %s : " x, __func__, ## args); \
 		} \
 	} while (0)
 

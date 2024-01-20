@@ -97,7 +97,7 @@ s32 dhd_cfg80211_set_p2p_info(struct bcm_cfg80211 *cfg, int val)
 {
 	dhd_pub_t *dhd =  (dhd_pub_t *)(cfg->pub);
 	dhd->op_mode |= val;
-	WL_ERR(("Set : op_mode=0x%04x\n", dhd->op_mode));
+	WL_TRACE(("Set : op_mode=0x%04x\n", dhd->op_mode));
 #ifdef ARP_OFFLOAD_SUPPORT
 	if (dhd->arp_version == 1) {
 		/* IF P2P is enabled, disable arpoe */
@@ -113,7 +113,7 @@ s32 dhd_cfg80211_clean_p2p_info(struct bcm_cfg80211 *cfg)
 {
 	dhd_pub_t *dhd =  (dhd_pub_t *)(cfg->pub);
 	dhd->op_mode &= ~(DHD_FLAG_P2P_GC_MODE | DHD_FLAG_P2P_GO_MODE);
-	WL_ERR(("Clean : op_mode=0x%04x\n", dhd->op_mode));
+	WL_TRACE(("Clean : op_mode=0x%04x\n", dhd->op_mode));
 
 #ifdef ARP_OFFLOAD_SUPPORT
 	if (dhd->arp_version == 1) {
@@ -293,7 +293,7 @@ int dhd_cfgvendor_priv_string_handler(struct bcm_cfg80211 *cfg, struct wireless_
 	ioc.buf = buf;
 	ret = dhd_ioctl_process(dhd, index, &ioc, buf);
 	if (ret) {
-		WL_TRACE(("dhd_ioctl_process return err %d\n", ret));
+		WL_ERR(("dhd_ioctl_process return err %d\n", ret));
 		ret = OSL_ERROR(ret);
 		goto done;
 	}

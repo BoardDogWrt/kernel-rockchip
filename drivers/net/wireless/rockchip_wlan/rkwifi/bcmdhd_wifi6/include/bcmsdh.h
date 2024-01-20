@@ -41,7 +41,13 @@
 extern const uint bcmsdh_msglevel;
 
 #define BCMSDH_ERROR(x) printf x
+
+/* hard core trace - kmsg buff must be high */
+#if defined(BCMSDH_DEBUG_TRACE)
+#define BCMSDH_INFO(x) printf x
+#else
 #define BCMSDH_INFO(x)
+#endif
 
 #if defined(BCMSDIO) && (defined(BCMSDIOH_STD) || defined(BCMSDIOH_BCM) || \
 	defined(BCMSDIOH_SPI))

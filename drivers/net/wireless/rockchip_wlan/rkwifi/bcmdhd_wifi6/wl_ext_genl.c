@@ -7,19 +7,19 @@
 #define AGENL_ERROR(name, arg1, args...) \
 	do { \
 		if (android_msg_level & ANDROID_ERROR_LEVEL) { \
-			printk(KERN_ERR DHD_LOG_PREFIX "[%s] AGENL-ERROR) %s : " arg1, name, __func__, ## args); \
+			printk(KERN_ERR DHD_LOG_PREFIX "[%s] WL-AGENL: %s : " arg1, name, __func__, ## args); \
 		} \
 	} while (0)
 #define AGENL_TRACE(name, arg1, args...) \
 	do { \
 		if (android_msg_level & ANDROID_TRACE_LEVEL) { \
-			printk(KERN_INFO DHD_LOG_PREFIX "[%s] AGENL-TRACE) %s : " arg1, name, __func__, ## args); \
+			printk(KERN_DEBUG DHD_LOG_PREFIX "[%s] WL-AGENL: %s : " arg1, name, __func__, ## args); \
 		} \
 	} while (0)
 #define AGENL_INFO(name, arg1, args...) \
 	do { \
 		if (android_msg_level & ANDROID_INFO_LEVEL) { \
-			printk(KERN_INFO DHD_LOG_PREFIX "[%s] AGENL-INFO) %s : " arg1, name, __func__, ## args); \
+			printk(KERN_INFO DHD_LOG_PREFIX "[%s] WL-AGENL: %s : " arg1, name, __func__, ## args); \
 		} \
 	} while (0)
 

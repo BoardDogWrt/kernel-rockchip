@@ -78,7 +78,7 @@ typedef struct _compat_android_wifi_priv_cmd {
 #define WL_MSG(name, arg1, args...) \
 	do { \
 		if (android_msg_level & ANDROID_MSG_LEVEL) { \
-			printk(KERN_ERR DHD_LOG_PREFIX "[%s] %s : " arg1, name, __func__, ## args); \
+			printk(KERN_INFO DHD_LOG_PREFIX "[%s] %s : " arg1, name, __func__, ## args); \
 		} \
 	} while (0)
 

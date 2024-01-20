@@ -156,7 +156,8 @@ module_param(fw_ap_select, uint, 0660);
 
 static struct device *cfg80211_parent_dev = NULL;
 static struct bcm_cfg80211 *g_bcmcfg = NULL;
-u32 wl_dbg_level = WL_DBG_ERR; // | WL_DBG_P2P_ACTION | WL_DBG_INFO;
+u32 wl_dbg_level = WL_DBG_ERR | WL_DBG_INFO;
+/* | WL_DBG_TRACE | WL_DBG_P2P_ACTION; */
 
 #define	MAX_VIF_OFFSET	15
 #define MAX_WAIT_TIME 1500
@@ -8404,17 +8405,17 @@ wl_cfg80211_set_pmksa(struct wiphy *wiphy, struct net_device *dev,
 		err = -EINVAL;
 	}
 
-#if (WL_DBG_LEVEL > 0)
-	if (pmksa->bssid != NULL) {
-		WL_DBG(("set_pmksa,IW_PMKSA_ADD - PMKID: %pM =\n",
-			&cfg->pmk_list->pmkids.pmkid[npmkids - 1].bssid));
+	if (wl_dbg_level & WL_DBG_DBG) {
+		if (pmksa->bssid != NULL) {
+			WL_DBG(("set_pmksa,IW_PMKSA_ADD - PMKID: %pM =\n",
+				&cfg->pmk_list->pmkids.pmkid[npmkids - 1].bssid));
+		}
+		for (i = 0; i < WPA2_PMKID_LEN; i++) {
+			WL_DBG(("%02x\n",
+				cfg->pmk_list->pmkids.pmkid[npmkids - 1].
+				pmkid[i]));
+		}
 	}
-	for (i = 0; i < WPA2_PMKID_LEN; i++) {
-		WL_DBG(("%02x\n",
-			cfg->pmk_list->pmkids.pmkid[npmkids - 1].
-			pmkid[i]));
-	}
-#endif /* (WL_DBG_LEVEL > 0) */
 
 	err = wl_update_pmklist(dev, cfg->pmk_list, err);
 
@@ -8530,26 +8531,26 @@ wl_cfg80211_del_pmksa(struct wiphy *wiphy, struct net_device *dev,
 		return BCME_OK;
 	}
 
-#if (WL_DBG_LEVEL > 0)
-	if (pmksa->bssid) {
-		WL_DBG(("del_pmksa,IW_PMKSA_REMOVE - PMKID: %pM =\n",
-			pmksa->bssid));
-	}
+	if (wl_dbg_level & WL_DBG_DBG) {
+		if (pmksa->bssid) {
+			WL_DBG(("del_pmksa,IW_PMKSA_REMOVE - PMKID: %pM =\n",
+				pmksa->bssid));
+		}
 #ifdef WL_FILS
-	else if (pmksa->ssid) {
-		WL_DBG(("FILS: del_pmksa for ssid: "));
-		for (i = 0; i < pmksa->ssid_len; i++) {
-			WL_DBG(("%c", pmksa->ssid[i]));
+		else if (pmksa->ssid) {
+			WL_DBG(("FILS: del_pmksa for ssid: "));
+			for (i = 0; i < pmksa->ssid_len; i++) {
+				WL_DBG(("%c", pmksa->ssid[i]));
+			}
+			WL_DBG(("\n"));
 		}
-		WL_DBG(("\n"));
-	}
 #endif /* WL_FILS */
-	if (pmksa->pmkid) {
-		for (i = 0; i < WPA2_PMKID_LEN; i++) {
-			WL_DBG(("%02x\n", pmksa->pmkid[i]));
+		if (pmksa->pmkid) {
+			for (i = 0; i < WPA2_PMKID_LEN; i++) {
+				WL_DBG(("%02x\n", pmksa->pmkid[i]));
+			}
 		}
 	}
-#endif /* (WL_DBG_LEVEL > 0) */
 
 	for (i = 0; i < npmkids; i++) {
 		if (pmksa->bssid) {
@@ -11703,13 +11704,18 @@ wl_cfg80211_change_station(
 		return -ENOTSUPP;
 	}
 
-	/* Processing only authorize/de-authorize flag for now */
+	/* Processing only authorize/de-authorize flag for now 
+	 * Flag is set only if authentication server (radius server)
+	 * authorize the station
+	 */
 	if (!(params->sta_flags_mask & BIT(NL80211_STA_FLAG_AUTHORIZED))) {
-		WL_ERR(("WLC_SCB_AUTHORIZE sta_flags_mask not set \n"));
-		return -ENOTSUPP;
+		WL_DBG(("WLC_SCB_AUTHORIZE Not authorised by IEEE 802.1X authenticator (radius server)\n"));
+		/*return -ENOTSUPP; DO NOT STOP, CANNOT KNOW IF SUCH AUTHENTICATOR IS REQUIRED HERE*/
+		/*go ahead*/
 	}
 
 	if (!(params->sta_flags_set & BIT(NL80211_STA_FLAG_AUTHORIZED))) {
+		WL_DBG(("WLC_SCB_AUTHORIZE Station is authorized, try to deauthorize station first.\n"));
 		err = wldev_ioctl_set(ndev, WLC_SCB_DEAUTHORIZE, mac, ETH_ALEN);
 		if (unlikely(err)) {
 			WL_ERR(("WLC_SCB_DEAUTHORIZE error (%d)\n", err));
@@ -17275,7 +17281,7 @@ wl_cfg80211_netdev_notifier_call(struct notifier_block * nb,
 
 	wdev = ndev_to_wdev(dev);
 	if (!wdev) {
-		WL_ERR(("wdev null. Do nothing\n"));
+		WL_DBG(("wdev null. Do nothing\n"));
 		return NOTIFY_DONE;
 	}
 

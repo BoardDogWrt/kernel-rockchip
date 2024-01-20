@@ -3044,7 +3044,7 @@ dhd_wlfc_parse_header_info(dhd_pub_t *dhd, void* pktbuf, int tlv_hdr_len, uchar 
 			processed += 2 + len;
 			entry = NULL;
 
-			DHD_INFO(("%s():%d type %d remainder %d processed %d\n",
+			DHD_TRACE(("%s():%d type %d remainder %d processed %d\n",
 				__FUNCTION__, __LINE__, type, remainder, processed));
 
 			if (type == WLFC_CTL_TYPE_HOST_REORDER_RXPKTS)
@@ -3056,7 +3056,7 @@ dhd_wlfc_parse_header_info(dhd_pub_t *dhd, void* pktbuf, int tlv_hdr_len, uchar 
 
 				if (type != WLFC_CTL_TYPE_HOST_REORDER_RXPKTS &&
 					type != WLFC_CTL_TYPE_TRANS_ID)
-					DHD_INFO(("%s():%d dhd->wlfc_state is NULL yet!"
+					DHD_TRACE(("%s():%d dhd->wlfc_state is NULL yet!"
 					" type %d remainder %d processed %d\n",
 					__FUNCTION__, __LINE__, type, remainder, processed));
 				continue;
