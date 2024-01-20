@@ -1082,7 +1082,7 @@ dhd_wl_ioctl(dhd_pub_t *dhd_pub, int ifidx, wl_ioctl_t *ioc, void *buf, int len)
 		if (ioc->set == TRUE) {
 			char *pars = (char *)buf; // points at user buffer
 			if (ioc->cmd == WLC_SET_VAR && buf) {
-				DHD_DNGL_IOVAR_SET(("%s:iovar: ifidx=%d set %s", 
+				DHD_DNGL_IOVAR_SET(("%s:iovar: ifidx=%d set pars=%s\n", 
 					__func__, ifidx, pars));
 				if (ioc->len > 1 + sizeof(uint32)) {
 					// skip iovar name:
@@ -1090,15 +1090,16 @@ dhd_wl_ioctl(dhd_pub_t *dhd_pub, int ifidx, wl_ioctl_t *ioc, void *buf, int len)
 					pars++;               // skip NULL character
 				}
 			} else {
-				DHD_DNGL_IOVAR_SET(("%s:iovar: ifidx=%d set %d %s",
+				DHD_DNGL_IOVAR_SET(("%s:iovar: ifidx=%d cmd=%d %s\n",
 					__func__, ifidx, ioc->cmd, ioctl2str(ioc->cmd)));
 			}
 			if (pars != NULL) {
-				DHD_DNGL_IOVAR_SET(("%s:iovar: pars=0x%x\n", 
-					__func__, *(uint32*)pars));
+				DHD_DNGL_IOVAR_SET(("%s:iovar: ifidx=%d cmd=%d pars=0x%x\n", 
+					__func__, ifidx, ioc->cmd, *(uint32*)pars));
 			}
 			else {
-				DHD_DNGL_IOVAR_SET(("%s:iovar: pars=NULL\n", __func__));
+				DHD_DNGL_IOVAR_SET(("%s:iovar: ifidx=%d cmd=%d pars=NULL\n", 
+				__func__, ifidx, ioc->cmd));
 			}
 		}
 
