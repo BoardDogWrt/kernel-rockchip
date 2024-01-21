@@ -7234,7 +7234,7 @@ wl_cfg80211_add_key(struct wiphy *wiphy, struct net_device *dev,
 #endif /* defined(WLAN_CIPHER_SUITE_PMK) */
 	dhd_pub_t *dhdp = (dhd_pub_t *)(cfg->pub);
 
-	WL_INFORM_MEM(("key index (%d) (0x%x)\n", key_idx, params->cipher));
+	WL_INFORM_MEM(("key index=%d cipher=0x%x\n", key_idx, params->cipher));
 	RETURN_EIO_IF_NOT_UP(cfg);
 
 	if ((bssidx = wl_get_bssidx_by_wdev(cfg, dev->ieee80211_ptr)) < 0) {
@@ -11680,32 +11680,32 @@ static void wl_cfg80211_dbg_flags_mask(
 		const u8 *mac)
 {
 	if (params->sta_flags_mask & BIT(NL80211_STA_FLAG_AUTHORIZED)) {
-		WL_INFO_MSG("[%s] mac=" MACDBG " NL80211_STA_FLAG_AUTHORIZED\n",
-			ndev->name, MAC2STRDBG(mac));
+		WL_MSG(ndev->name, "mac=" MACDBG " NL80211_STA_FLAG_AUTHORIZED\n",
+			MAC2STRDBG(mac));
 	}
 	if (params->sta_flags_mask & BIT(NL80211_STA_FLAG_SHORT_PREAMBLE)) {
-		WL_INFO_MSG("[%s] mac=" MACDBG " NL80211_STA_FLAG_SHORT_PREAMBLE\n",
-			ndev->name, MAC2STRDBG(mac));
+		WL_MSG(ndev->name, "mac=" MACDBG " NL80211_STA_FLAG_SHORT_PREAMBLE\n",
+			MAC2STRDBG(mac));
 	}
 	if (params->sta_flags_mask & BIT(NL80211_STA_FLAG_WME)) {
-		WL_INFO_MSG("[%s] mac=" MACDBG " NL80211_STA_FLAG_WME\n",
-			ndev->name, MAC2STRDBG(mac));
+		WL_MSG(ndev->name, "mac=" MACDBG " NL80211_STA_FLAG_WME\n",
+			MAC2STRDBG(mac));
 	}
 	if (params->sta_flags_mask & BIT(NL80211_STA_FLAG_MFP)) {
-		WL_INFO_MSG("[%s] mac=" MACDBG " NL80211_STA_FLAG_MFP\n",
-			ndev->name, MAC2STRDBG(mac));
+		WL_MSG(ndev->name, "mac=" MACDBG " NL80211_STA_FLAG_MFP\n",
+			MAC2STRDBG(mac));
 	}
 	if (params->sta_flags_mask & BIT(NL80211_STA_FLAG_AUTHENTICATED)) {
-		WL_INFO_MSG("[%s] mac=" MACDBG " NL80211_STA_FLAG_AUTHENTICATED\n",
-			ndev->name, MAC2STRDBG(mac));
+		WL_MSG(ndev->name, "mac=" MACDBG " NL80211_STA_FLAG_AUTHENTICATED\n",
+			MAC2STRDBG(mac));
 	}
 	if (params->sta_flags_mask & BIT(NL80211_STA_FLAG_TDLS_PEER)) {
-		WL_INFO_MSG("[%s] mac=" MACDBG " NL80211_STA_FLAG_TDLS_PEER\n",
-			ndev->name, MAC2STRDBG(mac));
+		WL_MSG(ndev->name, "mac=" MACDBG " NL80211_STA_FLAG_TDLS_PEER\n",
+			MAC2STRDBG(mac));
 	}
 	if (params->sta_flags_mask & BIT(NL80211_STA_FLAG_ASSOCIATED)) {
-		WL_INFO_MSG("[%s] mac=" MACDBG " NL80211_STA_FLAG_ASSOCIATED\n",
-			ndev->name, MAC2STRDBG(mac));
+		WL_MSG(ndev->name, "mac=" MACDBG " NL80211_STA_FLAG_ASSOCIATED\n",
+			MAC2STRDBG(mac));
 	}
 }
 
@@ -11716,32 +11716,32 @@ static void wl_cfg80211_dbg_flags_set(
 		const u8 *mac)
 {
 	if (params->sta_flags_set & BIT(NL80211_STA_FLAG_AUTHORIZED)) {
-		WL_INFO_MSG("[%s] mac=" MACDBG " NL80211_STA_FLAG_AUTHORIZED\n",
-			ndev->name, MAC2STRDBG(mac));
+		WL_MSG(ndev->name, "mac=" MACDBG " NL80211_STA_FLAG_AUTHORIZED\n",
+			MAC2STRDBG(mac));
 	}
 	if (params->sta_flags_set & BIT(NL80211_STA_FLAG_SHORT_PREAMBLE)) {
-		WL_INFO_MSG("[%s] mac=" MACDBG " NL80211_STA_FLAG_SHORT_PREAMBLE\n",
-			ndev->name, MAC2STRDBG(mac));
+		WL_MSG(ndev->name, "mac=" MACDBG " NL80211_STA_FLAG_SHORT_PREAMBLE\n",
+			MAC2STRDBG(mac));
 	}
 	if (params->sta_flags_set & BIT(NL80211_STA_FLAG_WME)) {
-		WL_INFO_MSG("[%s] mac=" MACDBG " NL80211_STA_FLAG_WME\n",
-			ndev->name, MAC2STRDBG(mac));
+		WL_MSG(ndev->name, "mac=" MACDBG " NL80211_STA_FLAG_WME\n",
+			MAC2STRDBG(mac));
 	}
 	if (params->sta_flags_set & BIT(NL80211_STA_FLAG_MFP)) {
-		WL_INFO_MSG("[%s] mac=" MACDBG " NL80211_STA_FLAG_MFP\n",
-			ndev->name, MAC2STRDBG(mac));
+		WL_MSG(ndev->name, "mac=" MACDBG " NL80211_STA_FLAG_MFP\n",
+			MAC2STRDBG(mac));
 	}
 	if (params->sta_flags_set & BIT(NL80211_STA_FLAG_AUTHENTICATED)) {
-		WL_INFO_MSG("[%s] mac=" MACDBG " NL80211_STA_FLAG_AUTHENTICATED\n",
-			ndev->name, MAC2STRDBG(mac));
+		WL_MSG(ndev->name, "mac=" MACDBG " NL80211_STA_FLAG_AUTHENTICATED\n",
+			MAC2STRDBG(mac));
 	}
 	if (params->sta_flags_set & BIT(NL80211_STA_FLAG_TDLS_PEER)) {
-		WL_INFO_MSG("[%s] mac=" MACDBG " NL80211_STA_FLAG_TDLS_PEER\n",
-			ndev->name, MAC2STRDBG(mac));
+		WL_MSG(ndev->name, "mac=" MACDBG " NL80211_STA_FLAG_TDLS_PEER\n",
+			MAC2STRDBG(mac));
 	}
 	if (params->sta_flags_set & BIT(NL80211_STA_FLAG_ASSOCIATED)) {
-		WL_INFO_MSG("[%s] mac=" MACDBG " NL80211_STA_FLAG_ASSOCIATED\n",
-			ndev->name, MAC2STRDBG(mac));
+		WL_MSG(ndev->name, "mac=" MACDBG " NL80211_STA_FLAG_ASSOCIATED\n",
+			MAC2STRDBG(mac));
 	}
 }
 
@@ -11750,8 +11750,7 @@ static s32 wl_cfg80211_deauthorize(struct net_device *ndev, const u8 *mac)
 {
 	int err = BCME_OK;
 
-	WL_INFO_MSG("[%s] WLC_SCB_DEAUTHORIZE " MACDBG "\n",
-					ndev->name, MAC2STRDBG(mac));
+	WL_MSG(ndev->name, "WLC_SCB_DEAUTHORIZE " MACDBG "\n", MAC2STRDBG(mac));
 
 	err = wldev_ioctl_set(ndev, WLC_SCB_DEAUTHORIZE, mac, ETH_ALEN);
 	if (unlikely(err)) {
@@ -11766,8 +11765,7 @@ static s32 wl_cfg80211_authorize(struct net_device *ndev, const u8 *mac)
 {
 	int err = BCME_OK;
 
-	WL_INFO_MSG("[%s] mac=" MACDBG " WLC_SCB_AUTHORIZE\n",
-					ndev->name, MAC2STRDBG(mac));
+	WL_MSG(ndev->name, "mac=" MACDBG " WLC_SCB_AUTHORIZE\n", MAC2STRDBG(mac));
 
 	err = wldev_ioctl_set(ndev, WLC_SCB_AUTHORIZE, mac, ETH_ALEN);
 	if (unlikely(err)) {
@@ -11805,16 +11803,16 @@ wl_cfg80211_change_station(
 		return -ENOTSUPP;
 	}
 
-	WL_INFO_MSG("[%s] mac=" MACDBG " sta_flags_set=0x%x sta_flags_mask=0x%x\n",
-		ndev->name, MAC2STRDBG(mac), params->sta_flags_set, params->sta_flags_mask);
+	WL_MSG(ndev->name, "mac=" MACDBG " sta_flags_set=0x%x sta_flags_mask=0x%x\n",
+		MAC2STRDBG(mac), params->sta_flags_set, params->sta_flags_mask);
 
+	/* Income flags in following order iPhone 6 IOS 12.x / iPhone 6 SE IOS 17.x:
+		1: sta_flags_set = 0 + sta_flags_mask = NL80211_STA_FLAG_SHORT_PREAMBLE
+		1: sta_flags_set = 0 + sta_flags_mask = NL80211_STA_FLAG_WME
+		1: sta_flags_set = 0 + sta_flags_mask = NL80211_STA_FLAG_MFP
+		2: sta_flags_set = 0 / sta_flags_mask = NL80211_STA_FLAG_AUTHORIZED
+	*/
 	if (wl_dbg_level & WL_DBG_INFO) {
-		/* Income flags in following order iPhone 6 IOS 12.x / iPhone 6 SE IOS 17.x:
-			1: sta_flags_set = 0 + sta_flags_mask = NL80211_STA_FLAG_SHORT_PREAMBLE
-			1: sta_flags_set = 0 + sta_flags_mask = NL80211_STA_FLAG_WME
-			1: sta_flags_set = 0 + sta_flags_mask = NL80211_STA_FLAG_MFP
-			2: sta_flags_set = 0 / sta_flags_mask = NL80211_STA_FLAG_AUTHORIZED
-		*/
 		if (params->sta_flags_mask != 0) {
 			wl_cfg80211_dbg_flags_mask(ndev, params, mac);
 		}
@@ -11823,9 +11821,27 @@ wl_cfg80211_change_station(
 		}
 	}
 
-	/* Update state to authorized if in first stage. The second stage contains
-	 * the flag NL80211_STA_FLAG_AUTHORIZED in the sta_flags_mask field as result
-	 * of call wl_cfg80211_authorize() */
+	/* Event sane context check */
+	if ((err = cfg80211_check_station_change(wiphy, params, CFG80211_STA_AP_CLIENT))) {
+		WL_ERR_MSG("[%s] mac=" MACDBG " Event context failed. Not a STA_AP_CLIENT #%d\n", 
+					ndev->name, MAC2STRDBG(mac), err);
+		return err;
+	} 
+	if ((err = cfg80211_check_station_change(wiphy, params, CFG80211_STA_AP_CLIENT_UNASSOC))) {
+		WL_ERR_MSG("[%s] mac=" MACDBG " Event context failed. Not a STA_AP_CLIENT %d\n", 
+					ndev->name, MAC2STRDBG(mac), err);
+		return err;
+	}
+
+	/* Waiting for flags_mask NL80211_STA_FLAG_AUTHORIZED */
+	if ((err = cfg80211_check_station_change(wiphy, params, CFG80211_STA_AP_STA))) {
+		WL_MSG(ndev->name, "mac=" MACDBG " Waiting for event context.\n", 
+					MAC2STRDBG(mac));
+		return err;
+	}
+
+	/* Update my state to authorized. The is the second stage whitch contains
+	 * the flag NL80211_STA_FLAG_AUTHORIZED in the sta_flags_mask field */
 	if ((params->sta_flags_mask & BIT(NL80211_STA_FLAG_AUTHORIZED)) ) {
 		err = wl_cfg80211_authorize(ndev, mac);
 		if (unlikely(err)) {

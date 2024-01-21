@@ -98,7 +98,7 @@ extern uint32 wl_msg_level2;
 			 (wl_msg_level & WL_ERROR_VAL)) &&                                \
 			net_ratelimit())                                                  \
 		{                                                                     \
-			printk(KERN_ERR CFG80211_ERROR_TEXT "%s : " x, __func__, ##args); \
+			printk(KERN_ERR CFG80211_ERROR_TEXT "%s: " x, __func__, ##args);  \
 		}                                                                     \
 	} while (0)
 #define WL_ERR_KERN(x) WL_ERR_MSG x
