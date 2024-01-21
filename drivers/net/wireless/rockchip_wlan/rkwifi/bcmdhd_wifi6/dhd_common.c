@@ -995,6 +995,20 @@ static struct ioctl2str_s {
 	{WLC_SET_RADAR, "SET_RADAR"},
 	{WLC_SET_VAR, "WLC_SET_VAR"},
 	{WLC_GET_VAR, "WLC_GET_VAR"},
+	{WLC_SCB_DEAUTHENTICATE_FOR_REASON, "WLC_SCB_DEAUTHENTICATE_FOR_REASON"},
+	{WLC_SET_BCNPRD, "WLC_SET_BCNPRD"},
+	{WLC_SET_DTIMPRD, "WLC_SET_DTIMPRD"},
+	{WLC_SET_INFRA, "WLC_SET_INFRA"},
+	{WLC_SCAN, "WLC_SCAN"},
+	{WLC_SET_AP, "WLC_SET_AP"},
+	{WLC_SET_PM, "WLC_SET_PM"},
+	{WLC_SET_SCAN_CHANNEL_TIME, "WLC_SET_SCAN_CHANNEL_TIME"},
+	{WLC_SET_SCAN_UNASSOC_TIME, "WLC_SET_SCAN_UNASSOC_TIME"},
+	{WLC_SET_SCAN_PASSIVE_TIME, "WLC_SET_SCAN_PASSIVE_TIME"},
+	{WLC_SET_FAKEFRAG, "WLC_SET_FAKEFRAG"},
+	{WLC_SET_SRL, "WLC_SET_SRL"},
+	{WLC_SET_LRL, "WLC_SET_LRL"},
+	{WLC_SCB_AUTHORIZE, "WLC_SCB_AUTHORIZE"},
 	{0, NULL}
 };
 
@@ -1085,23 +1099,42 @@ dhd_wl_ioctl(dhd_pub_t *dhd_pub, int ifidx, wl_ioctl_t *ioc, void *buf, int len)
 		if (ioc->set == TRUE) {
 			char *pars = (char *)buf; // points at user buffer
 			int name_len = 0;
-			if (pars) {
-				if (ioc->len > 1 + sizeof(uint32)) {
-					DHD_DNGL_IOVAR_SET(("%s:iovar: ifidx=%d cmd=%d %s name=%s\n", 
-						__func__, ifidx, ioc->cmd, ioctl2str(ioc->cmd), pars));
-					// skip iovar name (seek to value part)
-					name_len = strnlen(pars, ioc->len - 1 - sizeof(uint32));
-					pars += name_len;
-					pars++; // skip NULL character
-				}
+			if (pars && ioc->cmd == WLC_SET_VAR && ioc->len > 1 + sizeof(uint32)) {
+				DHD_DNGL_IOVAR_SET(("%s:iovar: ifidx=%d cmd=%d %s name=%s\n", 
+					__func__, ifidx, ioc->cmd, ioctl2str(ioc->cmd), pars));
+				// skip iovar name (seek to value part)
+				name_len = strnlen(pars, ioc->len - 1 - sizeof(uint32));
+				pars += name_len;
+				pars++; // skip NULL character
 			} 
 			if (pars != NULL && ioc->len > name_len) {
-				DHD_DNGL_IOVAR_SET(("%s:iovar: ifidx=%d cmd=%d %s value=0x%x\n", 
-					__func__, ifidx, ioc->cmd, ioctl2str(ioc->cmd), *((uint32*)pars)));
+				if ((ioc->len - name_len) >= sizeof(uint64)) {
+					DHD_DNGL_IOVAR_SET(("%s:iovar: ifidx=%d cmd=%d %s value=0x%llx\n", 
+						__func__, ifidx, ioc->cmd, ioctl2str(ioc->cmd), *((uint64*)pars)));
+				} else {
+					DHD_DNGL_IOVAR_SET(("%s:iovar: ifidx=%d cmd=%d %s value=0x%x\n", 
+						__func__, ifidx, ioc->cmd, ioctl2str(ioc->cmd), *((uint32*)pars)));
+				}
+			}
+			else if (pars && ioc->len > 0) {
+				char hexstr[ioc->len * 3 + 1];
+				char hexval[4]; /* AA_ + \0 */
+				int i;
+				for(i = 0; i < ioc->len; i++) {
+					snprintf(hexval, sizeof(hexval)-1, "%02x ", ((uint8)(*pars)) & 0x00ff);
+					strncat(hexstr, hexval, sizeof(hexstr)-1);
+					pars++;
+				}
+				DHD_DNGL_IOVAR_SET(("%s:iovar: ifidx=%d cmd=%d %s value=%s\n", 
+					__func__, ifidx, ioc->cmd, ioctl2str(ioc->cmd), hexstr));
+			} 
+			else if (buf) {
+				DHD_DNGL_IOVAR_SET(("%s:iovar: ifidx=%d cmd=%d %s buf=%p\n", 
+					__func__, ifidx, ioc->cmd, ioctl2str(ioc->cmd), buf));
 			}
 			else {
-				DHD_DNGL_IOVAR_SET(("%s:iovar: ifidx=%d cmd=%d %s value=%p\n", 
-					__func__, ifidx, ioc->cmd, ioctl2str(ioc->cmd), buf));
+				DHD_DNGL_IOVAR_SET(("%s:iovar: ifidx=%d cmd=%d %s buf=NULL\n", 
+					__func__, ifidx, ioc->cmd, ioctl2str(ioc->cmd)));
 			}
 		}
 

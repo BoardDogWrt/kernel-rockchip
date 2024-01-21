@@ -11673,6 +11673,7 @@ wl_cfg80211_del_station(
 	return 0;
 }
 
+/* EOF:DEBUG for wl_cfg80211_change_station() */
 static void wl_cfg80211_dbg_flags_mask(
 		struct net_device *ndev, 
 		struct station_parameters *params,
@@ -11708,6 +11709,7 @@ static void wl_cfg80211_dbg_flags_mask(
 	}
 }
 
+/* EOF:DEBUG for wl_cfg80211_change_station() */
 static void wl_cfg80211_dbg_flags_set(
 		struct net_device *ndev, 
 		struct station_parameters *params, 
@@ -11743,6 +11745,7 @@ static void wl_cfg80211_dbg_flags_set(
 	}
 }
 
+/* EOF:FIX */
 static s32 wl_cfg80211_deauthorize(struct net_device *ndev, const u8 *mac)
 {
 	int err = BCME_OK;
@@ -11758,6 +11761,7 @@ static s32 wl_cfg80211_deauthorize(struct net_device *ndev, const u8 *mac)
 	return err;
 }
 
+/* EOF:FIX */
 static s32 wl_cfg80211_authorize(struct net_device *ndev, const u8 *mac)
 {
 	int err = BCME_OK;
@@ -11773,6 +11777,7 @@ static s32 wl_cfg80211_authorize(struct net_device *ndev, const u8 *mac)
 	return err;
 }
 
+/* EOF:FIX */
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 16, 0))
 static s32
 wl_cfg80211_change_station(
@@ -11804,12 +11809,11 @@ wl_cfg80211_change_station(
 		ndev->name, MAC2STRDBG(mac), params->sta_flags_set, params->sta_flags_mask);
 
 	if (wl_dbg_level & WL_DBG_INFO) {
-		/* Income flags in following order:
-			1: sta_flags_set = 0 / sta_flags_mask = NL80211_STA_FLAG_SHORT_PREAMBLE
-			1: sta_flags_set = 0 / sta_flags_mask & NL80211_STA_FLAG_WME
-			1: sta_flags_set = 0 / sta_flags_mask & NL80211_STA_FLAG_MFP
+		/* Income flags in following order iPhone 6 IOS 12.x / iPhone 6 SE IOS 17.x:
+			1: sta_flags_set = 0 + sta_flags_mask = NL80211_STA_FLAG_SHORT_PREAMBLE
+			1: sta_flags_set = 0 + sta_flags_mask = NL80211_STA_FLAG_WME
+			1: sta_flags_set = 0 + sta_flags_mask = NL80211_STA_FLAG_MFP
 			2: sta_flags_set = 0 / sta_flags_mask = NL80211_STA_FLAG_AUTHORIZED
-			3: sta_flags_set same  sta_flags_mask = NL80211_STA_FLAG_AUTHORIZED
 		*/
 		if (params->sta_flags_mask != 0) {
 			wl_cfg80211_dbg_flags_mask(ndev, params, mac);
@@ -11819,18 +11823,10 @@ wl_cfg80211_change_station(
 		}
 	}
 
-	/* new or re- connect income - make sure the state is deauthorized */
-	if (!(params->sta_flags_mask & BIT(NL80211_STA_FLAG_AUTHORIZED)) && 
-		!(params->sta_flags_set & BIT(NL80211_STA_FLAG_AUTHORIZED))) {
-		err = wl_cfg80211_deauthorize(ndev, mac);
-		if (unlikely(err)) {
-			goto func_exit;
-		}
-	}
-
-	/* after underlaying authorization - update state to authorized */
-	if ((params->sta_flags_mask & BIT(NL80211_STA_FLAG_AUTHORIZED)) &&
-	    (params->sta_flags_set & BIT(NL80211_STA_FLAG_AUTHORIZED))) {
+	/* Update state to authorized if in first stage. The second stage contains
+	 * the flag NL80211_STA_FLAG_AUTHORIZED in the sta_flags_mask field as result
+	 * of call wl_cfg80211_authorize() */
+	if ((params->sta_flags_mask & BIT(NL80211_STA_FLAG_AUTHORIZED)) ) {
 		err = wl_cfg80211_authorize(ndev, mac);
 		if (unlikely(err)) {
 			goto func_exit;
@@ -11838,6 +11834,15 @@ wl_cfg80211_change_station(
 #ifdef WL_WPS_SYNC
 		wl_wps_session_update(ndev, WPS_STATE_AUTHORIZE, mac);
 #endif /* WL_WPS_SYNC */
+	}
+
+	/* update state to deauthorized */
+	if (!(params->sta_flags_mask & BIT(NL80211_STA_FLAG_AUTHORIZED)) && 
+		 (params->sta_flags_set & BIT(NL80211_STA_FLAG_AUTHORIZED))) {
+		err = wl_cfg80211_deauthorize(ndev, mac);
+		if (unlikely(err)) {
+			goto func_exit;
+		}
 	}
 
 func_exit:
