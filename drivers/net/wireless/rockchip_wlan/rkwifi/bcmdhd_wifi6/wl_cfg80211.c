@@ -11673,6 +11673,106 @@ wl_cfg80211_del_station(
 	return 0;
 }
 
+static void wl_cfg80211_dbg_flags_mask(
+		struct net_device *ndev, 
+		struct station_parameters *params,
+		const u8 *mac)
+{
+	if (params->sta_flags_mask & BIT(NL80211_STA_FLAG_AUTHORIZED)) {
+		WL_INFO_MSG("[%s] mac=" MACDBG " NL80211_STA_FLAG_AUTHORIZED\n",
+			ndev->name, MAC2STRDBG(mac));
+	}
+	if (params->sta_flags_mask & BIT(NL80211_STA_FLAG_SHORT_PREAMBLE)) {
+		WL_INFO_MSG("[%s] mac=" MACDBG " NL80211_STA_FLAG_SHORT_PREAMBLE\n",
+			ndev->name, MAC2STRDBG(mac));
+	}
+	if (params->sta_flags_mask & BIT(NL80211_STA_FLAG_WME)) {
+		WL_INFO_MSG("[%s] mac=" MACDBG " NL80211_STA_FLAG_WME\n",
+			ndev->name, MAC2STRDBG(mac));
+	}
+	if (params->sta_flags_mask & BIT(NL80211_STA_FLAG_MFP)) {
+		WL_INFO_MSG("[%s] mac=" MACDBG " NL80211_STA_FLAG_MFP\n",
+			ndev->name, MAC2STRDBG(mac));
+	}
+	if (params->sta_flags_mask & BIT(NL80211_STA_FLAG_AUTHENTICATED)) {
+		WL_INFO_MSG("[%s] mac=" MACDBG " NL80211_STA_FLAG_AUTHENTICATED\n",
+			ndev->name, MAC2STRDBG(mac));
+	}
+	if (params->sta_flags_mask & BIT(NL80211_STA_FLAG_TDLS_PEER)) {
+		WL_INFO_MSG("[%s] mac=" MACDBG " NL80211_STA_FLAG_TDLS_PEER\n",
+			ndev->name, MAC2STRDBG(mac));
+	}
+	if (params->sta_flags_mask & BIT(NL80211_STA_FLAG_ASSOCIATED)) {
+		WL_INFO_MSG("[%s] mac=" MACDBG " NL80211_STA_FLAG_ASSOCIATED\n",
+			ndev->name, MAC2STRDBG(mac));
+	}
+}
+
+static void wl_cfg80211_dbg_flags_set(
+		struct net_device *ndev, 
+		struct station_parameters *params, 
+		const u8 *mac)
+{
+	if (params->sta_flags_set & BIT(NL80211_STA_FLAG_AUTHORIZED)) {
+		WL_INFO_MSG("[%s] mac=" MACDBG " NL80211_STA_FLAG_AUTHORIZED\n",
+			ndev->name, MAC2STRDBG(mac));
+	}
+	if (params->sta_flags_set & BIT(NL80211_STA_FLAG_SHORT_PREAMBLE)) {
+		WL_INFO_MSG("[%s] mac=" MACDBG " NL80211_STA_FLAG_SHORT_PREAMBLE\n",
+			ndev->name, MAC2STRDBG(mac));
+	}
+	if (params->sta_flags_set & BIT(NL80211_STA_FLAG_WME)) {
+		WL_INFO_MSG("[%s] mac=" MACDBG " NL80211_STA_FLAG_WME\n",
+			ndev->name, MAC2STRDBG(mac));
+	}
+	if (params->sta_flags_set & BIT(NL80211_STA_FLAG_MFP)) {
+		WL_INFO_MSG("[%s] mac=" MACDBG " NL80211_STA_FLAG_MFP\n",
+			ndev->name, MAC2STRDBG(mac));
+	}
+	if (params->sta_flags_set & BIT(NL80211_STA_FLAG_AUTHENTICATED)) {
+		WL_INFO_MSG("[%s] mac=" MACDBG " NL80211_STA_FLAG_AUTHENTICATED\n",
+			ndev->name, MAC2STRDBG(mac));
+	}
+	if (params->sta_flags_set & BIT(NL80211_STA_FLAG_TDLS_PEER)) {
+		WL_INFO_MSG("[%s] mac=" MACDBG " NL80211_STA_FLAG_TDLS_PEER\n",
+			ndev->name, MAC2STRDBG(mac));
+	}
+	if (params->sta_flags_set & BIT(NL80211_STA_FLAG_ASSOCIATED)) {
+		WL_INFO_MSG("[%s] mac=" MACDBG " NL80211_STA_FLAG_ASSOCIATED\n",
+			ndev->name, MAC2STRDBG(mac));
+	}
+}
+
+static s32 wl_cfg80211_deauthorize(struct net_device *ndev, const u8 *mac)
+{
+	int err = BCME_OK;
+
+	WL_INFO_MSG("[%s] WLC_SCB_DEAUTHORIZE " MACDBG "\n",
+					ndev->name, MAC2STRDBG(mac));
+
+	err = wldev_ioctl_set(ndev, WLC_SCB_DEAUTHORIZE, mac, ETH_ALEN);
+	if (unlikely(err)) {
+		WL_ERR_MSG("WLC_SCB_DEAUTHORIZE error (%d)\n", err);
+	}
+	
+	return err;
+}
+
+static s32 wl_cfg80211_authorize(struct net_device *ndev, const u8 *mac)
+{
+	int err = BCME_OK;
+
+	WL_INFO_MSG("[%s] mac=" MACDBG " WLC_SCB_AUTHORIZE\n",
+					ndev->name, MAC2STRDBG(mac));
+
+	err = wldev_ioctl_set(ndev, WLC_SCB_AUTHORIZE, mac, ETH_ALEN);
+	if (unlikely(err)) {
+		WL_ERR_MSG("WLC_SCB_AUTHORIZE error (%d)\n", err);
+	}
+
+	return err;
+}
+
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 16, 0))
 static s32
 wl_cfg80211_change_station(
@@ -11693,10 +11793,6 @@ wl_cfg80211_change_station(
 	struct bcm_cfg80211 *cfg = wiphy_priv(wiphy);
 	struct net_device *ndev = ndev_to_wlc_ndev(dev, cfg);
 
-	WL_DBG(("SCB_AUTHORIZE mac_addr:"MACDBG" sta_flags_mask:0x%x "
-				"sta_flags_set:0x%x iface:%s \n", MAC2STRDBG(mac),
-				params->sta_flags_mask, params->sta_flags_set, ndev->name));
-
 	if ((wl_get_mode_by_netdev(cfg, dev) == WL_MODE_BSS) &&
 		!(wl_get_drv_status(cfg, CONNECTED, dev))) {
 		/* Return error indicating not in connected state */
@@ -11704,49 +11800,49 @@ wl_cfg80211_change_station(
 		return -ENOTSUPP;
 	}
 
-	/* Processing only authorize/de-authorize flag for now 
-	 * Flag is set only if authentication server (radius server)
-	 * authorize the station
-	 * 
-	 * Commented out due in this case:
-	 * 1) Fresh boot
-	 * 2) Use iPhone and unlock from sleep
-	 * 3) Auto connect to WiFi.
-	 * The two WLC_SCB_DEAUTHORIZE will prevent the connect of
-	 * the iPhone.
-	 */
-	#if 0
-	if (!(params->sta_flags_mask & BIT(NL80211_STA_FLAG_AUTHORIZED))) {
-		WL_DBG(("WLC_SCB_AUTHORIZE Not authorised by IEEE 802.1X authenticator (radius server)\n"));
-		/*return -ENOTSUPP; DO NOT STOP, CANNOT KNOW IF SUCH AUTHENTICATOR IS REQUIRED HERE*/
-		/*go ahead*/
-	}
-	#endif
+	WL_INFO_MSG("[%s] mac=" MACDBG " sta_flags_set=0x%x sta_flags_mask=0x%x\n",
+		ndev->name, MAC2STRDBG(mac), params->sta_flags_set, params->sta_flags_mask);
 
-	if (!(params->sta_flags_set & BIT(NL80211_STA_FLAG_AUTHORIZED))) {
-		WL_INFORM_MEM(("[%s] WLC_SCB_AUTHORIZE flag not set, recover state. " MACDBG "\n",
-		           		ndev->name, MAC2STRDBG(mac)));
-		err = wldev_ioctl_set(ndev, WLC_SCB_DEAUTHORIZE, mac, ETH_ALEN);
-		if (unlikely(err)) {
-			WL_ERR(("WLC_SCB_DEAUTHORIZE error (%d)\n", err));
-			return err;
-		} else {
-			WL_INFORM_MEM(("[%s] WLC_SCB_DEAUTHORIZE " MACDBG "\n",
-				ndev->name, MAC2STRDBG(mac)));
+	if (wl_dbg_level & WL_DBG_INFO) {
+		/* Income flags in following order:
+			1: sta_flags_set = 0 / sta_flags_mask = NL80211_STA_FLAG_SHORT_PREAMBLE
+			1: sta_flags_set = 0 / sta_flags_mask & NL80211_STA_FLAG_WME
+			1: sta_flags_set = 0 / sta_flags_mask & NL80211_STA_FLAG_MFP
+			2: sta_flags_set = 0 / sta_flags_mask = NL80211_STA_FLAG_AUTHORIZED
+			3: sta_flags_set same  sta_flags_mask = NL80211_STA_FLAG_AUTHORIZED
+		*/
+		if (params->sta_flags_mask != 0) {
+			wl_cfg80211_dbg_flags_mask(ndev, params, mac);
+		}
+		if (params->sta_flags_set != 0) {
+			wl_cfg80211_dbg_flags_set(ndev, params, mac);
 		}
 	}
 
-	err = wldev_ioctl_set(ndev, WLC_SCB_AUTHORIZE, mac, ETH_ALEN);
-	if (unlikely(err)) {
-		WL_ERR(("WLC_SCB_AUTHORIZE error (%d)\n", err));
-	} else {
-		WL_INFORM_MEM(("[%s] WLC_SCB_AUTHORIZE " MACDBG "\n",
-			ndev->name, MAC2STRDBG(mac)));
+	/* new or re- connect income - make sure the state is deauthorized */
+	if (!(params->sta_flags_mask & BIT(NL80211_STA_FLAG_AUTHORIZED)) && 
+		!(params->sta_flags_set & BIT(NL80211_STA_FLAG_AUTHORIZED))) {
+		err = wl_cfg80211_deauthorize(ndev, mac);
+		if (unlikely(err)) {
+			goto func_exit;
+		}
+	}
+
+	/* after underlaying authorization - update state to authorized */
+	if ((params->sta_flags_mask & BIT(NL80211_STA_FLAG_AUTHORIZED)) &&
+	    (params->sta_flags_set & BIT(NL80211_STA_FLAG_AUTHORIZED))) {
+		err = wl_cfg80211_authorize(ndev, mac);
+		if (unlikely(err)) {
+			goto func_exit;
+		}
 #ifdef WL_WPS_SYNC
 		wl_wps_session_update(ndev, WPS_STATE_AUTHORIZE, mac);
 #endif /* WL_WPS_SYNC */
 	}
+
+func_exit:
 #ifdef DHD_LOSSLESS_ROAMING
+	/* always reset roam timeout */
 	wl_del_roam_timeout(cfg);
 #endif // endif
 
@@ -13845,7 +13941,7 @@ wl_notify_connect_status_ap(struct bcm_cfg80211 *cfg, struct net_device *ndev,
 	struct station_info sinfo;
 #endif /* (LINUX_VERSION < VERSION(3,2,0)) && !WL_CFG80211_STA_EVENT && !WL_COMPAT_WIRELESS */
 
-	WL_INFORM_MEM(("[%s] Mode AP/GO. Event:%d status:%d reason:%d\n",
+	WL_DBG(("[%s] Mode AP/GO. Event:%d status:%d reason:%d\n",
 		ndev->name, event, ntoh32(e->status), reason));
 
 	if (event == WLC_E_AUTH_IND) {
@@ -18067,7 +18163,7 @@ static void wl_print_event_data(struct bcm_cfg80211 *cfg,
 		case WLC_E_ESCAN_RESULT:
 			if ((status == WLC_E_STATUS_SUCCESS) ||
 				(status == WLC_E_STATUS_ABORT)) {
-				WL_INFORM_MEM(("event_type (%d), ifidx: %d"
+				WL_DBG(("event_type (%d), ifidx: %d"
 					" bssidx: %d scan_type:%d\n",
 					event_type, ifidx, bssidx, status));
 			}
@@ -18077,7 +18173,7 @@ static void wl_print_event_data(struct bcm_cfg80211 *cfg,
 		case WLC_E_DISASSOC_IND:
 		case WLC_E_DEAUTH:
 		case WLC_E_DEAUTH_IND:
-			WL_INFORM_MEM(("event_type (%d), ifidx: %d bssidx: %d"
+			WL_DBG(("event_type (%d), ifidx: %d bssidx: %d"
 				" status:%d reason:%d\n",
 				event_type, ifidx, bssidx, status, reason));
 				break;

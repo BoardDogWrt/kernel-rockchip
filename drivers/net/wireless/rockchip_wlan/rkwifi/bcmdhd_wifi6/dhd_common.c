@@ -125,7 +125,8 @@ int dhd_msg_level = DHD_ERROR_VAL | DHD_PKT_MON_VAL //
 int dhd_msg_level = DHD_ERROR_VAL| DHD_FWLOG_VAL | DHD_INFO_VAL //
 					| DHD_DNGL_IOVAR_SET_VAL | DHD_IOVAR_MEM_VAL;
 #else
-int dhd_msg_level = DHD_ERROR_VAL | DHD_FWLOG_VAL | DHD_INFO_VAL;
+int dhd_msg_level = DHD_ERROR_VAL | DHD_FWLOG_VAL //
+					| DHD_INFO_VAL | DHD_DNGL_IOVAR_SET_VAL;
 #endif
 
 #if defined(WL_WIRELESS_EXT)
@@ -992,6 +993,8 @@ static struct ioctl2str_s {
 	{WLC_SET_WSEC, "SET_WSEC"},
 	{WLC_SET_INTERFERENCE_MODE, "SET_INTERFERENCE_MODE"},
 	{WLC_SET_RADAR, "SET_RADAR"},
+	{WLC_SET_VAR, "WLC_SET_VAR"},
+	{WLC_GET_VAR, "WLC_GET_VAR"},
 	{0, NULL}
 };
 
@@ -1036,24 +1039,24 @@ dhd_wl_ioctl(dhd_pub_t *dhd_pub, int ifidx, wl_ioctl_t *ioc, void *buf, int len)
 #endif /* DHD_PCIE_NATIVE_RUNTIMEPM */
 
 #ifdef KEEPIF_ON_DEVICE_RESET
-		if (ioc->cmd == WLC_GET_VAR) {
-			dbus_config_t config;
-			config.general_param = 0;
-			if (buf) {
-				if (!strcmp(buf, "wowl_activate")) {
-					 /* 1 (TRUE) after decreased by 1 */
-					config.general_param = 2;
-				} else if (!strcmp(buf, "wowl_clear")) {
-					 /* 0 (FALSE) after decreased by 1 */
-					config.general_param = 1;
-				}
-			}
-			if (config.general_param) {
-				config.config_id = DBUS_CONFIG_ID_KEEPIF_ON_DEVRESET;
-				config.general_param--;
-				dbus_set_config(dhd_pub->dbus, &config);
+	if (ioc->cmd == WLC_GET_VAR) {
+		dbus_config_t config;
+		config.general_param = 0;
+		if (buf) {
+			if (!strcmp(buf, "wowl_activate")) {
+					/* 1 (TRUE) after decreased by 1 */
+				config.general_param = 2;
+			} else if (!strcmp(buf, "wowl_clear")) {
+					/* 0 (FALSE) after decreased by 1 */
+				config.general_param = 1;
 			}
 		}
+		if (config.general_param) {
+			config.config_id = DBUS_CONFIG_ID_KEEPIF_ON_DEVRESET;
+			config.general_param--;
+			dbus_set_config(dhd_pub->dbus, &config);
+		}
+	}
 #endif /* KEEPIF_ON_DEVICE_RESET */
 
 	if (dhd_os_proto_block(dhd_pub))
@@ -1081,25 +1084,24 @@ dhd_wl_ioctl(dhd_pub_t *dhd_pub, int ifidx, wl_ioctl_t *ioc, void *buf, int len)
 		/* logging of iovars that are send to the dongle, ./dhd msglevel +iovar */
 		if (ioc->set == TRUE) {
 			char *pars = (char *)buf; // points at user buffer
-			if (ioc->cmd == WLC_SET_VAR && buf) {
-				DHD_DNGL_IOVAR_SET(("%s:iovar: ifidx=%d set pars=%s\n", 
-					__func__, ifidx, pars));
+			int name_len = 0;
+			if (pars) {
 				if (ioc->len > 1 + sizeof(uint32)) {
-					// skip iovar name:
-					pars += strnlen(pars, ioc->len - 1 - sizeof(uint32));
-					pars++;               // skip NULL character
+					DHD_DNGL_IOVAR_SET(("%s:iovar: ifidx=%d cmd=%d %s name=%s\n", 
+						__func__, ifidx, ioc->cmd, ioctl2str(ioc->cmd), pars));
+					// skip iovar name (seek to value part)
+					name_len = strnlen(pars, ioc->len - 1 - sizeof(uint32));
+					pars += name_len;
+					pars++; // skip NULL character
 				}
-			} else {
-				DHD_DNGL_IOVAR_SET(("%s:iovar: ifidx=%d cmd=%d %s\n",
-					__func__, ifidx, ioc->cmd, ioctl2str(ioc->cmd)));
-			}
-			if (pars != NULL) {
-				DHD_DNGL_IOVAR_SET(("%s:iovar: ifidx=%d cmd=%d pars=0x%x\n", 
-					__func__, ifidx, ioc->cmd, *(uint32*)pars));
+			} 
+			if (pars != NULL && ioc->len > name_len) {
+				DHD_DNGL_IOVAR_SET(("%s:iovar: ifidx=%d cmd=%d %s value=0x%x\n", 
+					__func__, ifidx, ioc->cmd, ioctl2str(ioc->cmd), *((uint32*)pars)));
 			}
 			else {
-				DHD_DNGL_IOVAR_SET(("%s:iovar: ifidx=%d cmd=%d pars=NULL\n", 
-				__func__, ifidx, ioc->cmd));
+				DHD_DNGL_IOVAR_SET(("%s:iovar: ifidx=%d cmd=%d %s value=%p\n", 
+					__func__, ifidx, ioc->cmd, ioctl2str(ioc->cmd), buf));
 			}
 		}
 
@@ -1153,6 +1155,7 @@ dhd_wl_ioctl(dhd_pub_t *dhd_pub, int ifidx, wl_ioctl_t *ioc, void *buf, int len)
 			dhd_iov_li_print(&dhd_pub->dump_iovlist_head);
 		}
 #endif /* DUMP_IOCTL_IOV_LIST */
+
 #ifdef DHD_LOG_DUMP
 		if ((ioc->cmd == WLC_GET_VAR || ioc->cmd == WLC_SET_VAR)) {
 			if (buf != NULL) {
@@ -1204,6 +1207,7 @@ dhd_wl_ioctl(dhd_pub_t *dhd_pub, int ifidx, wl_ioctl_t *ioc, void *buf, int len)
 			}
 		}
 #endif /* DHD_LOG_DUMP */
+
 		if (ret && dhd_pub->up) {
 			/* Send hang event only if dhd_open() was success */
 			dhd_os_check_hang(dhd_pub, ifidx, ret);
