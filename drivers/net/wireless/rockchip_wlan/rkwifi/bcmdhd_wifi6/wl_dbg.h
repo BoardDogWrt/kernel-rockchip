@@ -55,11 +55,6 @@ extern uint32 wl_msg_level2;
 #define WIFICC_LOGDEBUGIF(_flags, _args)
 #define WIFICC_LOGDEBUG(_args)
 
-/* -------------------------------------------------------- */
-/* Note to the Dev Honks -> Use the sysctl feature          */
-/* to verbose your logging: kernel.printk = 7 7 7 7 too     */
-/* -------------------------------------------------------- */
-
 /* Logger prefix -> [dhd] CFG80211: */
 #define CFG80211_ERROR_TEXT DHD_LOG_PREFIXS "CFG80211[E]: "
 #define CFG80211_INFO_TEXT DHD_LOG_PREFIXS "CFG80211[I]: "

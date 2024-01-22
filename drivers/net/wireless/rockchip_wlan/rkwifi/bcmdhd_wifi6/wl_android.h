@@ -77,11 +77,6 @@ typedef struct _compat_android_wifi_priv_cmd
 #define ANDROID_DBG_LEVEL (1 << 4)
 #define ANDROID_MSG_LEVEL (1 << 0)
 
-/* -------------------------------------------------------- */
-/* Note to the Dev Honks -> Use the sysctl feature          */
-/* to verbose your logging: kernel.printk = 7 7 7 7 too     */
-/* -------------------------------------------------------- */
-
 #define WL_MSG(name, arg1, args...)                                                      \
 	do                                                                                   \
 	{                                                                                    \

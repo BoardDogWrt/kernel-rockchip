@@ -3634,13 +3634,13 @@ wl_iw_event(struct net_device *dev, struct wl_wext_info *wext_info,
 			STA_NO_SCAN_IN4WAY|STA_NO_BTC_IN4WAY|STA_WAIT_DISCONNECTED,
 			WL_EXT_STATUS_DISCONNECTED, NULL);
 		WL_MSG_RLMT(dev->name, &e->addr, ETHER_ADDR_LEN,
-			"disconnected with "MACSTR", event %d, reason %d\n",
+			"deauth/disassoc with "MACSTR", event %d, reason %d\n",
 			MAC2STR((u8 *)wrqu.addr.sa_data), event_type, reason);
 		break;
 	case WLC_E_DEAUTH_IND:
 	case WLC_E_DISASSOC_IND:
 		cmd = SIOCGIWAP;
-		WL_MSG(dev->name, "disconnected with "MACSTR", event %d, reason %d\n",
+		WL_MSG(dev->name, "deauth/disassoc indication with "MACSTR", event %d, reason %d\n",
 			MAC2STR((u8 *)wrqu.addr.sa_data), event_type, reason);
 		bzero(wrqu.addr.sa_data, ETHER_ADDR_LEN);
 		bzero(&extra, ETHER_ADDR_LEN);
