@@ -74,6 +74,11 @@ make -j4 CC=${CC} ARCH=${KRNL_ARCH} \
 		INSTALL_MOD_PATH=${UPDATE_DIR} modules_install || exit 1
 
 echo "----------------------------------------------------"
+echo "++ Install kernel headers to: ${UPDATE_DIR}"
+make -j4 CC=${CC} ARCH=${KRNL_ARCH}  \
+        INSTALL_HDR_PATH=${UPDATE_DIR}/usr/src headers_install || exit 1
+
+echo "----------------------------------------------------"
 echo "++ Generate nanopi4 kernel images..."
 make -j4 CC=${CC} ARCH=${KRNL_ARCH} nanopi4-images || exit 1
 

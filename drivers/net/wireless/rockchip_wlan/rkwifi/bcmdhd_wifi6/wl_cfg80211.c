@@ -8036,9 +8036,9 @@ get_station_err:
 				sinfo->connected_time = sta->in;
 			}
 #endif // endif
-			WL_INFORM_MEM(("STA %s, flags 0x%x, idle time %ds, connected time %ds\n",
+			WL_MSG(dev->name, "STA %s, flags=0x%x, idle time %ds, connected time %ds\n",
 				bcm_ether_ntoa((const struct ether_addr *)mac, eabuf),
-				sta->flags, sta->idle, sta->in));
+				sta->flags, sta->idle, sta->in);
 			break;
 		default :
 			WL_ERR(("Invalid device mode %d\n", wl_get_mode_by_netdev(cfg, dev)));
@@ -9859,6 +9859,7 @@ wl_cfg80211_set_channel(struct wiphy *wiphy, struct net_device *dev,
 		_chan = wl_ext_iapsta_update_channel(dhd, dev, _chan);
 	}
 #endif
+
 	WL_MSG(dev->name, "netdev_ifidx(%d), chan_type(%d) target channel(%d) \n",
 		dev->ifindex, channel_type, _chan);
 
@@ -11765,7 +11766,7 @@ static s32 wl_cfg80211_authorize(struct net_device *ndev, const u8 *mac)
 {
 	int err = BCME_OK;
 
-	WL_MSG(ndev->name, "mac=" MACDBG " WLC_SCB_AUTHORIZE\n", MAC2STRDBG(mac));
+	WL_MSG(ndev->name, "WLC_SCB_AUTHORIZE " MACDBG "\n", MAC2STRDBG(mac));
 
 	err = wldev_ioctl_set(ndev, WLC_SCB_AUTHORIZE, mac, ETH_ALEN);
 	if (unlikely(err)) {
@@ -11821,28 +11822,40 @@ wl_cfg80211_change_station(
 		}
 	}
 
-	/* Event sane context check */
-	if ((err = cfg80211_check_station_change(wiphy, params, CFG80211_STA_AP_CLIENT))) {
-		WL_ERR_MSG("[%s] mac=" MACDBG " Event context failed. Not a STA_AP_CLIENT #%d\n", 
+	/* sane check event context for valid AP client */
+	if ((err = cfg80211_check_station_change(wiphy, 
+				params, CFG80211_STA_AP_CLIENT))) {
+		WL_ERR_MSG("[%s] mac=" MACDBG 
+					" Event context failed. Not a STA_AP_CLIENT #%d\n", 
 					ndev->name, MAC2STRDBG(mac), err);
 		return err;
 	} 
-	if ((err = cfg80211_check_station_change(wiphy, params, CFG80211_STA_AP_CLIENT_UNASSOC))) {
-		WL_ERR_MSG("[%s] mac=" MACDBG " Event context failed. Not a STA_AP_CLIENT %d\n", 
+	else if ((err = cfg80211_check_station_change(wiphy, 
+				params, CFG80211_STA_AP_CLIENT_UNASSOC))) {
+		WL_ERR_MSG("[%s] mac=" MACDBG 
+					" Event context failed. Not a STA_AP_CLIENT %d\n", 
 					ndev->name, MAC2STRDBG(mac), err);
 		return err;
 	}
 
 	/* Waiting for flags_mask NL80211_STA_FLAG_AUTHORIZED */
-	if ((err = cfg80211_check_station_change(wiphy, params, CFG80211_STA_AP_STA))) {
-		WL_MSG(ndev->name, "mac=" MACDBG " Waiting for event context.\n", 
-					MAC2STRDBG(mac));
-		return err;
+	if (cfg80211_check_station_change(wiphy, 
+				params, CFG80211_STA_AP_STA)) {
+		/* if STA throw away... */
+		if (!wl_get_status_by_netdev(cfg, WL_STATUS_CONNECTED, ndev) ||
+			wl_get_status_by_netdev(cfg, WL_STATUS_DISCONNECTING, ndev)) {
+			err = wl_cfg80211_deauthorize(ndev, mac);
+			if (unlikely(err)) {
+				goto func_exit;
+			}
+		}
+		return -EINVAL;
 	}
 
-	/* Update my state to authorized. The is the second stage whitch contains
+	/* Update my state to authorized. The is the second stage which contains
 	 * the flag NL80211_STA_FLAG_AUTHORIZED in the sta_flags_mask field */
-	if ((params->sta_flags_mask & BIT(NL80211_STA_FLAG_AUTHORIZED)) ) {
+	if ((params->sta_flags_mask & BIT(NL80211_STA_FLAG_AUTHORIZED)) &&
+		!(params->sta_flags_set & BIT(NL80211_STA_FLAG_AUTHORIZED))) {
 		err = wl_cfg80211_authorize(ndev, mac);
 		if (unlikely(err)) {
 			goto func_exit;
@@ -11850,15 +11863,6 @@ wl_cfg80211_change_station(
 #ifdef WL_WPS_SYNC
 		wl_wps_session_update(ndev, WPS_STATE_AUTHORIZE, mac);
 #endif /* WL_WPS_SYNC */
-	}
-
-	/* update state to deauthorized */
-	if (!(params->sta_flags_mask & BIT(NL80211_STA_FLAG_AUTHORIZED)) && 
-		 (params->sta_flags_set & BIT(NL80211_STA_FLAG_AUTHORIZED))) {
-		err = wl_cfg80211_deauthorize(ndev, mac);
-		if (unlikely(err)) {
-			goto func_exit;
-		}
 	}
 
 func_exit:
@@ -13796,24 +13800,38 @@ static s32
 wl_get_auth_assoc_status(struct bcm_cfg80211 *cfg, struct net_device *ndev,
 	const wl_event_msg_t *e, void *data)
 {
+	s32 err = BCME_OK;
 	u32 reason = ntoh32(e->reason);
 	u32 event = ntoh32(e->event_type);
 #ifdef WL_SAE
 	uint auth_type = ntoh32(e->auth_type);
 #endif /* WL_SAE */
 	struct wl_security *sec = wl_read_prof(cfg, ndev, WL_PROF_SEC);
-	WL_DBG(("event type : %d, reason : %d\n", event, reason));
-
+	
 	if (sec) {
+		WL_MSG(ndev->name, 
+				"event type=%d %s mac=" MACDBG " status=%d reason=%d\n",
+				event, bcmevent_get_name(event), 
+				MAC2STRDBG(e->addr.octet), 
+				ntoh32(e->status), reason);
 		switch (event) {
 		case WLC_E_ASSOC:
 		case WLC_E_AUTH:
 		case WLC_E_AUTH_IND:
-			sec->auth_assoc_res_status = reason;
+			if (reason == WLC_E_REASON_INITIAL_ASSOC) {
+				sec->auth_assoc_res_status = reason;
+			} else if (!wl_get_status_by_netdev(cfg, WL_STATUS_CONNECTED, ndev)) {
+				sec->auth_assoc_res_status = WLAN_STATUS_REASSOC_NO_ASSOC;
+				return BCME_NOTASSOCIATED;
+			}		
 #ifdef WL_SAE
 			if ((event == WLC_E_AUTH || event == WLC_E_AUTH_IND) &&
 				auth_type == DOT11_SAE) {
-				wl_bss_handle_sae_auth(cfg, ndev, e, data);
+				if ((err = wl_bss_handle_sae_auth(cfg, ndev, e, data))) {
+					WL_ERR(("(BSS) SAE authenticator failed.\n"));
+					sec->auth_assoc_res_status = WLAN_STATUS_ASSOC_DENIED_UNSPEC;
+					return err;
+				}
 			}
 #endif /* WL_SAE */
 			break;
@@ -13823,7 +13841,7 @@ wl_get_auth_assoc_status(struct bcm_cfg80211 *cfg, struct net_device *ndev,
 	} else {
 		WL_ERR(("sec is NULL\n"));
 	}
-	return 0;
+	return err;
 }
 
 #ifdef WL_CLIENT_SAE
@@ -13962,13 +13980,17 @@ wl_notify_connect_status_ap(struct bcm_cfg80211 *cfg, struct net_device *ndev,
 	struct station_info sinfo;
 #endif /* (LINUX_VERSION < VERSION(3,2,0)) && !WL_CFG80211_STA_EVENT && !WL_COMPAT_WIRELESS */
 
-	WL_DBG(("[%s] Mode AP/GO. Event:%d status:%d reason:%d\n",
-		ndev->name, event, ntoh32(e->status), reason));
+	WL_MSG(ndev->name, "Mode AP/GO. Event=%d %s mac=" MACDBG " status=%d reason=%d\n",
+				event, bcmevent_get_name(event), 
+				MAC2STRDBG(e->addr.octet), 
+				ntoh32(e->status), reason);
 
 	if (event == WLC_E_AUTH_IND) {
-		wl_get_auth_assoc_status(cfg, ndev, e, data);
-		return 0;
+		if ((err = wl_get_auth_assoc_status(cfg, ndev, e, data))) {
+			return err;
+		}
 	}
+
 	/* if link down, bsscfg is disabled. */
 	if (event == WLC_E_LINK && reason == WLC_E_LINK_BSSCFG_DIS &&
 		wl_get_p2p_status(cfg, IF_DELETING) && (ndev != bcmcfg_to_prmry_ndev(cfg))) {
@@ -13996,11 +14018,18 @@ wl_notify_connect_status_ap(struct bcm_cfg80211 *cfg, struct net_device *ndev,
 		}
 	}
 
+#if 0
 	if (event == WLC_E_DISASSOC_IND || event == WLC_E_DEAUTH_IND || event == WLC_E_DEAUTH) {
 		WL_MSG_RLMT(ndev->name, &e->addr, ETHER_ADDR_LEN,
 			"event %s(%d) status %d reason %d\n",
 			bcmevent_get_name(event), event, ntoh32(e->status), reason);
 	}
+	else if (event == WLC_E_ASSOC_IND || event == WLC_E_REASSOC_IND || event == WLC_E_AUTH_IND) {
+		WL_MSG_RLMT(ndev->name, &e->addr, ETHER_ADDR_LEN,
+			"event %s(%d) status %d reason %d\n",
+			bcmevent_get_name(event), event, ntoh32(e->status), reason);
+	}
+#endif
 
 #if !defined(WL_CFG80211_STA_EVENT) && !defined(WL_COMPAT_WIRELESS) && \
 	(LINUX_VERSION_CODE < KERNEL_VERSION(3, 2, 0))
@@ -14143,7 +14172,7 @@ exit:
 #ifdef WL_CLIENT_SAE
 	else if (event == WLC_E_AUTH) {
 		WL_MSG_RLMT(ndev->name, &e->addr, ETHER_ADDR_LEN,
-			"add sta auth event for "MACDBG "\n", MAC2STRDBG(e->addr.octet));
+			"SAE add sta auth event for "MACDBG "\n", MAC2STRDBG(e->addr.octet));
 		if (wl_get_mode_by_netdev(cfg, ndev) == WL_INVALID) {
 			WL_ERR(("invalid mode\n"));
 			return WL_INVALID;
