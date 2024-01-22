@@ -11753,7 +11753,7 @@ static s32 wl_cfg80211_deauthorize(struct net_device *ndev, const u8 *mac)
 
 	WL_MSG(ndev->name, "WLC_SCB_DEAUTHORIZE " MACDBG "\n", MAC2STRDBG(mac));
 
-	err = wldev_ioctl_set(ndev, WLC_SCB_DEAUTHORIZE, mac, ETH_ALEN);
+	err = wldev_ioctl_set(ndev, WLC_SCB_DEAUTHORIZE, mac, ETHER_ADDR_LEN);
 	if (unlikely(err)) {
 		WL_ERR_MSG("WLC_SCB_DEAUTHORIZE error (%d)\n", err);
 	}
@@ -11768,7 +11768,7 @@ static s32 wl_cfg80211_authorize(struct net_device *ndev, const u8 *mac)
 
 	WL_MSG(ndev->name, "WLC_SCB_AUTHORIZE " MACDBG "\n", MAC2STRDBG(mac));
 
-	err = wldev_ioctl_set(ndev, WLC_SCB_AUTHORIZE, mac, ETH_ALEN);
+	err = wldev_ioctl_set(ndev, WLC_SCB_AUTHORIZE, mac, ETHER_ADDR_LEN);
 	if (unlikely(err)) {
 		WL_ERR_MSG("WLC_SCB_AUTHORIZE error (%d)\n", err);
 	}
@@ -13806,9 +13806,9 @@ wl_get_auth_assoc_status(struct bcm_cfg80211 *cfg, struct net_device *ndev,
 #ifdef WL_SAE
 	uint auth_type = ntoh32(e->auth_type);
 #endif /* WL_SAE */
-	struct wl_security *sec = wl_read_prof(cfg, ndev, WL_PROF_SEC);
+	struct wl_security *sec;
 	
-	if (sec) {
+	if ((sec = wl_read_prof(cfg, ndev, WL_PROF_SEC))) {
 		WL_MSG(ndev->name, 
 				"event type=%d %s mac=" MACDBG " status=%d reason=%d\n",
 				event, bcmevent_get_name(event), 
@@ -13818,12 +13818,7 @@ wl_get_auth_assoc_status(struct bcm_cfg80211 *cfg, struct net_device *ndev,
 		case WLC_E_ASSOC:
 		case WLC_E_AUTH:
 		case WLC_E_AUTH_IND:
-			if (reason == WLC_E_REASON_INITIAL_ASSOC) {
-				sec->auth_assoc_res_status = reason;
-			} else if (!wl_get_status_by_netdev(cfg, WL_STATUS_CONNECTED, ndev)) {
-				sec->auth_assoc_res_status = WLAN_STATUS_REASSOC_NO_ASSOC;
-				return BCME_NOTASSOCIATED;
-			}		
+			sec->auth_assoc_res_status = reason;
 #ifdef WL_SAE
 			if ((event == WLC_E_AUTH || event == WLC_E_AUTH_IND) &&
 				auth_type == DOT11_SAE) {
@@ -13831,15 +13826,27 @@ wl_get_auth_assoc_status(struct bcm_cfg80211 *cfg, struct net_device *ndev,
 					WL_ERR(("(BSS) SAE authenticator failed.\n"));
 					sec->auth_assoc_res_status = WLAN_STATUS_ASSOC_DENIED_UNSPEC;
 					return err;
+				} else {
+					sec->auth_assoc_res_status = WLAN_STATUS_SUCCESS;
 				}
 			}
+#else
+			if (reason == WLC_E_REASON_INITIAL_ASSOC) {
+				sec->auth_assoc_res_status = WLAN_STATUS_REASSOC_NO_ASSOC;
+				if (!wl_get_status_by_netdev(cfg, WL_STATUS_CONNECTED, ndev) ||
+				     wl_get_status_by_netdev(cfg, WL_STATUS_CONNECTING, ndev)) {
+					WL_MSG(ndev->name, "STA " MACDBG " not connected yet, skip.\n",
+							MAC2STRDBG(e->addr.octet));
+					return BCME_NOTASSOCIATED;
+				}
+			}		
 #endif /* WL_SAE */
 			break;
 		default:
 			break;
 		}
 	} else {
-		WL_ERR(("sec is NULL\n"));
+		WL_ERR(("sec object is NULL\n"));
 	}
 	return err;
 }
@@ -13980,7 +13987,7 @@ wl_notify_connect_status_ap(struct bcm_cfg80211 *cfg, struct net_device *ndev,
 	struct station_info sinfo;
 #endif /* (LINUX_VERSION < VERSION(3,2,0)) && !WL_CFG80211_STA_EVENT && !WL_COMPAT_WIRELESS */
 
-	WL_MSG(ndev->name, "Mode AP/GO. Event=%d %s mac=" MACDBG " status=%d reason=%d\n",
+	WL_MSG(ndev->name, "Mode AP/GO. event=%d %s mac=" MACDBG " status=%d reason=%d\n",
 				event, bcmevent_get_name(event), 
 				MAC2STRDBG(e->addr.octet), 
 				ntoh32(e->status), reason);
