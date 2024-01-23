@@ -51,8 +51,8 @@ echo "CROSS_COMPILE: ${CROSS}"
 echo "TOOL_CHAIN...: ${TOOL_CHAIN}"
 echo "REMOTE_TARGET: ${REMOTE_TARGET}"
 echo "----------------------------------------------------"
-
-echo | ${CC} -dM -E -
+#echo | ${CC} -dM -E -
+#echo "----------------------------------------------------"
 
 mkdir -p ${UPDATE_DIR}
 
