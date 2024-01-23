@@ -653,6 +653,14 @@ typedef enum wl_bcnrecv_attr_type {
 #define CU_ATTR_HDR_LEN 30
 #endif /* WL_CHAN_UTIL */
 
+/* EOF:FIX */
+/* Flags will be used in field 'struct wl_connect_info.flags_sta'
+ * WLC_E_DEAUTH / WLC_E_DEAUTH_IND events in file wl_cfg80211.c */
+typedef enum station_auth_flags {
+	WLC_STA_FLAG_AUTHORIZED = 1,  /* STA has been authorized */
+	WLC_STA_FLAG_DEAUTHORIZED = 2 /* STA has been deauthorized */
+} station_auth_flags_t;
+
 /* association inform */
 #define MAX_REQ_LINE 1024u
 struct wl_connect_info {
@@ -660,10 +668,13 @@ struct wl_connect_info {
 	u32 req_ie_len;
 	u8 resp_ie[MAX_REQ_LINE];
 	u32 resp_ie_len;
+	/* EOF:FIX */
+	/* used to manage auth/deauth state
+	 * during station_change op event */
 	u32 flags_sta;
 };
-#define WL_MAX_FILS_KEY_LEN 64
 
+#define WL_MAX_FILS_KEY_LEN 64
 struct wl_fils_info {
 	u8 fils_kek[WL_MAX_FILS_KEY_LEN];
 	u32 fils_kek_len;
