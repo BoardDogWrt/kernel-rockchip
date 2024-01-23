@@ -660,6 +660,7 @@ struct wl_connect_info {
 	u32 req_ie_len;
 	u8 resp_ie[MAX_REQ_LINE];
 	u32 resp_ie_len;
+	u32 flags_auth;
 };
 #define WL_MAX_FILS_KEY_LEN 64
 
@@ -1227,6 +1228,7 @@ struct bcm_cfg80211 {
 	int best_2g_ch;
 	int best_5g_ch;
 };
+
 #define WL_STATIC_IFIDX	(DHD_MAX_IFS + DHD_MAX_STATIC_IFS - 1)
 enum static_ndev_states {
 	NDEV_STATE_NONE,

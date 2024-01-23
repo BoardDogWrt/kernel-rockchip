@@ -11749,33 +11749,39 @@ static void wl_cfg80211_dbg_flags_set(
 	}
 }
 
+enum station_auth_flags {
+	WLC_STA_FLAG_AUTHORIZED = 1, /* STA authorized */
+	WLC_STA_FLAG_DEAUTHORIZED = 2 /* STA authorized */
+};
+
 /* EOF:FIX */
 static s32 
-wl_cfg80211_deauthorize(struct net_device *ndev, const u8 *mac)
+wl_cfg80211_authorize(struct net_device *ndev, struct wl_connect_info *conn_info, const u8 *mac)
 {
 	int err = BCME_OK;
-
-	WL_MSG(ndev->name, "WLC_SCB_DEAUTHORIZE " MACDBG "\n", MAC2STRDBG(mac));
-
-	err = wldev_ioctl_set(ndev, WLC_SCB_DEAUTHORIZE, mac, ETHER_ADDR_LEN);
-	if (unlikely(err)) {
-		WL_ERR_MSG("WLC_SCB_DEAUTHORIZE error (%d)\n", err);
+	if (!(conn_info->flags_ea & BIT(WLC_STA_FLAG_AUTHORIZED))) {
+		WL_MSG(ndev->name, "WLC_SCB_AUTHORIZE " MACDBG "\n", MAC2STRDBG(mac));
+		err = wldev_ioctl_set(ndev, WLC_SCB_AUTHORIZE, mac, ETHER_ADDR_LEN);
+		if (unlikely(err)) {
+			WL_ERR_MSG("WLC_SCB_AUTHORIZE error (%d)\n", err);
+		}
+		conn_info->flags_ea |= WLC_STA_FLAG_AUTHORIZED;
 	}
-	
 	return err;
 }
 
 /* EOF:FIX */
 static s32 
-wl_cfg80211_authorize(struct net_device *ndev, const u8 *mac)
+wl_cfg80211_deauthorize(struct net_device *ndev, struct wl_connect_info *conn_info, const u8 *mac)
 {
 	int err = BCME_OK;
-
-	WL_MSG(ndev->name, "WLC_SCB_AUTHORIZE " MACDBG "\n", MAC2STRDBG(mac));
-
-	err = wldev_ioctl_set(ndev, WLC_SCB_AUTHORIZE, mac, ETHER_ADDR_LEN);
-	if (unlikely(err)) {
-		WL_ERR_MSG("WLC_SCB_AUTHORIZE error (%d)\n", err);
+	if (!(conn_info->flags_ea & BIT(WLC_STA_FLAG_DEAUTHORIZED))) {
+		WL_MSG(ndev->name, "WLC_SCB_DEAUTHORIZE " MACDBG "\n", MAC2STRDBG(mac));
+		err = wldev_ioctl_set(ndev, WLC_SCB_DEAUTHORIZE, mac, ETHER_ADDR_LEN);
+		if (unlikely(err)) {
+			WL_ERR_MSG("WLC_SCB_DEAUTHORIZE error (%d)\n", err);
+		}
+		conn_info->flags_ea |= WLC_STA_FLAG_DEAUTHORIZED;
 	}
 
 	return err;
@@ -11801,7 +11807,12 @@ wl_cfg80211_change_station(
 	int err = BCME_OK;
 	struct bcm_cfg80211 *cfg = wiphy_priv(wiphy);
 	struct net_device *ndev = ndev_to_wlc_ndev(dev, cfg);
-	struct wl_security *sec;
+	struct wl_connect_info *conn_info = wl_to_conn(cfg);
+	
+	if (!conn_info) {
+		WL_ERR(("WL connect info is NULL\n"));
+		return -ENOTSUPP;
+	}
 
 	if ((wl_get_mode_by_netdev(cfg, dev) == WL_MODE_BSS) &&
 		!(wl_get_drv_status(cfg, CONNECTED, dev))) {
@@ -11810,15 +11821,8 @@ wl_cfg80211_change_station(
 		return -ENOTSUPP;
 	}
 
-	if (!(sec = wl_read_prof(cfg, ndev, WL_PROF_SEC))) {
-		WL_ERR_MSG("[%s] " MACDBG " Failed to get security profile.\n", 
-				ndev->name, MAC2STRDBG(mac));
-		return -EINVAL;
-	}
-
-	WL_MSG(ndev->name, MACDBG " set=0x%x mask=0x%x auth_status=%d\n",
-		MAC2STRDBG(mac), params->sta_flags_set, params->sta_flags_mask, 
-		sec->auth_assoc_res_status);
+	WL_MSG(ndev->name, MACDBG " set=0x%x mask=0x%x sta_params=0x%p\n",
+		MAC2STRDBG(mac), params->sta_flags_set, params->sta_flags_mask, params);
 
 	/* Income flags in following order iPhone 6 IOS 12.x / iPhone 6 SE IOS 17.x:
 		1: sta_flags_set = 0 && sta_flags_mask = NL80211_STA_FLAG_SHORT_PREAMBLE
@@ -11852,8 +11856,7 @@ wl_cfg80211_change_station(
 	/* Update my state to authorized. This is the third stage which contains
 	 * the flag NL80211_STA_FLAG_AUTHORIZED in the sta_flags_mask field */
 	if (params->sta_flags_set & BIT(NL80211_STA_FLAG_AUTHORIZED)) {
-		sec->auth_assoc_res_status = WLC_E_STATUS_SUCCESS;
-		err = wl_cfg80211_authorize(ndev, mac);
+		err = wl_cfg80211_authorize(ndev, conn_info, mac);
 		if (unlikely(err)) {
 			return err;
 		}
@@ -11861,9 +11864,8 @@ wl_cfg80211_change_station(
 		wl_wps_session_update(ndev, WPS_STATE_AUTHORIZE, mac);
 #endif /* WL_WPS_SYNC */
 	} 
-	else if (sec->auth_assoc_res_status == 0) {
-		sec->auth_assoc_res_status = WLC_E_STATUS_ATTEMPT;
-		err = wl_cfg80211_deauthorize(ndev, mac);
+	else if (params->sta_flags_mask & BIT(NL80211_STA_FLAG_AUTHORIZED)) {
+		err = wl_cfg80211_deauthorize(ndev, conn_info, mac);
 		if (unlikely(err)) {
 			return err;
 		}
@@ -13822,9 +13824,8 @@ wl_get_auth_assoc_status(struct bcm_cfg80211 *cfg, struct net_device *ndev,
 		case WLC_E_ASSOC:
 		case WLC_E_AUTH:
 		case WLC_E_AUTH_IND:
-			if (reason == WLC_E_REASON_INITIAL_ASSOC && 
-				sec->auth_assoc_res_status == WLC_E_STATUS_SUCCESS) {
-				sec->auth_assoc_res_status = reason;
+			if (reason == WLC_E_REASON_INITIAL_ASSOC) {
+				sec->auth_assoc_res_status = WLC_E_STATUS_SUCCESS;
 			}		
 #ifdef WL_SAE
 			if ((event == WLC_E_AUTH || event == WLC_E_AUTH_IND) &&
@@ -13973,7 +13974,7 @@ wl_notify_connect_status_ap(struct bcm_cfg80211 *cfg, struct net_device *ndev,
 	u8 *body = NULL;
 	u16 fc = 0;
 	u32 body_len = 0;
-
+	
 	struct ieee80211_supported_band *band;
 	struct ether_addr da;
 	struct ether_addr bssid;
