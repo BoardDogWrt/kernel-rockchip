@@ -660,7 +660,7 @@ struct wl_connect_info {
 	u32 req_ie_len;
 	u8 resp_ie[MAX_REQ_LINE];
 	u32 resp_ie_len;
-	u32 flags_auth;
+	u32 flags_sta;
 };
 #define WL_MAX_FILS_KEY_LEN 64
 

@@ -11759,13 +11759,14 @@ static s32
 wl_cfg80211_authorize(struct net_device *ndev, struct wl_connect_info *conn_info, const u8 *mac)
 {
 	int err = BCME_OK;
-	if (!(conn_info->flags_ea & BIT(WLC_STA_FLAG_AUTHORIZED))) {
+	if (!(conn_info->flags_sta & BIT(WLC_STA_FLAG_AUTHORIZED))) {
 		WL_MSG(ndev->name, "WLC_SCB_AUTHORIZE " MACDBG "\n", MAC2STRDBG(mac));
 		err = wldev_ioctl_set(ndev, WLC_SCB_AUTHORIZE, mac, ETHER_ADDR_LEN);
 		if (unlikely(err)) {
 			WL_ERR_MSG("WLC_SCB_AUTHORIZE error (%d)\n", err);
 		}
-		conn_info->flags_ea |= WLC_STA_FLAG_AUTHORIZED;
+		conn_info->flags_sta |= WLC_STA_FLAG_AUTHORIZED;
+		conn_info->flags_sta &= ~WLC_STA_FLAG_DEAUTHORIZED;
 	}
 	return err;
 }
@@ -11775,15 +11776,15 @@ static s32
 wl_cfg80211_deauthorize(struct net_device *ndev, struct wl_connect_info *conn_info, const u8 *mac)
 {
 	int err = BCME_OK;
-	if (!(conn_info->flags_ea & BIT(WLC_STA_FLAG_DEAUTHORIZED))) {
+	if (!(conn_info->flags_sta & BIT(WLC_STA_FLAG_DEAUTHORIZED))) {
 		WL_MSG(ndev->name, "WLC_SCB_DEAUTHORIZE " MACDBG "\n", MAC2STRDBG(mac));
 		err = wldev_ioctl_set(ndev, WLC_SCB_DEAUTHORIZE, mac, ETHER_ADDR_LEN);
 		if (unlikely(err)) {
 			WL_ERR_MSG("WLC_SCB_DEAUTHORIZE error (%d)\n", err);
 		}
-		conn_info->flags_ea |= WLC_STA_FLAG_DEAUTHORIZED;
+		conn_info->flags_sta |= WLC_STA_FLAG_DEAUTHORIZED;
+		conn_info->flags_sta &= ~WLC_STA_FLAG_AUTHORIZED;
 	}
-
 	return err;
 }
 
