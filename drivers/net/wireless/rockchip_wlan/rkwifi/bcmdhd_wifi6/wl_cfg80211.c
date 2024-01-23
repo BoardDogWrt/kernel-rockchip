@@ -11858,8 +11858,9 @@ wl_cfg80211_change_station(
 	/* Update my state to deauthorized. This state can be reach multiple
 	 * times which contains the flag NL80211_STA_FLAG_AUTHORIZED in the 
 	 * sta_flags_mask field, but without valid value in the sta_flags_set.
-	 * Expected is sta_flags_mask=0x00 and sta_flags_set = 0x02 and
-	 * conn_info->flags_sta will be set to 0 on WLC_E_DISASSOC_IND event in
+	 * Expected is sta_flags_mask=0x00 and sta_flags_set = 0x02. The
+	 * conn_info->flags_sta will be set to 0 on WLC_E_DISASSOC_IND and
+	 * event in
 	 * in the function wl_notify_connect_status_XX() for AP/GO and MESH mode
 	 * to unlock this block. */
 	if ((params->sta_flags_mask & BIT(NL80211_STA_FLAG_AUTHORIZED)) &&
@@ -14164,7 +14165,7 @@ exit:
 	memset(&sinfo, 0, sizeof(struct station_info));
 	sinfo.filled = 0;
 	if (((event == WLC_E_ASSOC_IND) || (event == WLC_E_REASSOC_IND)) &&
-		reason == DOT11_SC_SUCCESS) {
+		  (reason == DOT11_SC_SUCCESS)) {
 		/* Linux ver >= 4.0 assoc_req_ies_len is used instead of
 		 * STATION_INFO_ASSOC_REQ_IES flag
 		 */
@@ -14199,8 +14200,8 @@ exit:
 #endif /* WL_WPS_SYNC */
 	} 
 	else if ((event == WLC_E_DEAUTH_IND) ||
-		((event == WLC_E_DEAUTH) && (reason != DOT11_RC_RESERVED)) ||
-		(event == WLC_E_DISASSOC_IND)) {
+			 ((event == WLC_E_DEAUTH) && (reason != DOT11_RC_RESERVED)) ||
+			 (event == WLC_E_DISASSOC_IND)) {
 
 		WL_MSG_RLMT(ndev->name, &e->addr, ETHER_ADDR_LEN,
 			"Mode AP/GO. Delete STA event %s(%d) "MACDBG" status=%d reason=%d\n",
