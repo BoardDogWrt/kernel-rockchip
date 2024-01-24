@@ -655,10 +655,12 @@ typedef enum wl_bcnrecv_attr_type {
 
 /* EOF:FIX */
 /* Flags will be used in field 'struct wl_connect_info.flags_sta'
- * WLC_E_DEAUTH / WLC_E_DEAUTH_IND events in file wl_cfg80211.c */
+ * to manage WLC_E_DEAUTH / WLC_E_DEAUTH_IND events in station
+ * change op function in file wl_cfg80211.c */
 typedef enum station_auth_flags {
+	__WLC_STA_FLAG_INVALID__ = 0,
 	WLC_STA_FLAG_AUTHORIZED = 1,  /* STA has been authorized */
-	WLC_STA_FLAG_DEAUTHORIZED = 2 /* STA has been deauthorized */
+	WLC_STA_FLAG_DEAUTHORIZED = 2, /* STA has been deauthorized */
 } station_auth_flags_t;
 
 /* association inform */

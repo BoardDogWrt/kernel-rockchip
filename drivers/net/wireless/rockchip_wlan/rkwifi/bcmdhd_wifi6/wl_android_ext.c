@@ -32,31 +32,6 @@
 #include <wl_escan.h>
 #endif /* WL_ESCAN */
 
-#define AEXT_ERROR(name, arg1, args...) \
-	do { \
-		if (android_msg_level & ANDROID_ERROR_LEVEL) { \
-			printk(KERN_ERR DHD_LOG_PREFIX "[%s] AEXT-ERROR) %s : " arg1, name, __func__, ## args); \
-		} \
-	} while (0)
-#define AEXT_TRACE(name, arg1, args...) \
-	do { \
-		if (android_msg_level & ANDROID_TRACE_LEVEL) { \
-			printk(KERN_INFO DHD_LOG_PREFIX "[%s] AEXT-TRACE) %s : " arg1, name, __func__, ## args); \
-		} \
-	} while (0)
-#define AEXT_INFO(name, arg1, args...) \
-	do { \
-		if (android_msg_level & ANDROID_INFO_LEVEL) { \
-			printk(KERN_INFO DHD_LOG_PREFIX "[%s] AEXT-INFO) %s : " arg1, name, __func__, ## args); \
-		} \
-	} while (0)
-#define AEXT_DBG(name, arg1, args...) \
-	do { \
-		if (android_msg_level & ANDROID_DBG_LEVEL) { \
-			printk(KERN_INFO DHD_LOG_PREFIX "[%s] AEXT-DBG) %s : " arg1, name, __func__, ## args); \
-		} \
-	} while (0)
-
 #ifndef WL_CFG80211
 #define htod32(i) i
 #define htod16(i) i
@@ -4990,7 +4965,7 @@ wl_ext_in4way_sync_sta(dhd_pub_t *dhd, struct wl_if_info *cur_if,
 			wake_up_interruptible(&dhd->conf->event_complete);
 			break;
 		default:
-			AEXT_INFO(dev->name, "Unknown action=0x%x, status=%d\n", action, status);
+			AEXT_INFO(dev->name, "Unknown status=%d for action=0x%x\n", status, action);
 	}
 
 	return ret;
@@ -5065,13 +5040,17 @@ wl_ext_in4way_sync_ap(dhd_pub_t *dhd, struct wl_if_info *cur_if,
 				}
 			}
 			break;
+		case WL_EXT_STATUS_DISCONNECTED:
 		case WL_EXT_STATUS_STA_DISCONNECTED:
 			if (action & AP_WAIT_STA_RECONNECT) {
 				AEXT_INFO(dev->name, "latest disc STA %pM ap_recon_sta=%d\n",
 					ap_disc_sta_bssid, apsta_params->ap_recon_sta);
-				osl_do_gettimeofday(ap_disc_sta_ts);
-				memcpy(ap_disc_sta_bssid, mac_addr, ETHER_ADDR_LEN);
 				apsta_params->ap_recon_sta = FALSE;
+				osl_do_gettimeofday(ap_disc_sta_ts);
+				if (mac_addr && memcmp(
+						ap_disc_sta_bssid, mac_addr, ETHER_ADDR_LEN) != 0) {
+					memcpy(ap_disc_sta_bssid, mac_addr, ETHER_ADDR_LEN);
+				}
 			}
 			break;
 		case WL_EXT_STATUS_STA_CONNECTED:
@@ -5090,7 +5069,7 @@ wl_ext_in4way_sync_ap(dhd_pub_t *dhd, struct wl_if_info *cur_if,
 			}
 			break;
 		default:
-			AEXT_INFO(dev->name, "Unknown action=0x%x, status=%d\n", action, status);
+			AEXT_INFO(dev->name, "Unknown status=%d for action=0x%x\n", status, action);
 	}
 
 	return ret;
@@ -5150,6 +5129,10 @@ wl_ext_in4way_sync_wext(struct net_device *dev, uint action,
 		ret = wl_ext_in4way_sync_sta(dhd, cur_if, 0, status, NULL);
 	}
 	mutex_unlock(&apsta_params->in4way_sync);
+#else
+	WL_ERR(( 
+		"++ THIS MAKES NO SENSE due defined WL_CFG80211 "
+		"-> use wl_ext_in4way_sync() instead ++\n"));
 #endif
 	return ret;
 }

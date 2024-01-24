@@ -83,29 +83,11 @@
 #define WL_BSSIDX_MAX	16
 #endif /* WL_STATIC_IF */
 
-uint android_msg_level = ANDROID_ERROR_LEVEL | ANDROID_MSG_LEVEL;
-
-#define ANDROID_ERROR_MSG(x, args...) \
-	do { \
-		if (android_msg_level & ANDROID_ERROR_LEVEL) { \
-			printk(KERN_ERR DHD_LOG_PREFIXS "ANDROID-ERROR) " x, ## args); \
-		} \
-	} while (0)
-#define ANDROID_TRACE_MSG(x, args...) \
-	do { \
-		if (android_msg_level & ANDROID_TRACE_LEVEL) { \
-			printk(KERN_INFO DHD_LOG_PREFIXS "ANDROID-TRACE) " x, ## args); \
-		} \
-	} while (0)
-#define ANDROID_INFO_MSG(x, args...) \
-	do { \
-		if (android_msg_level & ANDROID_INFO_LEVEL) { \
-			printk(KERN_INFO DHD_LOG_PREFIXS "ANDROID-INFO) " x, ## args); \
-		} \
-	} while (0)
-#define ANDROID_ERROR(x) ANDROID_ERROR_MSG x
-#define ANDROID_TRACE(x) ANDROID_TRACE_MSG x
-#define ANDROID_INFO(x) ANDROID_INFO_MSG x
+uint android_msg_level = ANDROID_ERROR_LEVEL;
+#if 0
+	| ANDROID_INFO_LEVEL 
+	| ANDROID_TRACE_LEVEL;
+#endif
 
 /*
  * Android private command strings, PLEASE define new private commands here

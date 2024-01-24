@@ -3,6 +3,7 @@
 #include <bcmendian.h>
 #include <linux/if_arp.h>
 #include <linux/uaccess.h>
+#include <wl_dbg.h>
 #include <wl_android.h>
 #include <wl_escan.h>
 #include <dhd_config.h>

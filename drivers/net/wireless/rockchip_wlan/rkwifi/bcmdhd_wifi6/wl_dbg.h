@@ -57,44 +57,43 @@ extern uint32 wl_msg_level2;
 
 /* Logger prefix -> [dhd] CFG80211: */
 #define CFG80211_ERROR_TEXT DHD_LOG_PREFIXS "CFG80211[E]: "
-#define CFG80211_INFO_TEXT DHD_LOG_PREFIXS "CFG80211[I]: "
-#define CFG80211_DEBUG_TEXT DHD_LOG_PREFIXS "CFG80211[D]: "
 
 /* Default error logging macros -> KERN_ERR */
 #define WL_DEBUG_RATE_LIMIT_PERIOD 4000000000u /* 4s in units of ns */
-#define WL_ERR_RLMT(args)                                                              \
-	do                                                                                 \
-	{                                                                                  \
-		if (wl_dbg_level & WL_DBG_ERR)                                                 \
-		{                                                                              \
-			static uint64 __err_ts = 0;                                                \
-			static uint32 __err_cnt = 0;                                               \
-			uint64 __cur_ts = 0;                                                       \
-			__cur_ts = local_clock();                                                  \
-			if (__err_ts == 0 || (__cur_ts > __err_ts &&                               \
-								  (__cur_ts - __err_ts > WL_DEBUG_RATE_LIMIT_PERIOD))) \
-			{                                                                          \
-				__err_ts = __cur_ts;                                                   \
-				WL_ERR(args);                                                          \
-				WL_ERR(("[Repeats %u times]\n", __err_cnt));                           \
-				__err_cnt = 0;                                                         \
-			}                                                                          \
-			else                                                                       \
-			{                                                                          \
-				++__err_cnt;                                                           \
-			}                                                                          \
-		}                                                                              \
+#define WL_ERR_RLMT(args)  \
+	do   \
+	{ \
+		if (wl_dbg_level & WL_DBG_ERR) \
+		{   \
+			static uint64 __err_ts = 0;   \
+			static uint32 __err_cnt = 0;  \
+			uint64 __cur_ts = 0; \
+			__cur_ts = local_clock();  \
+			if (__err_ts == 0 || (__cur_ts > __err_ts && \
+				(__cur_ts - __err_ts > WL_DEBUG_RATE_LIMIT_PERIOD))) \
+			{  \
+				__err_ts = __cur_ts;   \
+				WL_ERR(args); \
+				WL_ERR(("[Repeats %u times]\n", __err_cnt));   \
+				__err_cnt = 0;   \
+			}  \
+			else  \
+			{  \
+				++__err_cnt;  \
+			}  \
+		}   \
 	} while (0)
 
-#define WL_ERR_MSG(x, args...)                                                \
-	do                                                                        \
-	{                                                                         \
-		if (((wl_dbg_level & WL_DBG_ERR) ||                                   \
-			 (wl_msg_level & WL_ERROR_VAL)) &&                                \
-			net_ratelimit())                                                  \
-		{                                                                     \
-			printk(KERN_ERR CFG80211_ERROR_TEXT "%s: " x, __func__, ##args);  \
-		}                                                                     \
+#define WL_ERR_MSG(x, args...) \
+	do \
+	{  \
+		if (((wl_dbg_level & WL_DBG_ERR) ||   \
+			 (wl_msg_level & WL_ERROR_VAL)) &&   \
+			net_ratelimit())   \
+		{ \
+			printk(KERN_ERR CFG80211_ERROR_TEXT "%s: " \
+					x, __func__, ##args);  \
+		} \
 	} while (0)
 #define WL_ERR_KERN(x) WL_ERR_MSG x
 #define WL_ERR_MEM(x) WL_ERR_MSG x
@@ -102,65 +101,132 @@ extern uint32 wl_msg_level2;
 #define WL_ERR(x) WL_ERR_MSG x
 #define WL_ERROR(x) WL_ERR_MSG x
 
-/* Default info logging macros -> KERN_INFO */
-#define WL_INFO_MSG(x, args...)                                              \
-	do                                                                       \
-	{                                                                        \
-		if (((wl_dbg_level & WL_DBG_INFO) ||                                 \
-			 (wl_msg_level & WL_DBG_INFO)) &&                                \
-			net_ratelimit())                                                 \
-		{                                                                    \
-			printk(KERN_INFO CFG80211_INFO_TEXT "%s: " x, __func__, ##args); \
-		}                                                                    \
+/* ------------------------------------------ */
+/* Default debug logging macros -> KERN_DEBUG */
+#if defined(DHD_DEBUG)
+
+/* Logger prefix -> [dhd] CFG80211: */
+#define CFG80211_INFO_TEXT DHD_LOG_PREFIXS "CFG80211[I]: "
+#define CFG80211_DEBUG_TEXT DHD_LOG_PREFIXS "CFG80211[D]: "
+
+/* Info logging macros -> KERN_INFO */
+#define WL_INFO_MSG(x, args...)  \
+	do  \
+	{   \
+		if (((wl_dbg_level & WL_DBG_INFO) ||   \
+			 (wl_msg_level & WL_DBG_INFO)) &&  \
+			net_ratelimit()) \
+		{  \
+			printk(KERN_INFO CFG80211_INFO_TEXT "%s: " x, \
+			 __func__, ##args); \
+		}  \
 	} while (0)
 #define WL_INFORM_MEM(x) WL_INFO_MSG x
 #define WL_INFORM(x) WL_INFO_MSG x
 #define WL_INFO(x) WL_INFO_MSG x
 #define WL_MEM(x) WL_INFO_MSG x
 
-/* Default scanner logging macros -> KERN_NOTICE */
-#define WL_SCAN_MSG(x, args...)                                               \
-	do                                                                        \
-	{                                                                         \
-		if (((wl_dbg_level & WL_DBG_SCAN) ||                                  \
-			 (wl_msg_level & WL_DBG_SCAN)) &&                                 \
-			net_ratelimit())                                                  \
-		{                                                                     \
-			printk(KERN_NOTICE CFG80211_INFO_TEXT "%s:" x, __func__, ##args); \
-		}                                                                     \
+/* Scanner logging macros -> KERN_NOTICE */
+#define WL_SCAN_MSG(x, args...) \
+	do  \
+	{   \
+		if (((wl_dbg_level & WL_DBG_SCAN) ||   \
+			 (wl_msg_level & WL_DBG_SCAN)) &&  \
+			net_ratelimit()) \
+		{  \
+			printk(KERN_NOTICE CFG80211_INFO_TEXT "%s:" x, \
+			__func__, ##args); \
+		}  \
 	} while (0)
 #define WL_SCAN(x) WL_SCAN_MSG x
 
-/* Default debug logging macros -> KERN_DEBUG */
-#if defined(DHD_DEBUG)
-
-#define WL_DEBUG_MSG(x, args...)                                               \
-	do                                                                         \
-	{                                                                          \
-		if (((wl_dbg_level & WL_DBG_DBG) ||                                    \
-			 (wl_msg_level & WL_DBG_DBG)) &&                                   \
-			net_ratelimit())                                                   \
-		{                                                                      \
-			printk(KERN_DEBUG CFG80211_DEBUG_TEXT "%s: " x, __func__, ##args); \
-		}                                                                      \
+#define WL_DEBUG_MSG(x, args...)   \
+	do  \
+	{   \
+		if (((wl_dbg_level & WL_DBG_DBG) || \
+			 (wl_msg_level & WL_DBG_DBG)) &&   \
+			net_ratelimit()) \
+		{  \
+			printk(KERN_DEBUG CFG80211_DEBUG_TEXT "%s: " x,   \
+			 __func__, ##args); \
+		}  \
 	} while (0)
 #define WL_DEBUG(x) WL_DEBUG_MSG x
 #define WL_DBG(x) WL_DEBUG_MSG x
 
-#define WL_TRACE_MSG(x, args...)                                              \
-	do                                                                        \
-	{                                                                         \
-		if (((wl_dbg_level & WL_DBG_TRACE) ||                                 \
-			 (wl_msg_level & WL_DBG_TRACE)) &&                                \
-			net_ratelimit())                                                  \
-		{                                                                     \
-			printk(KERN_DEBUG CFG80211_DEBUG_TEXT "%s:" x, __func__, ##args); \
-		}                                                                     \
+#define WL_TRACE_MSG(x, args...)   \
+	do  \
+	{   \
+		if (((wl_dbg_level & WL_DBG_TRACE) ||  \
+			 (wl_msg_level & WL_DBG_TRACE)) && \
+			net_ratelimit()) \
+		{  \
+			printk(KERN_DEBUG CFG80211_DEBUG_TEXT "%s:" x, \
+			__func__, ##args); \
+		}  \
 	} while (0)
 #define WL_TRACE_HW4(x) WL_TRACE_MSG x
 #define WL_TRACE(x) WL_TRACE_MSG x
 
+#define WL_MSG(name, arg1, args...)  \
+	do \
+	{  \
+		if (android_msg_level & ANDROID_MSG_LEVEL)  \
+		{ \
+			printk(KERN_INFO DHD_LOG_PREFIX "[%s] %s: " arg1, 	\
+			    	name, __func__, ##args);   					\
+		} \
+	} while (0)
+
+#if 0
+#define WL_MSG_PRINT_RATE_LIMIT_PERIOD 1000000000u /* 1s in units of ns */
+#define WL_MSG_RLMT(name, cmp, size, arg1, args...)  \
+	do  \
+	{   \
+		if (android_msg_level & ANDROID_MSG_LEVEL)   \
+		{  \
+			static uint64 __err_ts = 0;  \
+			static uint32 __err_cnt = 0; \
+			uint64 __cur_ts = 0;   \
+			static uint8 static_tmp[size];  \
+			__cur_ts = local_clock(); \
+			if (__err_ts == 0 || (__cur_ts > __err_ts && (__cur_ts - __err_ts > WL_MSG_PRINT_RATE_LIMIT_PERIOD)) || \
+				memcmp(&static_tmp, cmp, size))   \
+			{ \
+				__err_ts = __cur_ts;  \
+				memcpy(static_tmp, cmp, size); \
+				printk(KERN_INFO DHD_LOG_PREFIX "[%s] %s: " arg1,   \
+					   name, __func__, ##args);   \
+				__err_cnt = 0;  \
+			} \
+			else \
+			{ \
+				++__err_cnt; \
+			} \
+		}  \
+	} while (0)
+#else
+#define WL_MSG_RLMT(name, cmp, size, arg1, args...) \
+	do \
+	{  \
+		if ((android_msg_level & ANDROID_MSG_LEVEL) && net_ratelimit())  \
+		{ \
+			printk(KERN_INFO DHD_LOG_PREFIX "[%s] %s: " arg1,   \
+					name, __func__, ##args);  \
+		} \
+	} while (0)
+#endif
+
 #else /* defined(DHD_DEBUG) */
+
+#define WL_INFO_MSG(x, args...)
+#define WL_INFORM_MEM(x)
+#define WL_INFORM(x)
+#define WL_INFO(x)
+#define WL_MEM(x)
+
+#define WL_SCAN_MSG(x, args...)
+#define WL_SCAN(x)
 
 #define WL_DEBUG_MSG(x, args...)
 #define WL_DEBUG(x)
@@ -170,6 +236,9 @@ extern uint32 wl_msg_level2;
 #define WL_TRACE_MSG(x, args...)
 #define WL_TRACE_HW4(x)
 #define WL_TRACE(x)
+
+#define WL_MSG_RLMT(name, cmp, size, arg1, args...)
+#define WL_MSG(name, arg1, args...)
 
 #endif /* defined(DHD_DEBUG) */
 
@@ -212,37 +281,37 @@ extern int WL_DEBUG_backtrace(const char *prefix, void *i_backtrace, int i_backt
 #define WL_PRPKT(m, b, n)
 #define WL_TMP(args)
 #define WL_OID(args)
-#define WL_RATE(args)                                        \
-	do                                                       \
-	{                                                        \
+#define WL_RATE(args) \
+	do \
+	{  \
 		if ((wl_msg_level & WL_RATE_VAL) && net_ratelimit()) \
-			WL_DEBUG(args);                                  \
+			WL_DEBUG(args); \
 	} while (0)
-#define WL_ASSOC(args)                                        \
-	do                                                        \
-	{                                                         \
+#define WL_ASSOC(args) \
+	do  \
+	{   \
 		if ((wl_msg_level & WL_ASSOC_VAL) && net_ratelimit()) \
-			WL_DEBUG(args);                                   \
-		else                                                  \
-			WIFICC_LOGDEBUG(args);                            \
+			WL_DEBUG(args);  \
+		else  \
+			WIFICC_LOGDEBUG(args); \
 	} while (0)
 #define WL_PRUSR(m, b, n)
-#define WL_PS(args)                                        \
-	do                                                     \
-	{                                                      \
+#define WL_PS(args) \
+	do  \
+	{   \
 		if ((wl_msg_level & WL_PS_VAL) && net_ratelimit()) \
-			WL_DEBUG(args);                                \
+			WL_DEBUG(args);  \
 	} while (0)
 
 #define WL_PORT(args)
 #define WL_DUAL(args)
-#define WL_REGULATORY(args)                                        \
-	do                                                             \
-	{                                                              \
+#define WL_REGULATORY(args) \
+	do \
+	{  \
 		if ((wl_msg_level & WL_REGULATORY_VAL) && net_ratelimit()) \
-			WL_DEBUG(args);                                        \
-		else                                                       \
-			WIFICC_LOGDEBUG(args);                                 \
+			WL_DEBUG(args); \
+		else \
+			WIFICC_LOGDEBUG(args);   \
 	} while (0)
 
 #define WL_MPC(args)
@@ -256,11 +325,11 @@ extern int WL_DEBUG_backtrace(const char *prefix, void *i_backtrace, int i_backt
 #define WL_MODE_SWITCH(args)
 #define WL_PROTO(args)
 
-#define WL_CAC(args)                                        \
-	do                                                      \
-	{                                                       \
+#define WL_CAC(args) \
+	do   \
+	{ \
 		if ((wl_msg_level & WL_CAC_VAL) && net_ratelimit()) \
-			WL_DEBUG(args);                                 \
+			WL_DEBUG(args);   \
 	} while (0)
 #define WL_AMSDU(args)
 #define WL_AMPDU(args)
@@ -271,11 +340,11 @@ extern int WL_DEBUG_backtrace(const char *prefix, void *i_backtrace, int i_backt
 #define WL_WOWL(args)
 #define WL_DPT(args)
 #define WL_ASSOC_OR_DPT(args)
-#define WL_SCAN(args)                                         \
-	do                                                        \
-	{                                                         \
+#define WL_SCAN(args)  \
+	do  \
+	{   \
 		if ((wl_msg_level2 & WL_SCAN_VAL) && net_ratelimit()) \
-			WL_DEBUG(args);                                   \
+			WL_DEBUG(args);  \
 	} while (0)
 #define WL_COEX(args)
 #define WL_RTDC(w, s, i, j)
@@ -311,11 +380,12 @@ extern int WL_DEBUG_backtrace(const char *prefix, void *i_backtrace, int i_backt
 #define WL_MESH_BCN(args)
 #endif // endif
 #ifdef WLMSG_NATOE
-#define WL_NAT(args)                                           \
-	do                                                         \
-	{                                                          \
-		if ((wl_msg_level2 & WL_NATOE_VAL) && net_ratelimit()) \
-			WL_DEBUG(args);                                    \
+#define WL_NAT(args) \
+	do   \
+	{ \
+		if ((wl_msg_level2 & WL_NATOE_VAL) 
+			&& net_ratelimit()) \
+			WL_DEBUG(args);   \
 	} while (0)
 #else
 #define WL_NAT(args)
@@ -494,18 +564,18 @@ extern int WL_DEBUG_backtrace(const char *prefix, void *i_backtrace, int i_backt
 
 #define WL_OCE_ERR(args) WL_DEBUG(args)
 
-#define WL_PCIE(args)                    \
-	do                                   \
-	{                                    \
+#define WL_PCIE(args)  \
+	do  \
+	{   \
 		if (wl_msg_level2 & WL_PCIE_VAL) \
-			WL_DEBUG(args);              \
+			WL_DEBUG(args);  \
 	} while (0)
 #define WL_PCIE_ON() (wl_msg_level2 & WL_PCIE_VAL)
-#define WL_PFN(args)                   \
-	do                                 \
-	{                                  \
+#define WL_PFN(args) \
+	do   \
+	{ \
 		if (wl_msg_level & WL_PFN_VAL) \
-			WL_DEBUG(args);            \
+			WL_DEBUG(args);   \
 	} while (0)
 #define WL_PFN_ON() (wl_msg_level & WL_PFN_VAL)
 #endif // endif
@@ -552,15 +622,15 @@ extern int WL_DEBUG_backtrace(const char *prefix, void *i_backtrace, int i_backt
 #undef WL_ERR
 #endif
 
-#define WL_ERR_MSG(x, args...)                                                       \
-	do                                                                               \
-	{                                                                                \
-		if ((wl_dbg_level & WL_DBG_ERR) && net_ratelimit())                          \
-		{                                                                            \
-			printk(KERN_ERR CFG80211_ERROR_TEXT "%s : " x, __func__, ##args);        \
+#define WL_ERR_MSG(x, args...) \
+	do \
+	{  \
+		if ((wl_dbg_level & WL_DBG_ERR) && net_ratelimit())  \
+		{ \
+			printk(KERN_ERR CFG80211_ERROR_TEXT "%s : " x, __func__, ##args);  \
 			DHD_LOG_DUMP_WRITE("[%s] %s: ", dhd_log_dump_get_timestamp(), __func__); \
-			DHD_LOG_DUMP_WRITE(x, ##args);                                           \
-		}                                                                            \
+			DHD_LOG_DUMP_WRITE(x, ##args); \
+		} \
 	} while (0)
 #define WL_ERR(x) WL_ERR_MSG x
 
@@ -571,13 +641,13 @@ extern int WL_DEBUG_backtrace(const char *prefix, void *i_backtrace, int i_backt
 #undef WL_ERR_KERN
 #endif
 
-#define WL_ERR_KERN_MSG(x, args...)                                           \
-	do                                                                        \
-	{                                                                         \
-		if ((wl_dbg_level & WL_DBG_ERR) && net_ratelimit())                   \
-		{                                                                     \
+#define WL_ERR_KERN_MSG(x, args...) \
+	do   \
+	{ \
+		if ((wl_dbg_level & WL_DBG_ERR) && net_ratelimit()) \
+		{   \
 			printk(KERN_ERR CFG80211_ERROR_TEXT "%s : " x, __func__, ##args); \
-		}                                                                     \
+		}   \
 	} while (0)
 #define WL_ERR_KERN(x) WL_ERR_KERN_MSG x
 
@@ -588,14 +658,14 @@ extern int WL_DEBUG_backtrace(const char *prefix, void *i_backtrace, int i_backt
 #undef WL_ERR_MEM
 #endif
 
-#define WL_ERR_MEM_MSG(x, args...)                                                   \
-	do                                                                               \
-	{                                                                                \
-		if ((wl_dbg_level & WL_DBG_ERR) && net_ratelimit())                          \
-		{                                                                            \
+#define WL_ERR_MEM_MSG(x, args...)   \
+	do \
+	{  \
+		if ((wl_dbg_level & WL_DBG_ERR) && net_ratelimit())  \
+		{ \
 			DHD_LOG_DUMP_WRITE("[%s] %s: ", dhd_log_dump_get_timestamp(), __func__); \
-			DHD_LOG_DUMP_WRITE(x, ##args);                                           \
-		}                                                                            \
+			DHD_LOG_DUMP_WRITE(x, ##args); \
+		} \
 	} while (0)
 #define WL_ERR_MEM(x) WL_ERR_MEM_MSG x
 
@@ -603,15 +673,15 @@ extern int WL_DEBUG_backtrace(const char *prefix, void *i_backtrace, int i_backt
 #undef WL_ERR_EX
 #endif
 
-#define WL_ERR_EX(args)                                                                 \
-	do                                                                                  \
-	{                                                                                   \
-		if ((wl_dbg_level & WL_DBG_ERR) && net_ratelimit())                             \
-		{                                                                               \
-			printk(KERN_ERR CFG80211_ERROR_TEXT "%s : " x, __func__, ##args);           \
+#define WL_ERR_EX(args)  \
+	do \
+	{  \
+		if ((wl_dbg_level & WL_DBG_ERR) && net_ratelimit())  \
+		{ \
+			printk(KERN_ERR CFG80211_ERROR_TEXT "%s : " x, __func__, ##args);  \
 			DHD_LOG_DUMP_WRITE_EX("[%s] %s: ", dhd_log_dump_get_timestamp(), __func__); \
-			DHD_LOG_DUMP_WRITE_EX args;                                                 \
-		}                                                                               \
+			DHD_LOG_DUMP_WRITE_EX args; \
+		} \
 	} while (0)
 
 #ifdef WL_INFORM_MEM_MSG
@@ -621,15 +691,15 @@ extern int WL_DEBUG_backtrace(const char *prefix, void *i_backtrace, int i_backt
 #undef WL_INFORM_MEM
 #endif
 
-#define WL_INFORM_MEM_MSG(x, args...)                                                \
-	do                                                                               \
-	{                                                                                \
-		if ((wl_dbg_level & WL_DBG_INFO) && net_ratelimit())                         \
-		{                                                                            \
-			printk(KERN_INFO CFG80211_INFO_TEXT "%s : " x, __func__, ##args);        \
+#define WL_INFORM_MEM_MSG(x, args...)   \
+	do \
+	{  \
+		if ((wl_dbg_level & WL_DBG_INFO) && net_ratelimit()) \
+		{ \
+			printk(KERN_INFO CFG80211_INFO_TEXT "%s : " x, __func__, ##args);  \
 			DHD_LOG_DUMP_WRITE("[%s] %s: ", dhd_log_dump_get_timestamp(), __func__); \
-			DHD_LOG_DUMP_WRITE(x, ##args);                                           \
-		}                                                                            \
+			DHD_LOG_DUMP_WRITE(x, ##args); \
+		} \
 	} while (0)
 #define WL_INFORM_MEM(x) WL_INFORM_MEM_MSG x
 
@@ -637,14 +707,14 @@ extern int WL_DEBUG_backtrace(const char *prefix, void *i_backtrace, int i_backt
 #undef WL_MEM
 #endif
 
-#define WL_MEM(args)                                                                 \
-	do                                                                               \
-	{                                                                                \
-		if (net_ratelimit())                                                         \
-		{                                                                            \
+#define WL_MEM(args)  \
+	do \
+	{  \
+		if (net_ratelimit())   \
+		{ \
 			DHD_LOG_DUMP_WRITE("[%s] %s: ", dhd_log_dump_get_timestamp(), __func__); \
-			DHD_LOG_DUMP_WRITE args;                                                 \
-		}                                                                            \
+			DHD_LOG_DUMP_WRITE args; \
+		} \
 	} while (0)
 
 #endif /* defined(DHD_DEBUG) && defined(DHD_LOG_DUMP) */

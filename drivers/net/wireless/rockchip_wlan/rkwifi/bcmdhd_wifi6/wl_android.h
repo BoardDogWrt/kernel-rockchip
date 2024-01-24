@@ -75,51 +75,53 @@ typedef struct _compat_android_wifi_priv_cmd
 #define ANDROID_INFO_LEVEL (1 << 2)
 #define ANDROID_SCAN_LEVEL (1 << 3)
 #define ANDROID_DBG_LEVEL (1 << 4)
-#define ANDROID_MSG_LEVEL (1 << 0)
+#define ANDROID_MSG_LEVEL ANDROID_ERROR_LEVEL
 
-#define WL_MSG(name, arg1, args...)                                                      \
-	do                                                                                   \
-	{                                                                                    \
-		if (android_msg_level & ANDROID_MSG_LEVEL)                                       \
-		{                                                                                \
-			printk(KERN_INFO DHD_LOG_PREFIX "[%s] %s: " arg1, name, __func__, ##args);   \
-		}                                                                                \
+#define ANDROID_ERROR_MSG(x, args...) \
+	do { \
+		if ((android_msg_level & ANDROID_ERROR_LEVEL) && net_ratelimit()) { \
+			printk(KERN_ERR DHD_LOG_PREFIXS "ADNROID[E] " x, ## args); \
+		} \
 	} while (0)
-
-#define WL_MSG_LIMIT(name, arg1, args...)                                                \
-	do                                                                                   \
-	{                                                                                    \
-		if (android_msg_level & ANDROID_MSG_LEVEL && net_ratelimit())                    \
-		{                                                                                \
-			printk(KERN_INFO DHD_LOG_PREFIX "[%s] %s: " arg1, name, __func__, ##args);   \
-		}                                                                                \
+#define ANDROID_TRACE_MSG(x, args...) \
+	do { \
+		if ((android_msg_level & ANDROID_TRACE_LEVEL) && net_ratelimit()) { \
+			printk(KERN_INFO DHD_LOG_PREFIXS "ADNROID[T] " x, ## args); \
+		} \
 	} while (0)
+#define ANDROID_INFO_MSG(x, args...) \
+	do { \
+		if ((android_msg_level & ANDROID_INFO_LEVEL) && net_ratelimit()) { \
+			printk(KERN_INFO DHD_LOG_PREFIXS "ADNROID[I] " x, ## args); \
+		} \
+	} while (0)
+#define ANDROID_ERROR(x) ANDROID_ERROR_MSG x
+#define ANDROID_TRACE(x) ANDROID_TRACE_MSG x
+#define ANDROID_INFO(x) ANDROID_INFO_MSG x
 
-#define WL_MSG_PRINT_RATE_LIMIT_PERIOD 1000000000u /* 1s in units of ns */
-#define WL_MSG_RLMT(name, cmp, size, arg1, args...)                                                                 \
-	do                                                                                                              \
-	{                                                                                                               \
-		if (android_msg_level & ANDROID_MSG_LEVEL)                                                                  \
-		{                                                                                                           \
-			static uint64 __err_ts = 0;                                                                             \
-			static uint32 __err_cnt = 0;                                                                            \
-			uint64 __cur_ts = 0;                                                                                    \
-			static uint8 static_tmp[size];                                                                          \
-			__cur_ts = local_clock();                                                                               \
-			if (__err_ts == 0 || (__cur_ts > __err_ts && (__cur_ts - __err_ts > WL_MSG_PRINT_RATE_LIMIT_PERIOD)) || \
-				memcmp(&static_tmp, cmp, size))                                                                     \
-			{                                                                                                       \
-				__err_ts = __cur_ts;                                                                                \
-				memcpy(static_tmp, cmp, size);                                                                      \
-				printk(KERN_INFO DHD_LOG_PREFIX "[%s] %s : [%u times] " arg1,                                       \
-					   name, __func__, __err_cnt, ##args);                                                          \
-				__err_cnt = 0;                                                                                      \
-			}                                                                                                       \
-			else                                                                                                    \
-			{                                                                                                       \
-				++__err_cnt;                                                                                        \
-			}                                                                                                       \
-		}                                                                                                           \
+#define AEXT_ERROR(name, arg1, args...) \
+	do { \
+		if ((android_msg_level & ANDROID_ERROR_LEVEL) && net_ratelimit()) { \
+			printk(KERN_ERR DHD_LOG_PREFIX "[%s]AEXT[E] %s: " arg1, name, __func__, ## args); \
+		} \
+	} while (0)
+#define AEXT_TRACE(name, arg1, args...) \
+	do { \
+		if ((android_msg_level & ANDROID_TRACE_LEVEL) && net_ratelimit()) { \
+			printk(KERN_INFO DHD_LOG_PREFIX "[%s]AEXT[T] %s: " arg1, name, __func__, ## args); \
+		} \
+	} while (0)
+#define AEXT_INFO(name, arg1, args...) \
+	do { \
+		if ((android_msg_level & ANDROID_INFO_LEVEL) && net_ratelimit()) { \
+			printk(KERN_INFO DHD_LOG_PREFIX "[%s]AEXT[I] %s: " arg1, name, __func__, ## args); \
+		} \
+	} while (0)
+#define AEXT_DBG(name, arg1, args...) \
+	do { \
+		if ((android_msg_level & ANDROID_DBG_LEVEL) && net_ratelimit()) { \
+			printk(KERN_INFO DHD_LOG_PREFIX "[%s]AEXT[D] %s: " arg1, name, __func__, ## args); \
+		} \
 	} while (0)
 
 /**

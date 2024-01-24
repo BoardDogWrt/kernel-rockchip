@@ -6018,19 +6018,19 @@ wl_set_set_sharedkey(struct net_device *dev,
 		return BCME_ERROR;
 	}
 
-	WL_DBG(("key len (%d)\n", sme->key_len));
 	if (sme->key_len) {
 		sec = wl_read_prof(cfg, dev, WL_PROF_SEC);
-		WL_DBG(("wpa_versions 0x%x cipher_pairwise 0x%x\n",
-			sec->wpa_versions, sec->cipher_pairwise));
 		if (!(sec->wpa_versions & (NL80211_WPA_VERSION_1 |
-			NL80211_WPA_VERSION_2)) &&
+			  NL80211_WPA_VERSION_2)) &&
 #ifdef BCMWAPI_WPI
 			!is_wapi(sec->cipher_pairwise) &&
 #endif // endif
 			(sec->cipher_pairwise & (WLAN_CIPHER_SUITE_WEP40 |
 			WLAN_CIPHER_SUITE_WEP104)))
 		{
+			WL_MSG(dev->name,
+				"Update wsec with wpa_versions=0x%x cipher_pairwise=0x%x\n",
+				sec->wpa_versions, sec->cipher_pairwise);
 			bzero(&key, sizeof(key));
 			key.len = (u32) sme->key_len;
 			key.index = (u32) sme->key_idx;
@@ -6049,9 +6049,9 @@ wl_set_set_sharedkey(struct net_device *dev,
 				return -EINVAL;
 			}
 			/* Set the new key/index */
-			WL_DBG(("key length (%d) key index (%d) algo (%d)\n",
-				key.len, key.index, key.algo));
-			WL_DBG(("key \"%s\"\n", key.data));
+			WL_MSG(dev->name, 
+				"Set new key -> length=%d index=%d algo=%d key=\"%s\"\n",
+				key.len, key.index, key.algo, key.data);
 			swap_key_from_BE(&key);
 			err = wldev_iovar_setbuf_bsscfg(dev, "wsec_key", &key, sizeof(key),
 				cfg->ioctl_buf, WLC_IOCTL_MAXLEN, bssidx, &cfg->ioctl_buf_sync);
@@ -6070,6 +6070,9 @@ wl_set_set_sharedkey(struct net_device *dev,
 				}
 			}
 		}
+	}
+	else {
+		WL_ERR_MSG("OOPS!! Invalid sme->key_len == %d\n", sme->key_len);
 	}
 	return err;
 }
@@ -7046,11 +7049,13 @@ wl_add_keyext(struct wiphy *wiphy, struct net_device *dev,
 	s32 bssidx;
 	s32 mode = wl_get_mode_by_netdev(cfg, dev);
 
-	WL_MSG(dev->name, "key index (%d)\n", key_idx);
+	WL_MSG(dev->name, "Add sec key index=%d\n", key_idx);
+	
 	if ((bssidx = wl_get_bssidx_by_wdev(cfg, dev->ieee80211_ptr)) < 0) {
 		WL_ERR(("Find p2p index from wdev(%p) failed\n", dev->ieee80211_ptr));
 		return BCME_ERROR;
 	}
+
 	bzero(&key, sizeof(key));
 	key.index = (u32) key_idx;
 
@@ -7060,22 +7065,25 @@ wl_add_keyext(struct wiphy *wiphy, struct net_device *dev,
 
 	/* check for key index change */
 	if (key.len == 0) {
+		WL_MSG(dev->name, "Delete sec key -> key.len == 0");
+	
 		/* key delete */
 		swap_key_from_BE(&key);
 		err = wldev_iovar_setbuf_bsscfg(dev, "wsec_key", &key, sizeof(key),
 			cfg->ioctl_buf, WLC_IOCTL_MAXLEN, bssidx, &cfg->ioctl_buf_sync);
 		if (unlikely(err)) {
-			WL_ERR(("key delete error (%d)\n", err));
+			WL_ERR(("ioctl(WLC_SET_KEY) error (%d)\n", err));
 			return err;
 		}
 	} else {
+		WL_MSG(dev->name, "Setting the sec key index %d\n", key.index);
+
 		if (key.len > sizeof(key.data)) {
 			WL_ERR(("Invalid key length (%d)\n", key.len));
 			return -EINVAL;
 		}
-		WL_DBG(("Setting the key index %d\n", key.index));
-		memcpy(key.data, params->key, key.len);
 
+		memcpy(key.data, params->key, key.len);
 		if ((mode == WL_MODE_BSS) &&
 			(params->cipher == WLAN_CIPHER_SUITE_TKIP)) {
 			u8 keybuf[8];
@@ -7105,10 +7113,9 @@ wl_add_keyext(struct wiphy *wiphy, struct net_device *dev,
 		err = wldev_iovar_setbuf_bsscfg(dev, "wsec_key", &key, sizeof(key),
 			cfg->ioctl_buf, WLC_IOCTL_MAXLEN, bssidx, &cfg->ioctl_buf_sync);
 		if (unlikely(err)) {
-			WL_ERR(("WLC_SET_KEY error (%d)\n", err));
+			WL_ERR(("ioctl(WLC_SET_KEY) error (%d)\n", err));
 			return err;
 		}
-		WL_INFORM_MEM(("[%s] wsec key set\n", dev->name));
 	}
 	return err;
 }
@@ -7237,8 +7244,9 @@ wl_cfg80211_add_key(struct wiphy *wiphy, struct net_device *dev,
 #endif /* defined(WLAN_CIPHER_SUITE_PMK) */
 	dhd_pub_t *dhdp = (dhd_pub_t *)(cfg->pub);
 
-	WL_INFORM_MEM(("key index=%d cipher=0x%x\n", key_idx, params->cipher));
 	RETURN_EIO_IF_NOT_UP(cfg);
+
+	WL_MSG(dev->name, "Add key index=%d cipher=0x%x\n", key_idx, params->cipher);
 
 	if ((bssidx = wl_get_bssidx_by_wdev(cfg, dev->ieee80211_ptr)) < 0) {
 		WL_ERR(("Find p2p index from dev(%p) failed\n", dev->ieee80211_ptr));
@@ -7422,7 +7430,8 @@ wl_cfg80211_del_key(struct wiphy *wiphy, struct net_device *dev,
 	key.algo = CRYPTO_ALGO_OFF;
 	key.index = (u32) key_idx;
 
-	WL_DBG(("key index (%d)\n", key_idx));
+	WL_MSG(dev->name, "Delete key index=%d\n", key_idx);
+
 	/* Set the new key/index */
 	swap_key_from_BE(&key);
 	err = wldev_iovar_setbuf_bsscfg(dev, "wsec_key", &key, sizeof(key), cfg->ioctl_buf,
@@ -11178,7 +11187,7 @@ wl_cfg80211_bcn_bringup_ap(
 			}
 		}
 		if ((wsec == WEP_ENABLED) && cfg->wep_key.len) {
-			WL_DBG(("Applying buffered WEP KEY \n"));
+			WL_MSG(dev->name, "Applying buffered WEP KEY\n");
 			err = wldev_iovar_setbuf_bsscfg(dev, "wsec_key", &cfg->wep_key,
 				sizeof(struct wl_wsec_key), cfg->ioctl_buf,
 				WLC_IOCTL_MAXLEN, bssidx, &cfg->ioctl_buf_sync);
@@ -11806,17 +11815,17 @@ wl_cfg80211_change_station(
 	struct bcm_cfg80211 *cfg = wiphy_priv(wiphy);
 	struct net_device *ndev = ndev_to_wlc_ndev(dev, cfg);
 	struct wl_connect_info *conn_info = wl_to_conn(cfg);
-	
-	/* EOF:FIX used to manage correct auth/deauth state */
-	if (!conn_info) {
-		WL_ERR(("WL connect info is NULL\n"));
-		return -ENOTSUPP;
-	}
 
 	if ((wl_get_mode_by_netdev(cfg, dev) == WL_MODE_BSS) &&
 		!(wl_get_drv_status(cfg, CONNECTED, dev))) {
 		/* Return error indicating not in connected state */
-		WL_ERR(("Device not connected yet, skip\n"));
+		WL_ERR(("OOPS! WL device not connected yet, skip\n"));
+		return -ENOTSUPP;
+	}
+
+	/* this should never be, however don't trust the devs */
+	if (!conn_info) {
+		WL_ERR(("OOPS! WL connect info is NULL, What's wrong!\n"));
 		return -ENOTSUPP;
 	}
 
@@ -11824,12 +11833,12 @@ wl_cfg80211_change_station(
 		MAC2STRDBG(mac), params->sta_flags_set, 
 		params->sta_flags_mask, conn_info->flags_sta);
 
-	/* Income flags in following order:
-	1: sta_flags_set = 0 && sta_flags_mask = NL80211_STA_FLAG_SHORT_PREAMBLE +
-	1: sta_flags_set = 0 && sta_flags_mask = NL80211_STA_FLAG_WME            +> once
-	1: sta_flags_set = 0 && sta_flags_mask = NL80211_STA_FLAG_MFP            +
-	2: sta_flags_set = 0 -- sta_flags_mask = NL80211_STA_FLAG_AUTHORIZED (n times)
-	3: sta_flags_set = same sta_flags_mask = NL80211_STA_FLAG_AUTHORIZED (once)
+	/* Income sta_flags_XXX in following order:
+	1: set = 0 && mask = NL80211_STA_FLAG_SHORT_PREAMBLE +
+	1: set = 0 && mask = NL80211_STA_FLAG_WME            +> once
+	1: set = 0 && mask = NL80211_STA_FLAG_MFP            +
+	2: set = 0 -- mask = NL80211_STA_FLAG_AUTHORIZED (n times)
+	3: set = same mask = NL80211_STA_FLAG_AUTHORIZED (once)
 	*/
 	if (wl_dbg_level & WL_DBG_INFO) {
 		if (params->sta_flags_mask != 0) {
@@ -11840,29 +11849,27 @@ wl_cfg80211_change_station(
 		}
 	}
 
-	/* Sane check for the reaching event context. Check valid AP client 
-	 * -> Not tested in MESH or other things */
+	/* Sane check current context for valid AP client */
 	err = cfg80211_check_station_change(wiphy, params, CFG80211_STA_AP_CLIENT);
 	if (err) {
-		WL_ERR_MSG("[%s] " MACDBG " Not a STA_AP_CLIENT #%d\n", 
+		WL_ERR_MSG("[%s] " MACDBG " OOPS! Not a STA_AP_CLIENT #%d\n", 
 				ndev->name, MAC2STRDBG(mac), err);
 		return err;
 	} 
-
+#if 0
 	/* Waiting for flags_mask NL80211_STA_FLAG_AUTHORIZED (skip stage 1) */
 	err = cfg80211_check_station_change(wiphy, params, CFG80211_STA_AP_STA);
 	if (err) {
 		return err;
 	}
-
+#endif
 	/* Update my state to deauthorized. This state can be reach multiple
 	 * times which contains the flag NL80211_STA_FLAG_AUTHORIZED in the 
 	 * sta_flags_mask field, but without valid value in the sta_flags_set.
 	 * Expected is sta_flags_mask=0x00 and sta_flags_set = 0x02. The
 	 * conn_info->flags_sta will be set to 0 on WLC_E_DISASSOC_IND and
-	 * event in
-	 * in the function wl_notify_connect_status_XX() for AP/GO and MESH mode
-	 * to unlock this block. */
+	 * event in the function wl_notify_connect_status_XX() for AP/GO and 
+	 * MESH mode to unlock this block. */
 	if ((params->sta_flags_mask & BIT(NL80211_STA_FLAG_AUTHORIZED)) &&
 	  	!(params->sta_flags_set & BIT(NL80211_STA_FLAG_AUTHORIZED)) &&
 		!(conn_info->flags_sta & BIT(WLC_STA_FLAG_DEAUTHORIZED))) 
@@ -11874,9 +11881,9 @@ wl_cfg80211_change_station(
 		goto finish;
 	} 
 
-	/* Update my state to authorized. This is the last stage which contains
-	 * the flag NL80211_STA_FLAG_AUTHORIZED in the sta_flags_mask and 
-	 * sta_flags_set field */
+	/* Update my state to authorized. This is the last stage
+	 * which contains the flag NL80211_STA_FLAG_AUTHORIZED in 
+	 * the sta_flags_mask and sta_flags_set fields */
 	if ((params->sta_flags_mask & BIT(NL80211_STA_FLAG_AUTHORIZED)) &&
 		(params->sta_flags_set & BIT(NL80211_STA_FLAG_AUTHORIZED))) {
 		err = wl_cfg80211_authorize(ndev, conn_info, mac);
@@ -13702,9 +13709,9 @@ static bool wl_is_linkdown(struct bcm_cfg80211 *cfg, const wl_event_msg_t *e)
 	u16 flags = ntoh16(e->flags);
 
 	if (event == WLC_E_DEAUTH_IND ||
-	event == WLC_E_DISASSOC_IND ||
-	event == WLC_E_DISASSOC ||
-	event == WLC_E_DEAUTH) {
+		event == WLC_E_DISASSOC_IND ||
+		event == WLC_E_DISASSOC ||
+		event == WLC_E_DEAUTH) {
 		WL_ERR(("Link down Reason : %s\n", bcmevent_get_name(event)));
 		return true;
 	} else if (event == WLC_E_LINK) {
@@ -13830,8 +13837,6 @@ wl_get_auth_assoc_status(struct bcm_cfg80211 *cfg, struct net_device *ndev,
 	uint auth_type = ntoh32(e->auth_type);
 #endif /* WL_SAE */
 	struct wl_security *sec;
-	/* EOF:FIX */
-	struct wl_connect_info *conn_info = wl_to_conn(cfg);
 	
 	if ((sec = wl_read_prof(cfg, ndev, WL_PROF_SEC))) {
 
@@ -14035,15 +14040,15 @@ wl_notify_connect_status_ap(struct bcm_cfg80211 *cfg, struct net_device *ndev,
 	if (event == WLC_E_DISASSOC_IND || event == WLC_E_DEAUTH_IND || 
 		event == WLC_E_DEAUTH) {
 		WL_MSG_RLMT(ndev->name, &e->addr, ETHER_ADDR_LEN,
-			"Mode AP/GO. event %s(%d) "MACDBG" status=%d reason=%d\n",
-			bcmevent_get_name(event), event, MAC2STRDBG(e->addr.octet),
+			"Mode AP/GO. event %s(%d) %pM status=%d reason=%d\n",
+			bcmevent_get_name(event), event, &e->addr,
 			ntoh32(e->status), reason);
 	}
 	else if (event == WLC_E_ASSOC_IND || event == WLC_E_REASSOC_IND || 
 			 event == WLC_E_AUTH_IND) {
 		WL_MSG_RLMT(ndev->name, &e->addr, ETHER_ADDR_LEN,
-			"Mode AP/GO. event %s(%d) "MACDBG" status=%d reason=%d\n",
-			bcmevent_get_name(event), event, MAC2STRDBG(e->addr.octet),
+			"Mode AP/GO. event %s(%d) %pM status=%d reason=%d\n",
+			bcmevent_get_name(event), event, &e->addr,
 			ntoh32(e->status), reason);
 	}
 	
@@ -14180,9 +14185,8 @@ exit:
 		sinfo.assoc_req_ies_len = len;
 		
 		WL_MSG_RLMT(ndev->name, &e->addr, ETHER_ADDR_LEN,
-			"Mode AP/GO. New STA event %s(%d) "MACDBG" status=%d reason=%d\n",
-			bcmevent_get_name(event), event, MAC2STRDBG(e->addr.octet),
-			ntoh32(e->status), reason);
+			"Mode AP/GO. New STA event %s(%d) %pM status=%d reason=%d\n",
+			bcmevent_get_name(event), event, &e->addr, ntoh32(e->status), reason);
 
 		if (conn_info) { /* EOF:FIX */
 			/* prevent deauthorized before authorized in station_change
@@ -14204,9 +14208,8 @@ exit:
 			 (event == WLC_E_DISASSOC_IND)) {
 
 		WL_MSG_RLMT(ndev->name, &e->addr, ETHER_ADDR_LEN,
-			"Mode AP/GO. Delete STA event %s(%d) "MACDBG" status=%d reason=%d\n",
-			bcmevent_get_name(event), event, MAC2STRDBG(e->addr.octet),
-			ntoh32(e->status), reason);
+			"Mode AP/GO. Delete STA event %s(%d) %pM status=%d reason=%d\n",
+			bcmevent_get_name(event), event, &e->addr, ntoh32(e->status), reason);
 
 		if (conn_info) { /* EOF:FIX */
 			/* trigger deauthorization in station_change callback op function  */
@@ -14223,7 +14226,7 @@ exit:
 #ifdef WL_CLIENT_SAE
 	else if (event == WLC_E_AUTH) {
 		WL_MSG_RLMT(ndev->name, &e->addr, ETHER_ADDR_LEN,
-			"SAE add sta auth event for "MACDBG "\n", MAC2STRDBG(e->addr.octet));
+			"SAE add sta auth event for %pM\n", &e->addr);
 
 		if (conn_info) { /* EOF:FIX */
 			/* prevent deauthorized before authorized in station_change
@@ -14539,7 +14542,7 @@ wl_notify_connect_status_ibss(struct bcm_cfg80211 *cfg, struct net_device *ndev,
 			wl_update_prof(cfg, ndev, NULL, (const void *)&active, WL_PROF_ACT);
 		}
 	} else if ((event == WLC_E_LINK && !(flags & WLC_EVENT_MSG_LINK)) ||
-		event == WLC_E_DEAUTH_IND || event == WLC_E_DISASSOC_IND) {
+				event == WLC_E_DEAUTH_IND || event == WLC_E_DISASSOC_IND) {
 		wl_clr_drv_status(cfg, CONNECTED, ndev);
 		wl_link_down(cfg);
 		wl_init_prof(cfg, ndev);
@@ -14641,8 +14644,7 @@ wl_cfg80211_handle_deauth_ind(struct bcm_cfg80211 *cfg, struct net_device *ndev,
 		(const uint8*)&e->addr, ETHER_ADDR_LEN);
 		memset_s(&pmksa, sizeof(pmksa), 0, sizeof(pmksa));
 		pmksa.bssid = bssid;
-		WL_INFORM_MEM(("Deleting the PMKSA for SAE AP "MACDBG,
-			MAC2STRDBG(e->addr.octet)));
+		WL_INFORM_MEM(("Deleting the PMKSA for SAE AP %pM", &e->addr));
 		wl_cfg80211_del_pmksa(cfg->wdev->wiphy, ndev, &pmksa);
 	}
 done:
@@ -14849,9 +14851,9 @@ exit:
 		sinfo.assoc_req_ies = data;
 		sinfo.assoc_req_ies_len = len;
 
-		WL_MSG(ndev->name, "Mode MESH new STA event %s(%d) for " 
-							MACDBG " status=%d reason=%d\n",
-			bcmevent_get_name(event), event, MAC2STRDBG(e->addr.octet), 
+		WL_MSG(ndev->name, "Mode MESH new STA event %s(%d) for %pM " 
+							"status=%d reason=%d\n",
+			bcmevent_get_name(event), event, &e->addr), 
 			ntoh32(e->status), reason);
 
 		if (conn_info) { /* EOF:FIX */
@@ -14868,8 +14870,8 @@ exit:
 		(event == WLC_E_DISASSOC_IND)) {
 		
 		WL_MSG(ndev->name, "Mode MESH delete STA event %s(%d) for " 
-							MACDBG " status=%d reason=%d\n",
-			bcmevent_get_name(event), event, MAC2STRDBG(e->addr.octet), 
+							"%pM status=%d reason=%d\n",
+			bcmevent_get_name(event), event, &e->addr), 
 			ntoh32(e->status), reason);
 
 		if (conn_info) { /* EOF:FIX */
@@ -16494,8 +16496,8 @@ wl_notify_mic_status(struct bcm_cfg80211 *cfg, bcm_struct_cfgdev *cfgdev,
 
 	ndev = cfgdev_to_wlc_ndev(cfgdev, cfg);
 
-	WL_INFORM_MEM(("[%s] mic fail event - " MACDBG " \n",
-		ndev->name, MAC2STRDBG(e->addr.octet)));
+	WL_INFORM_MEM(("[%s] mic fail event - %pM \n", ndev->name, &e->addr));
+
 	mutex_lock(&cfg->usr_sync);
 	if (flags & WLC_EVENT_MSG_GROUP)
 		key_type = NL80211_KEYTYPE_GROUP;

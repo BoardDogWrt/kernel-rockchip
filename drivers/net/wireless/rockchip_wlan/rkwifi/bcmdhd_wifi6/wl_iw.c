@@ -40,10 +40,14 @@
 
 #include <linux/if_arp.h>
 #include <linux/uaccess.h>
+#include <linux/nl80211.h>
+#include <net/cfg80211.h>
+
 #include <wlioctl.h>
 #ifdef WL_NAN
 #include <wlioctl_utils.h>
 #endif
+#include <wl_dbg.h>
 #include <wl_iw.h>
 #include <wl_android.h>
 #ifdef WL_ESCAN
@@ -1095,9 +1099,15 @@ wl_iw_set_wap(
 		if ((error = dev_wlc_ioctl(dev, WLC_DISASSOC, &scbval, sizeof(scb_val_t)))) {
 			WL_ERROR(("WLC_DISASSOC failed (%d).\n", error));
 		}
+#ifndef WL_CFG80211
 		wl_ext_in4way_sync_wext(dev,
 			STA_NO_SCAN_IN4WAY|STA_NO_BTC_IN4WAY|STA_WAIT_DISCONNECTED,
 			WL_EXT_STATUS_DISCONNECTING, NULL);
+#else
+		wl_ext_in4way_sync(dev,
+			STA_NO_SCAN_IN4WAY|STA_NO_BTC_IN4WAY|STA_WAIT_DISCONNECTED,
+			WL_EXT_STATUS_DISCONNECTING, awrq->sa_data);
+#endif
 		return 0;
 	}
 	/* WL_ASSOC(("Assoc to %s\n", bcm_ether_ntoa((struct ether_addr *)&(awrq->sa_data),
@@ -1116,8 +1126,13 @@ wl_iw_set_wap(
 		}
 		WL_MSG(dev->name, "join BSSID="MACSTR"\n", MAC2STR((u8 *)awrq->sa_data));
 	}
+#ifndef WL_CFG80211
 	wl_ext_in4way_sync_wext(dev, STA_NO_SCAN_IN4WAY|STA_NO_BTC_IN4WAY,
 		WL_EXT_STATUS_CONNECTING, NULL);
+#else
+	wl_ext_in4way_sync(dev, STA_NO_SCAN_IN4WAY|STA_NO_BTC_IN4WAY,
+		WL_EXT_STATUS_CONNECTING, awrq->sa_data);
+#endif
 
 	return 0;
 }
@@ -1180,10 +1195,15 @@ wl_iw_mlme(
 		WL_ERROR(("Invalid ioctl data.\n"));
 		return error;
 	}
+#ifndef WL_CFG80211
 	wl_ext_in4way_sync_wext(dev,
 			STA_NO_SCAN_IN4WAY|STA_NO_BTC_IN4WAY|STA_WAIT_DISCONNECTED,
 			WL_EXT_STATUS_DISCONNECTING, NULL);
-
+#else
+	wl_ext_in4way_sync(dev,
+			STA_NO_SCAN_IN4WAY|STA_NO_BTC_IN4WAY|STA_WAIT_DISCONNECTED,
+			WL_EXT_STATUS_DISCONNECTING, mlme->addr.sa_data);
+#endif
 	return error;
 }
 #endif /* WIRELESS_EXT > 17 */
@@ -3626,27 +3646,43 @@ wl_iw_event(struct net_device *dev, struct wl_wext_info *wext_info,
 	case WLC_E_JOIN:
 	case WLC_E_ASSOC_IND:
 	case WLC_E_REASSOC_IND:
+		WL_MSG_RLMT(dev->name, &e->addr, ETHER_ADDR_LEN,
+			"Join/Assoc/Reassoc IND with "MACSTR", event %d, reason %d\n",
+			MAC2STR((u8 *)wrqu.addr.sa_data), event_type, reason);
 		cmd = IWEVREGISTERED;
 		break;
 	case WLC_E_DEAUTH:
 	case WLC_E_DISASSOC:
+		WL_MSG_RLMT(dev->name, &e->addr, ETHER_ADDR_LEN,
+			"Deauth/Disassoc with "MACSTR", event %d, reason %d\n",
+			MAC2STR((u8 *)wrqu.addr.sa_data), event_type, reason);
+#ifndef WL_CFG80211
 		wl_ext_in4way_sync_wext(dev,
 			STA_NO_SCAN_IN4WAY|STA_NO_BTC_IN4WAY|STA_WAIT_DISCONNECTED,
 			WL_EXT_STATUS_DISCONNECTED, NULL);
-		WL_MSG_RLMT(dev->name, &e->addr, ETHER_ADDR_LEN,
-			"deauth/disassoc with "MACSTR", event %d, reason %d\n",
-			MAC2STR((u8 *)wrqu.addr.sa_data), event_type, reason);
+#else
+		wl_ext_in4way_sync(dev,
+			STA_NO_SCAN_IN4WAY|STA_NO_BTC_IN4WAY|STA_WAIT_DISCONNECTED,
+			WL_EXT_STATUS_DISCONNECTED, wrqu.addr.sa_data);
+#endif
 		break;
 	case WLC_E_DEAUTH_IND:
 	case WLC_E_DISASSOC_IND:
-		cmd = SIOCGIWAP;
-		WL_MSG(dev->name, "deauth/disassoc indication with "MACSTR", event %d, reason %d\n",
+		WL_MSG_RLMT(dev->name, &e->addr, ETHER_ADDR_LEN,
+			"Deauth/Disassoc IND with "MACSTR", event %d, reason %d\n",
 			MAC2STR((u8 *)wrqu.addr.sa_data), event_type, reason);
+		cmd = SIOCGIWAP;
 		bzero(wrqu.addr.sa_data, ETHER_ADDR_LEN);
 		bzero(&extra, ETHER_ADDR_LEN);
+#ifndef WL_CFG80211
 		wl_ext_in4way_sync_wext(dev,
 			STA_NO_SCAN_IN4WAY|STA_NO_BTC_IN4WAY|STA_WAIT_DISCONNECTED,
 			WL_EXT_STATUS_DISCONNECTED, NULL);
+#else
+		wl_ext_in4way_sync(dev,
+			STA_NO_SCAN_IN4WAY|STA_NO_BTC_IN4WAY|STA_WAIT_DISCONNECTED,
+			WL_EXT_STATUS_DISCONNECTED, wrqu.addr.sa_data);
+#endif
 		break;
 
 	case WLC_E_LINK:
@@ -3656,9 +3692,15 @@ wl_iw_event(struct net_device *dev, struct wl_wext_info *wext_info,
 				MAC2STR((u8 *)wrqu.addr.sa_data), reason);
 			bzero(wrqu.addr.sa_data, ETHER_ADDR_LEN);
 			bzero(&extra, ETHER_ADDR_LEN);
+#ifndef WL_CFG80211
 			wl_ext_in4way_sync_wext(dev,
 				STA_NO_SCAN_IN4WAY|STA_NO_BTC_IN4WAY|STA_WAIT_DISCONNECTED,
 				WL_EXT_STATUS_DISCONNECTED, NULL);
+#else
+			wl_ext_in4way_sync(dev,
+				STA_NO_SCAN_IN4WAY|STA_NO_BTC_IN4WAY|STA_WAIT_DISCONNECTED,
+				WL_EXT_STATUS_DISCONNECTED, wrqu.addr.sa_data);
+#endif
 		} else {
 			WL_MSG(dev->name, "Link UP with "MACSTR"\n",
 				MAC2STR((u8 *)wrqu.addr.sa_data));
