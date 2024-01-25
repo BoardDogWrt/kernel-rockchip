@@ -1,5 +1,5 @@
-##System boot log with modified kernel with
-##rkwifi/BCMDHD_WIFI6 overall bug fixes
+## System boot log with modified kernel with
+## rkwifi/BCMDHD_WIFI6 overall bug fixes
 
 ```
  _____      _____    ____          ___ ___  ____  
