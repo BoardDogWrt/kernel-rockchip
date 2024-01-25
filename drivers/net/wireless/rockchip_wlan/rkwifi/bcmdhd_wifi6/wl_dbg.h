@@ -63,7 +63,7 @@ extern uint32 wl_msg_level2;
 #define WL_ERR_RLMT(args)  \
 	do   \
 	{ \
-		if (wl_dbg_level & WL_DBG_ERR) \
+		if ((wl_dbg_level & WL_DBG_ERR) || (wl_msg_level & WL_ERROR_VAL)) \
 		{   \
 			static uint64 __err_ts = 0;   \
 			static uint32 __err_cnt = 0;  \
@@ -88,8 +88,7 @@ extern uint32 wl_msg_level2;
 	do \
 	{  \
 		if (((wl_dbg_level & WL_DBG_ERR) ||   \
-			 (wl_msg_level & WL_ERROR_VAL)) &&   \
-			net_ratelimit())   \
+			 (wl_msg_level & WL_ERROR_VAL)))   \
 		{ \
 			printk(KERN_ERR CFG80211_ERROR_TEXT "%s: " \
 					x, __func__, ##args);  \
@@ -109,15 +108,14 @@ extern uint32 wl_msg_level2;
 #define CFG80211_INFO_TEXT DHD_LOG_PREFIXS "CFG80211[I]: "
 #define CFG80211_DEBUG_TEXT DHD_LOG_PREFIXS "CFG80211[D]: "
 
-/* Info logging macros -> KERN_INFO */
+/* Info logging macros <5> */
 #define WL_INFO_MSG(x, args...)  \
 	do  \
 	{   \
 		if (((wl_dbg_level & WL_DBG_INFO) ||   \
-			 (wl_msg_level & WL_DBG_INFO)) &&  \
-			net_ratelimit()) \
+			 (wl_msg_level & WL_DBG_INFO))) \
 		{  \
-			printk(KERN_INFO CFG80211_INFO_TEXT "%s: " x, \
+			printk(KERN_NOTICE CFG80211_INFO_TEXT "%s: " x, \
 			 __func__, ##args); \
 		}  \
 	} while (0)
@@ -126,7 +124,7 @@ extern uint32 wl_msg_level2;
 #define WL_INFO(x) WL_INFO_MSG x
 #define WL_MEM(x) WL_INFO_MSG x
 
-/* Scanner logging macros -> KERN_NOTICE */
+/* Scanner logging macros <6> */
 #define WL_SCAN_MSG(x, args...) \
 	do  \
 	{   \
@@ -134,32 +132,32 @@ extern uint32 wl_msg_level2;
 			 (wl_msg_level & WL_DBG_SCAN)) &&  \
 			net_ratelimit()) \
 		{  \
-			printk(KERN_NOTICE CFG80211_INFO_TEXT "%s:" x, \
+			printk(KERN_INFO CFG80211_INFO_TEXT "%s:" x, \
 			__func__, ##args); \
 		}  \
 	} while (0)
 #define WL_SCAN(x) WL_SCAN_MSG x
 
+/* Simple debugging macros <6> */
 #define WL_DEBUG_MSG(x, args...)   \
 	do  \
 	{   \
 		if (((wl_dbg_level & WL_DBG_DBG) || \
-			 (wl_msg_level & WL_DBG_DBG)) &&   \
-			net_ratelimit()) \
+			 (wl_msg_level & WL_DBG_DBG))) \
 		{  \
-			printk(KERN_DEBUG CFG80211_DEBUG_TEXT "%s: " x,   \
+			printk(KERN_INFO CFG80211_DEBUG_TEXT "%s: " x,   \
 			 __func__, ##args); \
 		}  \
 	} while (0)
 #define WL_DEBUG(x) WL_DEBUG_MSG x
 #define WL_DBG(x) WL_DEBUG_MSG x
 
+/* Tracing macros <7> */
 #define WL_TRACE_MSG(x, args...)   \
 	do  \
 	{   \
 		if (((wl_dbg_level & WL_DBG_TRACE) ||  \
-			 (wl_msg_level & WL_DBG_TRACE)) && \
-			net_ratelimit()) \
+			 (wl_msg_level & WL_DBG_TRACE))) \
 		{  \
 			printk(KERN_DEBUG CFG80211_DEBUG_TEXT "%s:" x, \
 			__func__, ##args); \
@@ -171,9 +169,9 @@ extern uint32 wl_msg_level2;
 #define WL_MSG(name, arg1, args...)  \
 	do \
 	{  \
-		if (android_msg_level & ANDROID_MSG_LEVEL)  \
+		if ((wl_dbg_level & WL_DBG_TRACE))  \
 		{ \
-			printk(KERN_INFO DHD_LOG_PREFIX "[%s] %s: " arg1, 	\
+			printk(KERN_DEBUG DHD_LOG_PREFIX "[%s] %s: " arg1, 	\
 			    	name, __func__, ##args);   					\
 		} \
 	} while (0)
@@ -195,7 +193,7 @@ extern uint32 wl_msg_level2;
 			{ \
 				__err_ts = __cur_ts;  \
 				memcpy(static_tmp, cmp, size); \
-				printk(KERN_INFO DHD_LOG_PREFIX "[%s] %s: " arg1,   \
+				printk(KERN_DEBUG DHD_LOG_PREFIX "[%s] %s: " arg1,   \
 					   name, __func__, ##args);   \
 				__err_cnt = 0;  \
 			} \
@@ -211,14 +209,14 @@ extern uint32 wl_msg_level2;
 	{  \
 		if ((android_msg_level & ANDROID_MSG_LEVEL) && net_ratelimit())  \
 		{ \
-			printk(KERN_INFO DHD_LOG_PREFIX "[%s] %s: " arg1,   \
+			printk(KERN_DEBUG DHD_LOG_PREFIX "[%s] %s: " arg1,   \
 					name, __func__, ##args);  \
 		} \
 	} while (0)
 #endif
 
 #else /* defined(DHD_DEBUG) */
-
+#undef DHD_LOG_DUMP
 #define WL_INFO_MSG(x, args...)
 #define WL_INFORM_MEM(x)
 #define WL_INFORM(x)

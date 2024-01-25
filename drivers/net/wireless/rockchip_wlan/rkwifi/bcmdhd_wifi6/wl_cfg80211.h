@@ -661,6 +661,7 @@ typedef enum station_auth_flags {
 	__WLC_STA_FLAG_INVALID__ = 0,
 	WLC_STA_FLAG_AUTHORIZED = 1,  /* STA has been authorized */
 	WLC_STA_FLAG_DEAUTHORIZED = 2, /* STA has been deauthorized */
+	WLC_STA_FLAG_PENDING_AUTH = 3, /* STA has been connected */
 } station_auth_flags_t;
 
 /* association inform */
@@ -1301,14 +1302,18 @@ wl_probe_wdev_all(struct bcm_cfg80211 *cfg)
 {
 	struct net_info *_net_info, *next;
 	unsigned long int flags;
+#ifdef DHD_DEBUG /* stupid honks remove this ifdef ;)*/
 	int idx = 0;
+#endif
 	WL_CFG_NET_LIST_SYNC_LOCK(&cfg->net_list_sync, flags);
 	GCC_DIAGNOSTIC_PUSH_SUPPRESS_CAST();
 	BCM_LIST_FOR_EACH_ENTRY_SAFE(_net_info, next,
 		&cfg->net_list, list) {
 		GCC_DIAGNOSTIC_POP();
+#ifdef DHD_DEBUG /* stupid honks remove this ifdef ;)*/
 		WL_INFORM_MEM(("wl_probe_wdev_all: net_list[%d] bssidx: %d\n",
 			idx++, _net_info->bssidx));
+#endif
 	}
 	WL_CFG_NET_LIST_SYNC_UNLOCK(&cfg->net_list_sync, flags);
 	return;

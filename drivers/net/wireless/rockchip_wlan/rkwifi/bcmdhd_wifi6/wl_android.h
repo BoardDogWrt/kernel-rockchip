@@ -77,22 +77,27 @@ typedef struct _compat_android_wifi_priv_cmd
 #define ANDROID_DBG_LEVEL (1 << 4)
 #define ANDROID_MSG_LEVEL ANDROID_ERROR_LEVEL
 
+#define ANDROID_EVENT_ERROR_LEVEL (1 << 10)
+#define ANDROID_EVENT_INFO_LEVEL (1 << 11)
+#define ANDROID_EVENT_DBG_LEVEL (1 << 12)
+#define ANDROID_EVENT_TRACE_LEVEL (1 << 13)
+
 #define ANDROID_ERROR_MSG(x, args...) \
 	do { \
-		if ((android_msg_level & ANDROID_ERROR_LEVEL) && net_ratelimit()) { \
-			printk(KERN_ERR DHD_LOG_PREFIXS "ADNROID[E] " x, ## args); \
+		if ((android_msg_level & ANDROID_ERROR_LEVEL)) { \
+			printk(KERN_ERR DHD_LOG_PREFIXS "ADNROID[E] %s:" x, __func__, ## args); \
 		} \
 	} while (0)
 #define ANDROID_TRACE_MSG(x, args...) \
 	do { \
-		if ((android_msg_level & ANDROID_TRACE_LEVEL) && net_ratelimit()) { \
-			printk(KERN_INFO DHD_LOG_PREFIXS "ADNROID[T] " x, ## args); \
+		if ((android_msg_level & ANDROID_TRACE_LEVEL)) { \
+			printk(KERN_DEBUG DHD_LOG_PREFIXS "ADNROID[T] %s:" x, __func__, ## args); \
 		} \
 	} while (0)
 #define ANDROID_INFO_MSG(x, args...) \
 	do { \
-		if ((android_msg_level & ANDROID_INFO_LEVEL) && net_ratelimit()) { \
-			printk(KERN_INFO DHD_LOG_PREFIXS "ADNROID[I] " x, ## args); \
+		if ((android_msg_level & ANDROID_INFO_LEVEL)) { \
+			printk(KERN_NOTICE DHD_LOG_PREFIXS "ADNROID[I] %s:" x, __func__, ## args); \
 		} \
 	} while (0)
 #define ANDROID_ERROR(x) ANDROID_ERROR_MSG x
@@ -101,28 +106,35 @@ typedef struct _compat_android_wifi_priv_cmd
 
 #define AEXT_ERROR(name, arg1, args...) \
 	do { \
-		if ((android_msg_level & ANDROID_ERROR_LEVEL) && net_ratelimit()) { \
+		if ((android_msg_level & ANDROID_ERROR_LEVEL)) { \
 			printk(KERN_ERR DHD_LOG_PREFIX "[%s]AEXT[E] %s: " arg1, name, __func__, ## args); \
 		} \
 	} while (0)
-#define AEXT_TRACE(name, arg1, args...) \
-	do { \
-		if ((android_msg_level & ANDROID_TRACE_LEVEL) && net_ratelimit()) { \
-			printk(KERN_INFO DHD_LOG_PREFIX "[%s]AEXT[T] %s: " arg1, name, __func__, ## args); \
-		} \
-	} while (0)
+
 #define AEXT_INFO(name, arg1, args...) \
 	do { \
-		if ((android_msg_level & ANDROID_INFO_LEVEL) && net_ratelimit()) { \
-			printk(KERN_INFO DHD_LOG_PREFIX "[%s]AEXT[I] %s: " arg1, name, __func__, ## args); \
+		if ((android_msg_level & ANDROID_INFO_LEVEL)) { \
+			printk(KERN_NOTICE DHD_LOG_PREFIX "[%s]AEXT[I] %s: " arg1, name, __func__, ## args); \
+		} \
+	} while (0)
+
+#ifdef DHD_DEBUG
+#define AEXT_TRACE(name, arg1, args...) \
+	do { \
+		if ((android_msg_level & ANDROID_TRACE_LEVEL)) { \
+			printk(KERN_DEBUG DHD_LOG_PREFIX "[%s]AEXT[T] %s: " arg1, name, __func__, ## args); \
 		} \
 	} while (0)
 #define AEXT_DBG(name, arg1, args...) \
 	do { \
-		if ((android_msg_level & ANDROID_DBG_LEVEL) && net_ratelimit()) { \
+		if ((android_msg_level & ANDROID_DBG_LEVEL)) { \
 			printk(KERN_INFO DHD_LOG_PREFIX "[%s]AEXT[D] %s: " arg1, name, __func__, ## args); \
 		} \
 	} while (0)
+#else
+#define AEXT_TRACE(name, arg1, args...)
+#define AEXT_DBG(name, arg1, args...)
+#endif
 
 /**
  * wl_android_init will be called from module init function (dhd_module_init now), similarly
