@@ -3655,7 +3655,7 @@ dhd_start_xmit(struct sk_buff *skb, struct net_device *net)
 	if (skb_headroom(skb) < dhd->pub.hdrlen + htsfdlystat_sz) {
 		struct sk_buff *skb2;
 
-		DHD_INFO(("%s: insufficient headroom\n",
+		DHD_INFO(("%s: Small skb head room, reallocate more for skb\n",
 		          dhd_ifname(&dhd->pub, ifidx)));
 		dhd->pub.tx_realloc++;
 

@@ -4989,7 +4989,7 @@ wl_ext_in4way_sync_ap(dhd_pub_t *dhd, struct wl_if_info *cur_if,
 	uint32 diff_ms, timeout, max_wait_time = 300;
 	int ret = 0, suppressed = 0;
 	struct ether_addr null_addr;
-	u8* mac_addr = context;
+	u8* mac_addr = context; /* can be NULL !! */
 	bool wait = FALSE;
 
 	action = action & dhd->conf->in4way;
@@ -5098,7 +5098,9 @@ wl_ext_in4way_sync_ap(dhd_pub_t *dhd, struct wl_if_info *cur_if,
 			break;
 		case WL_EXT_STATUS_ADD_KEY:
 			if (action & STA_NO_SCAN_IN4WAY) { 
-				AEXT_DBG(dev->name, "Status 'add key' for %pM\n", ap_sta_bssid);
+				AEXT_DBG(dev->name, 
+					"Status 'add key' for %pM (do nothing here! Just info.)\n", 
+					ap_sta_bssid);
 			}
 			break;
 		default:

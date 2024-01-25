@@ -355,10 +355,12 @@ dhd_conf_free_mac_list(wl_mac_list_ctrl_t *mac_list)
 			if (mac_list->m_mac_list_head[i].mac) {
 				CONFIG_TRACE("Free mac %p\n", mac_list->m_mac_list_head[i].mac);
 				kfree(mac_list->m_mac_list_head[i].mac);
+				mac_list->m_mac_list_head[i].mac = NULL;
 			}
 		}
 		CONFIG_TRACE("Free m_mac_list_head %p\n", mac_list->m_mac_list_head);
 		kfree(mac_list->m_mac_list_head);
+		mac_list->m_mac_list_head = NULL;
 	}
 	mac_list->count = 0;
 }
@@ -649,6 +651,7 @@ dhd_conf_free_country_list(struct dhd_conf *conf)
 		country = conf->country_head;
 		count++;
 	}
+	
 	CONFIG_TRACE("%d country released\n", count);
 }
 
@@ -666,6 +669,7 @@ dhd_conf_free_mchan_list(struct dhd_conf *conf)
 		mchan = conf->mchan;
 		count++;
 	}
+
 	CONFIG_TRACE("%d mchan released\n", count);
 }
 

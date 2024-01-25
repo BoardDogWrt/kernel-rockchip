@@ -7054,8 +7054,12 @@ wl_add_keyext(struct wiphy *wiphy, struct net_device *dev,
 	s32 bssidx;
 	s32 mode = wl_get_mode_by_netdev(cfg, dev);
 
-	WL_MSG(dev->name, "Add sec key index=%d\n", key_idx);
-	
+	if (mac_addr) {
+		WL_MSG(dev->name, "Add sec key for %pM index=%d\n", mac_addr, key_idx);
+	} else {
+		WL_MSG(dev->name, "Add sec key index=%d\n", key_idx);
+	}
+
 	if ((bssidx = wl_get_bssidx_by_wdev(cfg, dev->ieee80211_ptr)) < 0) {
 		WL_ERR(("Find p2p index from wdev(%p) failed\n", dev->ieee80211_ptr));
 		return BCME_ERROR;
@@ -7251,7 +7255,13 @@ wl_cfg80211_add_key(struct wiphy *wiphy, struct net_device *dev,
 
 	RETURN_EIO_IF_NOT_UP(cfg);
 
-	WL_MSG(dev->name, "Add key index=%d cipher=0x%x\n", key_idx, params->cipher);
+	if (mac_addr) {
+		WL_MSG(dev->name, "Add key for %pM index=%d cipher=0x%x\n", 
+			mac_addr, key_idx, params->cipher);
+	} else {
+		WL_MSG(dev->name, "Add key index=%d cipher=0x%x\n", 
+			key_idx, params->cipher);
+	}
 
 	if ((bssidx = wl_get_bssidx_by_wdev(cfg, dev->ieee80211_ptr)) < 0) {
 		WL_ERR(("Find p2p index from dev(%p) failed\n", dev->ieee80211_ptr));
@@ -7401,7 +7411,7 @@ exit:
 	wl_set_wsec_info_algos(dev, algos, mask);
 #endif /* WL_GCMP */
 	wl_ext_in4way_sync(dev, STA_NO_SCAN_IN4WAY|STA_NO_BTC_IN4WAY,
-		WL_EXT_STATUS_ADD_KEY, NULL);
+		WL_EXT_STATUS_ADD_KEY, (void*) mac_addr);
 	return err;
 }
 
