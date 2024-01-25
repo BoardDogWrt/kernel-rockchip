@@ -176,12 +176,11 @@ extern uint32 wl_msg_level2;
 		} \
 	} while (0)
 
-#if 0
 #define WL_MSG_PRINT_RATE_LIMIT_PERIOD 1000000000u /* 1s in units of ns */
 #define WL_MSG_RLMT(name, cmp, size, arg1, args...)  \
 	do  \
 	{   \
-		if (android_msg_level & ANDROID_MSG_LEVEL)   \
+		if (wl_dbg_level & WL_DBG_TRACE)   \
 		{  \
 			static uint64 __err_ts = 0;  \
 			static uint32 __err_cnt = 0; \
@@ -203,20 +202,8 @@ extern uint32 wl_msg_level2;
 			} \
 		}  \
 	} while (0)
-#else
-#define WL_MSG_RLMT(name, cmp, size, arg1, args...) \
-	do \
-	{  \
-		if ((android_msg_level & ANDROID_MSG_LEVEL) && net_ratelimit())  \
-		{ \
-			printk(KERN_DEBUG DHD_LOG_PREFIX "[%s] %s: " arg1,   \
-					name, __func__, ##args);  \
-		} \
-	} while (0)
-#endif
 
 #else /* defined(DHD_DEBUG) */
-#undef DHD_LOG_DUMP
 #define WL_INFO_MSG(x, args...)
 #define WL_INFORM_MEM(x)
 #define WL_INFORM(x)

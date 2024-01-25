@@ -157,7 +157,7 @@ module_param(fw_ap_select, uint, 0660);
 static struct device *cfg80211_parent_dev = NULL;
 static struct bcm_cfg80211 *g_bcmcfg = NULL;
 
-u32 wl_dbg_level = WL_DBG_ERR | WL_DBG_INFO | WL_DBG_TRACE;
+u32 wl_dbg_level = WL_DBG_ERR | WL_DBG_INFO;
 /*  | WL_DBG_P2P_ACTION; */
 
 #define	MAX_VIF_OFFSET	15
@@ -11842,8 +11842,9 @@ wl_cfg80211_change_station(
 		return -ENOTSUPP;
 	}
 
-	WL_MSG(ndev->name, "%pM flags_set=0x%x flags_mask=0x%x flags_sta=0x%x\n",
-		mac, params->sta_flags_set, params->sta_flags_mask, conn_info->flags_sta);
+	WL_INFO_MSG("[%s] %pM flags_set=0x%x flags_mask=0x%x flags_sta=0x%x\n",
+		ndev->name, mac, params->sta_flags_set, 
+		params->sta_flags_mask, conn_info->flags_sta);
 
 	/* Income sta_flags_XXX in following stage order (AP/GO):
 	1: set = 0 && mask = NL80211_STA_FLAG_SHORT_PREAMBLE +
@@ -14083,10 +14084,11 @@ wl_notify_connect_status_ap(struct bcm_cfg80211 *cfg, struct net_device *ndev,
 	if (event == WLC_E_AUTH_IND) {
 		if (conn_info) { /* EOF:FIX */
 			/* prevent deauthorized before authorized in station_change
-			* callback op function */
+			 * callback op function */
 			conn_info->flags_sta |= BIT(WLC_STA_FLAG_DEAUTHORIZED);
 			/* Assume the station isn't authorized */
 			conn_info->flags_sta &= ~BIT(WLC_STA_FLAG_AUTHORIZED);
+			conn_info->flags_sta |= BIT(WLC_STA_FLAG_PENDING_AUTH);
 		}
 		if (wl_get_auth_assoc_status(cfg, ndev, e, data)) {
 			return -EINVAL;
@@ -14222,6 +14224,7 @@ exit:
 			conn_info->flags_sta |= BIT(WLC_STA_FLAG_DEAUTHORIZED);
 			/* Assume the station isn't authorized */
 			conn_info->flags_sta &= ~BIT(WLC_STA_FLAG_AUTHORIZED);
+			conn_info->flags_sta |= BIT(WLC_STA_FLAG_PENDING_AUTH);
 		}
 
 		wl_ext_in4way_sync(ndev, AP_WAIT_STA_RECONNECT,
@@ -14242,6 +14245,8 @@ exit:
 		if (conn_info) { /* EOF:FIX */
 			/* trigger deauthorization in station_change callback op function  */
 			conn_info->flags_sta &= ~BIT(WLC_STA_FLAG_DEAUTHORIZED);
+			/* station is gone, remove pending flag */
+			conn_info->flags_sta &= ~BIT(WLC_STA_FLAG_PENDING_AUTH);
 		}
 
 		wl_ext_in4way_sync(ndev, AP_WAIT_STA_RECONNECT,

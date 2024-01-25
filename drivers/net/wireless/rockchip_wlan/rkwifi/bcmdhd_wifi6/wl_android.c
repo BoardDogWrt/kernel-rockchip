@@ -83,7 +83,7 @@
 #define WL_BSSIDX_MAX	16
 #endif /* WL_STATIC_IF */
 
-uint android_msg_level = ANDROID_ERROR_LEVEL | ANDROID_INFO_LEVEL | ANDROID_DBG_LEVEL;
+uint android_msg_level = ANDROID_ERROR_LEVEL | ANDROID_INFO_LEVEL;
 
 /*
  * Android private command strings, PLEASE define new private commands here
