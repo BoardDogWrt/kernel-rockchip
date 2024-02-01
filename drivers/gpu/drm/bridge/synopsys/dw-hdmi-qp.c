@@ -36,6 +36,10 @@
 #include <uapi/linux/media-bus-format.h>
 #include <uapi/linux/videodev2.h>
 
+#include <video/display_timing.h>
+#include <video/of_display_timing.h>
+#include <video/videomode.h>
+
 #include "dw-hdmi-qp-audio.h"
 #include "dw-hdmi-qp.h"
 #include "dw-hdmi-qp-cec.h"
@@ -237,6 +241,7 @@ struct dw_hdmi_qp {
 	int avp_irq;
 	int earc_irq;
 
+	const struct drm_display_mode *fixed_mode;
 	u8 edid[HDMI_EDID_LEN];
 
 	struct {
@@ -2055,7 +2060,7 @@ dw_hdmi_connector_detect(struct drm_connector *connector, bool force)
 	hdmi->force = DRM_FORCE_UNSPECIFIED;
 	mutex_unlock(&hdmi->mutex);
 
-	if (hdmi->panel)
+	if (hdmi->panel || hdmi->fixed_mode)
 		return connector_status_connected;
 
 	if (hdmi->plat_data->left)
@@ -2139,6 +2144,16 @@ static int dw_hdmi_connector_get_modes(struct drm_connector *connector)
 
 	if (hdmi->panel)
 		return drm_panel_get_modes(hdmi->panel, connector);
+
+	if (hdmi->fixed_mode) {
+		mode = drm_mode_duplicate(connector->dev, hdmi->fixed_mode);
+		if (mode) {
+			drm_mode_probed_add(connector, mode);
+			hdmi->support_hdmi = true;
+			hdmi->sink_has_audio = true;
+			return 1;
+		}
+	}
 
 	if (!hdmi->ddc)
 		return 0;
@@ -3348,6 +3363,7 @@ __dw_hdmi_probe(struct platform_device *pdev,
 	struct device *dev = &pdev->dev;
 	struct device_node *np = dev->of_node;
 	struct device_node *ddc_node;
+	struct device_node *route_node;
 	struct dw_hdmi_qp *hdmi;
 	struct dw_hdmi_qp_i2s_audio_data audio;
 	struct platform_device_info pdevinfo;
@@ -3447,6 +3463,24 @@ __dw_hdmi_probe(struct platform_device *pdev,
 	/* Reset HDMI DDC I2C master controller and mute I2CM interrupts */
 	if (hdmi->i2c)
 		dw_hdmi_i2c_init(hdmi);
+
+	route_node = of_parse_phandle(np, "route", 0);
+	of_node_put(route_node);
+	if (route_node &&
+	    of_property_read_bool(route_node, "force-output")) {
+		struct drm_display_mode *dmode;
+		struct display_timing dt;
+		struct videomode vm;
+
+		dmode = devm_kzalloc(dev, sizeof(*dmode), GFP_KERNEL);
+		if (dmode &&
+		    !of_get_display_timing(route_node, "force_timing", &dt)) {
+			videomode_from_timing(&dt, &vm);
+			drm_display_mode_from_videomode(&vm, dmode);
+			hdmi->fixed_mode = dmode;
+			dev_warn(dev, "fixed modeline " DRM_MODE_FMT "\n", DRM_MODE_ARG(dmode));
+		}
+	}
 
 	init_completion(&hdmi->flt_cmp);
 	init_completion(&hdmi->earc_cmp);

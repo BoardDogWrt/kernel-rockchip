@@ -38,6 +38,10 @@
 #include <drm/drm_print.h>
 #include <drm/drm_probe_helper.h>
 
+#include <video/display_timing.h>
+#include <video/of_display_timing.h>
+#include <video/videomode.h>
+
 #include "dw-hdmi-audio.h"
 #include "dw-hdmi-cec.h"
 #include "dw-hdmi-hdcp.h"
@@ -273,6 +277,7 @@ struct dw_hdmi {
 	int vic;
 	int irq;
 
+	const struct drm_display_mode *fixed_mode;
 	u8 edid[HDMI_EDID_LEN];
 
 	struct {
@@ -3136,6 +3141,9 @@ static enum drm_connector_status dw_hdmi_detect(struct dw_hdmi *hdmi)
 	}
 	mutex_unlock(&hdmi->mutex);
 
+	if (hdmi->fixed_mode)
+		result = connector_status_connected;
+
 	if (result == connector_status_connected)
 		extcon_set_state_sync(hdmi->extcon, EXTCON_DISP_HDMI, true);
 	else
@@ -3221,6 +3229,18 @@ static int dw_hdmi_connector_get_modes(struct drm_connector *connector)
 	int i,  ret = 0;
 
 	memset(metedata, 0, sizeof(*metedata));
+
+	if (hdmi->fixed_mode) {
+		mode = drm_mode_duplicate(connector->dev, hdmi->fixed_mode);
+		if (mode) {
+			drm_mode_probed_add(connector, mode);
+			hdmi->support_hdmi = true;
+			hdmi->sink_has_audio = true;
+			ret = 1;
+			goto done;
+		}
+	}
+
 	edid = hdmi->ignore_edid ? NULL :
 		dw_hdmi_get_edid(hdmi, connector);
 	if (edid) {
@@ -3270,6 +3290,8 @@ static int dw_hdmi_connector_get_modes(struct drm_connector *connector)
 
 		dev_info(hdmi->dev, "failed to get edid\n");
 	}
+
+done:
 	dw_hdmi_update_hdr_property(connector);
 	dw_hdmi_check_output_type_changed(hdmi);
 
@@ -4791,9 +4813,34 @@ static void dw_hdmi_register_hdcp(struct device *dev, struct dw_hdmi *hdmi,
 
 static int get_force_logo_property(struct dw_hdmi *hdmi)
 {
+	struct device *dev = hdmi->dev;
 	struct device_node *dss;
 	struct device_node *route;
 	struct device_node *route_hdmi;
+
+	route_hdmi = of_parse_phandle(dev->of_node, "route", 0);
+	if (route_hdmi) {
+		hdmi->force_logo =
+			of_property_read_bool(route_hdmi, "force-output");
+
+		if (hdmi->force_logo) {
+			struct drm_display_mode *dmode;
+			struct display_timing dt;
+			struct videomode vm;
+
+			dmode = devm_kzalloc(dev, sizeof(*dmode), GFP_KERNEL);
+			if (dmode &&
+				!of_get_display_timing(route_hdmi, "force_timing", &dt)) {
+				videomode_from_timing(&dt, &vm);
+				drm_display_mode_from_videomode(&vm, dmode);
+				hdmi->fixed_mode = dmode;
+				dev_warn(dev, "fixed modeline " DRM_MODE_FMT "\n", DRM_MODE_ARG(dmode));
+			}
+		}
+
+		of_node_put(route_hdmi);
+		return 0;
+	}
 
 	dss = of_find_node_by_name(NULL, "display-subsystem");
 	if (!dss) {
