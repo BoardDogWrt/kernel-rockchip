@@ -59,9 +59,8 @@ mkdir -p ${UPDATE_DIR}
 if [ ! -f .config ] ; then
     echo "----------------------------------------------------"
     echo "++ Configure kernel from eof_defconfig"
-    make -j4 CC=${CC} ARCH=${KRNL_ARCH} clean || exit 1
-    make -j4 CC=${CC} ARCH=${KRNL_ARCH} kernelrelease || exit 1
     make -j4 CC=${CC} ARCH=${KRNL_ARCH} eof_defconfig
+    make -j4 CC=${CC} ARCH=${KRNL_ARCH} kernelrelease || exit 1
 fi
 
 # Bit Power Build Host
