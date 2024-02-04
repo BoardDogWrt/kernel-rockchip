@@ -140,7 +140,7 @@ enum wl_cfgp2p_status {
 #define	CFGP2P_ERR_MSG(x, args...)	\
 	do {	\
 		if (wl_dbg_level & WL_DBG_ERR) {	\
-			printk(KERN_ERR CFGP2P_ERROR_TEXT "%s : " x, __func__, ## args);	\
+			printk(KERN_ERR CFGP2P_ERROR_TEXT "%s: " x, __func__, ## args);	\
 			DHD_LOG_DUMP_WRITE("[%s] %s: ", dhd_log_dump_get_timestamp(), __func__);	\
 			DHD_LOG_DUMP_WRITE(x, ## args);	\
 		}	\
@@ -149,7 +149,7 @@ enum wl_cfgp2p_status {
 #define	CFGP2P_INFO_MSG(x, args...)									\
 	do {										\
 		if (wl_dbg_level & WL_DBG_INFO) {				\
-			printk(KERN_INFO DHD_LOG_PREFIXS "WL-CFGP2P: %s : " x, __func__, ## args);	\
+			printk(KERN_INFO DHD_LOG_PREFIXS "%s: " x, __func__, ## args);	\
 			DHD_LOG_DUMP_WRITE("[%s] %s: ", dhd_log_dump_get_timestamp(), __func__);	\
 			DHD_LOG_DUMP_WRITE(x, ## args);	\
 		}									\
@@ -158,7 +158,7 @@ enum wl_cfgp2p_status {
 #define	CFGP2P_ACTION_MSG(x, args...)								\
 	do {									\
 		if (wl_dbg_level & WL_DBG_P2P_ACTION) {			\
-			printk(KERN_INFO DHD_LOG_PREFIXS "WL-CFGP2P: %s :" x, __func__, ## args);	\
+			printk(KERN_INFO DHD_LOG_PREFIXS "%s:" x, __func__, ## args);	\
 			DHD_LOG_DUMP_WRITE("[%s] %s: ", dhd_log_dump_get_timestamp(), __func__);	\
 			DHD_LOG_DUMP_WRITE(x, ## args);	\
 		}									\
@@ -175,14 +175,14 @@ enum wl_cfgp2p_status {
 #define	CFGP2P_INFO_MSG(x, args...)									\
 	do {										\
 		if (wl_dbg_level & WL_DBG_INFO) {				\
-			printk(KERN_INFO DHD_LOG_PREFIXS "WL-CFGP2P: %s : " x, __func__, ## args);	\
+			printk(KERN_INFO DHD_LOG_PREFIXS "%s: " x, __func__, ## args);	\
 		}									\
 	} while (0)
 #define CFGP2P_INFO(x) CFGP2P_INFO_MSG x
 #define	CFGP2P_ACTION_MSG(x, args...)								\
 	do {									\
 		if (wl_dbg_level & WL_DBG_P2P_ACTION) {			\
-			printk(KERN_INFO DHD_LOG_PREFIXS "WL-CFGP2P: %s :" x, __func__, ## args);	\
+			printk(KERN_INFO DHD_LOG_PREFIXS "%s:" x, __func__, ## args);	\
 		}									\
 	} while (0)
 #define CFGP2P_ACTION(x) CFGP2P_ACTION_MSG x
@@ -191,7 +191,7 @@ enum wl_cfgp2p_status {
 #define	CFGP2P_DBG_MSG(x, args...)								\
 	do {									\
 		if (wl_dbg_level & WL_DBG_DBG) {			\
-			printk(KERN_DEBUG DHD_LOG_PREFIXS "WL-CFGP2P: %s :" x, __func__, ## args);	\
+			printk(KERN_DEBUG DHD_LOG_PREFIXS "%s:" x, __func__, ## args);	\
 		}									\
 	} while (0)
 #define CFGP2P_DBG(x) CFGP2P_DBG_MSG x

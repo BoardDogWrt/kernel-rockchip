@@ -1857,17 +1857,17 @@ wl_cfgp2p_supported(struct bcm_cfg80211 *cfg, struct net_device *ndev)
 	               &p2p_supported);
 	if (ret < 0) {
 		if (ret == BCME_UNSUPPORTED) {
-			CFGP2P_INFO(("p2p is unsupported\n"));
+			CFGP2P_INFO(("P2P is unsupported\n"));
 			return 0;
 		} else {
-			CFGP2P_ERR(("cfg p2p error %d\n", ret));
+			CFGP2P_ERR(("P2P error %d\n", ret));
 			return ret;
 		}
 	}
 	if (cfg->pub->conf->fw_type == FW_TYPE_MESH)
 		p2p_supported = 0;
 	if (p2p_supported == 1) {
-		CFGP2P_INFO(("p2p is supported\n"));
+		CFGP2P_INFO(("P2P is supported\n"));
 	} else {
 		CFGP2P_INFO(("p2p is unsupported\n"));
 		p2p_supported = 0;

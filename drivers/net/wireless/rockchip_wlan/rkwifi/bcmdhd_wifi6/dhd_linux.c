@@ -3118,7 +3118,7 @@ dhd_set_mcast_list_handler(void *handle, void *event_info, u8 event)
 #endif /* MCAST_LIST_ACCUMULATION */
 
 	_dhd_set_multicast_list(dhd, ifidx);
-	DHD_INFO(("%s: set multicast list for if %d\n", __func__, ifidx));
+	DHD_TRACE(("%s: set multicast list for if %d\n", __func__, ifidx));
 
 done:
 	DHD_PERIM_UNLOCK(&dhd->pub);
@@ -12037,7 +12037,7 @@ dhd_register_if(dhd_pub_t *dhdp, int ifidx, bool need_rtnl_lock)
 	memcpy(net->dev_addr, temp_addr, ETHER_ADDR_LEN);
 
 	if (ifidx == 0)
-		printf("%s\n", dhd_version);
+		DHD_INFO(("%s: %s\n", __func__, dhd_version));
 	else {
 #ifdef WL_EXT_IAPSTA
 		wl_ext_iapsta_update_net_device(net, ifidx);
@@ -12070,8 +12070,8 @@ dhd_register_if(dhd_pub_t *dhdp, int ifidx, bool need_rtnl_lock)
 #endif /* WL_EXT_IAPSTA */
 #endif /* WL_EXT_IAPSTA || USE_IW || WL_ESCAN */
 
-	printf("Register interface [%s]  MAC: "MACDBG"\n\n", net->name,
-		MAC2STRDBG(net->dev_addr));
+	DHD_INFO(("%s: Register interface [%s]  MAC: %pM\n", 
+		__func__, net->name, net->dev_addr));
 
 #if defined(SOFTAP) && defined(WL_WIRELESS_EXT) && !defined(WL_CFG80211)
 //		wl_iw_iscan_set_scan_broadcast_prep(net, 1);

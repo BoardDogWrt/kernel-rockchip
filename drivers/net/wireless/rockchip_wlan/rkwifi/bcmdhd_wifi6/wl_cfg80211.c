@@ -18072,8 +18072,8 @@ static s32 wl_cfg80211_attach_post(struct net_device *ndev)
 					/* Update MAC addr for p2p0 interface here. */
 					memcpy(cfg->p2p_net->dev_addr, ndev->dev_addr, ETH_ALEN);
 					cfg->p2p_net->dev_addr[0] |= 0x02;
-					WL_MSG(cfg->p2p_net->name, "p2p_dev_addr="MACDBG "\n",
-						MAC2STRDBG(cfg->p2p_net->dev_addr));
+					WL_MSG(cfg->p2p_net->name, "p2p_dev_addr=%pM\n",
+						cfg->p2p_net->dev_addr);
 				} else {
 					WL_ERR(("p2p_net not yet populated."
 					" Couldn't update the MAC Address for p2p0 \n"));
