@@ -84,7 +84,7 @@
 		compatible = "simple-audio-card";
 		simple-audio-card,format = "i2s";
 		simple-audio-card,mclk-fs = <128>;
-		simple-audio-card,name = "rockchip,hdmi";
+		simple-audio-card,name = "rockchip,hdmi0";
 		status = "disabled";
 
 		simple-audio-card,cpu {
@@ -123,7 +123,7 @@
 	};
 
 	rk809_sound: rk809-sound {
-		status = "okay";
+		status = "disabled";
 		compatible = "simple-audio-card";
 		simple-audio-card,format = "i2s";
 		simple-audio-card,name = "rockchip,rk809-codec";
@@ -133,7 +133,7 @@
 			sound-dai = <&i2s1_8ch>;
 		};
 		simple-audio-card,codec {
-			sound-dai = <&rk809_codec 0>;
+			sound-dai = <&rk809_codec>;
 		};
 	};
 
@@ -562,7 +562,7 @@
 		};
 
 		rk809_codec: codec {
-			#sound-dai-cells = <1>;
+			#sound-dai-cells = <0>;
 			compatible = "rockchip,rk809-codec", "rockchip,rk817-codec";
 			clocks = <&cru I2S1_MCLKOUT>;
 			clock-names = "mclk";
@@ -573,7 +573,6 @@
 			pinctrl-0 = <&i2s1m0_mclk>;
 			hp-volume = <20>;
 			spk-volume = <3>;
-			mic-in-differential;
 			status = "okay";
 		};
 	};
@@ -592,7 +591,7 @@
 
 &i2s1_8ch {
 	status = "disabled";
-	rockchip,clk-trcm = <1>;
+	rockchip,trcm-sync-tx-only;
 	pinctrl-names = "default";
 	pinctrl-0 = <&i2s1m0_sclktx
 		     &i2s1m0_lrcktx
