@@ -2580,7 +2580,7 @@ Input:
 Output:
     Executive outcomes. 0---succeed.
 *******************************************************/
-static int goodix_ts_remove(struct i2c_client *client)
+static void goodix_ts_remove(struct i2c_client *client)
 {
 	struct goodix_ts_data *ts = i2c_get_clientdata(client);
 
@@ -2610,8 +2610,6 @@ static int goodix_ts_remove(struct i2c_client *client)
 	i2c_set_clientdata(client, NULL);
 	input_unregister_device(ts->input_dev);
 	kfree(ts);
-
-	return 0;
 }
 
 /*******************************************************
