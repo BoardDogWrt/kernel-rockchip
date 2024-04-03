@@ -120,7 +120,7 @@ rockchip_dmcfreq_vop_bandwidth_init(struct dmcfreq_common_info *info)
 {
 }
 
-bool inline rockchip_dmcfreq_vop_bandwidth_avail(void)
+static bool inline rockchip_dmcfreq_vop_bandwidth_avail(void)
 {
 	return false;
 }
