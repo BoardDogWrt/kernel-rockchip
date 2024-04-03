@@ -25,6 +25,7 @@
 #include <linux/srcu.h>
 #include <linux/uuid.h>
 #include <linux/xarray.h>
+#include <linux/android_kabi.h>
 
 struct module;
 struct request_queue;
@@ -117,6 +118,9 @@ struct blk_integrity {
 	unsigned char				tuple_size;
 	unsigned char				interval_exp;
 	unsigned char				tag_size;
+
+	ANDROID_KABI_RESERVE(1);
+	ANDROID_KABI_RESERVE(2);
 };
 
 struct gendisk {
@@ -202,6 +206,11 @@ struct gendisk {
 	 * devices that do not have multiple independent access ranges.
 	 */
 	struct blk_independent_access_ranges *ia_ranges;
+
+	ANDROID_KABI_RESERVE(1);
+	ANDROID_KABI_RESERVE(2);
+	ANDROID_KABI_RESERVE(3);
+	ANDROID_KABI_RESERVE(4);
 };
 
 static inline bool disk_live(struct gendisk *disk)
@@ -318,6 +327,9 @@ struct queue_limits {
 	 * due to possible offsets.
 	 */
 	unsigned int		dma_alignment;
+
+	ANDROID_OEM_DATA(1);
+	ANDROID_KABI_RESERVE(1);
 };
 
 typedef int (*report_zones_cb)(struct blk_zone *zone, unsigned int idx,
@@ -544,6 +556,12 @@ struct request_queue {
 	struct mutex		debugfs_mutex;
 
 	bool			mq_sysfs_init_done;
+	ANDROID_OEM_DATA(1);
+
+	ANDROID_KABI_RESERVE(1);
+	ANDROID_KABI_RESERVE(2);
+	ANDROID_KABI_RESERVE(3);
+	ANDROID_KABI_RESERVE(4);
 
 	/**
 	 * @srcu: Sleepable RCU. Use as lock when type of the request queue
@@ -565,6 +583,7 @@ struct request_queue {
 #define QUEUE_FLAG_NOXMERGES	9	/* No extended merges */
 #define QUEUE_FLAG_ADD_RANDOM	10	/* Contributes to random pool */
 #define QUEUE_FLAG_SAME_FORCE	12	/* force complete on same CPU */
+#define QUEUE_FLAG_HW_WC	18	/* Write back caching supported */
 #define QUEUE_FLAG_INIT_DONE	14	/* queue is initialized */
 #define QUEUE_FLAG_STABLE_WRITES 15	/* don't modify blks until WB is done */
 #define QUEUE_FLAG_POLL		16	/* IO polling enabled if set */
@@ -1305,7 +1324,7 @@ static inline bool bdev_is_zoned(struct block_device *bdev)
 }
 
 static inline bool bdev_op_is_zoned_write(struct block_device *bdev,
-					  blk_opf_t op)
+					  enum req_op op)
 {
 	if (!bdev_is_zoned(bdev))
 		return false;
@@ -1426,6 +1445,9 @@ struct block_device_operations {
 	 * driver.
 	 */
 	int (*alternative_gpt_sector)(struct gendisk *disk, sector_t *sector);
+
+	ANDROID_KABI_RESERVE(1);
+	ANDROID_KABI_RESERVE(2);
 };
 
 #ifdef CONFIG_COMPAT

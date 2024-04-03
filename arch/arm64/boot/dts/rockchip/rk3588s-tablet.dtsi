@@ -92,7 +92,7 @@
 		status = "disabled";
 		compatible = "simple-audio-card";
 		simple-audio-card,format = "dsp_a";
-		simple-audio-card,bitclock-inversion = <0>;
+		simple-audio-card,bitclock-inversion;
 		simple-audio-card,mclk-fs = <256>;
 		simple-audio-card,name = "rockchip,bt";
 		simple-audio-card,cpu {
@@ -828,7 +828,7 @@
 
 &i2s0_8ch {
 	status = "okay";
-	rockchip,clk-trcm = <1>;
+	rockchip,trcm-sync-tx-only;
 	pinctrl-0 = <&i2s0_lrck
 		     &i2s0_sclk
 		     &i2s0_sdi0
@@ -1305,6 +1305,7 @@
 
 &vop {
 	status = "okay";
+	vop-supply = <&vdd_log_s0>;
 };
 
 &vop_mmu {

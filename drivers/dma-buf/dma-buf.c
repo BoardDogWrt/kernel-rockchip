@@ -27,14 +27,13 @@
 #include <linux/mm.h>
 #include <linux/mount.h>
 #include <linux/pseudo_fs.h>
+#include <trace/hooks/dmabuf.h>
 #include <linux/sched/task.h>
 
 #include <uapi/linux/dma-buf.h>
 #include <uapi/linux/magic.h>
 
 #include "dma-buf-sysfs-stats.h"
-
-static inline int is_dma_buf_file(struct file *);
 
 struct dma_buf_list {
 	struct list_head head;
@@ -214,6 +213,7 @@ static struct file_system_type dma_buf_fs_type = {
 static int dma_buf_mmap_internal(struct file *file, struct vm_area_struct *vma)
 {
 	struct dma_buf *dmabuf;
+	bool ignore_bounds = false;
 
 	if (!is_dma_buf_file(file))
 		return -EINVAL;
@@ -224,9 +224,11 @@ static int dma_buf_mmap_internal(struct file *file, struct vm_area_struct *vma)
 	if (!dmabuf->ops->mmap)
 		return -EINVAL;
 
+	trace_android_vh_ignore_dmabuf_vmap_bounds(dmabuf, &ignore_bounds);
+
 	/* check for overflowing the buffer's size */
-	if (vma->vm_pgoff + vma_pages(vma) >
-	    dmabuf->size >> PAGE_SHIFT)
+	if ((vma->vm_pgoff + vma_pages(vma) >
+	    dmabuf->size >> PAGE_SHIFT) && !ignore_bounds)
 		return -EINVAL;
 
 	return dmabuf->ops->mmap(dmabuf, vma);
@@ -429,7 +431,7 @@ EXPORT_SYMBOL_GPL(dma_buf_set_name);
 static long dma_buf_set_name_user(struct dma_buf *dmabuf, const char __user *buf)
 {
 	char *name = strndup_user(buf, DMA_BUF_NAME_LEN);
-	long ret;
+	long ret = 0;
 
 	if (IS_ERR(name))
 		return PTR_ERR(name);
@@ -671,10 +673,11 @@ static const struct file_operations dma_buf_fops = {
 /*
  * is_dma_buf_file - Check if struct file* is associated with dma_buf
  */
-static inline int is_dma_buf_file(struct file *file)
+int is_dma_buf_file(struct file *file)
 {
 	return file->f_op == &dma_buf_fops;
 }
+EXPORT_SYMBOL_NS_GPL(is_dma_buf_file, DMA_BUF);
 
 static struct file *dma_buf_getfile(size_t size, int flags)
 {
@@ -1279,6 +1282,34 @@ struct sg_table *dma_buf_map_attachment(struct dma_buf_attachment *attach,
 EXPORT_SYMBOL_NS_GPL(dma_buf_map_attachment, DMA_BUF);
 
 /**
+ * dma_buf_map_attachment_unlocked - Returns the scatterlist table of the attachment;
+ * mapped into _device_ address space. Is a wrapper for map_dma_buf() of the
+ * dma_buf_ops.
+ * @attach:	[in]	attachment whose scatterlist is to be returned
+ * @direction:	[in]	direction of DMA transfer
+ *
+ * Unlocked variant of dma_buf_map_attachment().
+ */
+struct sg_table *
+dma_buf_map_attachment_unlocked(struct dma_buf_attachment *attach,
+				enum dma_data_direction direction)
+{
+	struct sg_table *sg_table;
+
+	might_sleep();
+
+	if (WARN_ON(!attach || !attach->dmabuf))
+		return ERR_PTR(-EINVAL);
+
+	dma_resv_lock(attach->dmabuf->resv, NULL);
+	sg_table = dma_buf_map_attachment(attach, direction);
+	dma_resv_unlock(attach->dmabuf->resv);
+
+	return sg_table;
+}
+EXPORT_SYMBOL_NS_GPL(dma_buf_map_attachment_unlocked, DMA_BUF);
+
+/**
  * dma_buf_unmap_attachment - unmaps and decreases usecount of the buffer;might
  * deallocate the scatterlist associated. Is a wrapper for unmap_dma_buf() of
  * dma_buf_ops.
@@ -1313,6 +1344,31 @@ void dma_buf_unmap_attachment(struct dma_buf_attachment *attach,
 		dma_buf_unpin(attach);
 }
 EXPORT_SYMBOL_NS_GPL(dma_buf_unmap_attachment, DMA_BUF);
+
+/**
+ * dma_buf_unmap_attachment_unlocked - unmaps and decreases usecount of the buffer;might
+ * deallocate the scatterlist associated. Is a wrapper for unmap_dma_buf() of
+ * dma_buf_ops.
+ * @attach:	[in]	attachment to unmap buffer from
+ * @sg_table:	[in]	scatterlist info of the buffer to unmap
+ * @direction:	[in]	direction of DMA transfer
+ *
+ * Unlocked variant of dma_buf_unmap_attachment().
+ */
+void dma_buf_unmap_attachment_unlocked(struct dma_buf_attachment *attach,
+				       struct sg_table *sg_table,
+				       enum dma_data_direction direction)
+{
+	might_sleep();
+
+	if (WARN_ON(!attach || !attach->dmabuf || !sg_table))
+		return;
+
+	dma_resv_lock(attach->dmabuf->resv, NULL);
+	dma_buf_unmap_attachment(attach, sg_table, direction);
+	dma_resv_unlock(attach->dmabuf->resv);
+}
+EXPORT_SYMBOL_NS_GPL(dma_buf_unmap_attachment_unlocked, DMA_BUF);
 
 /**
  * dma_buf_move_notify - notify attachments that DMA-buf is moving
@@ -1479,6 +1535,30 @@ int dma_buf_begin_cpu_access(struct dma_buf *dmabuf,
 }
 EXPORT_SYMBOL_NS_GPL(dma_buf_begin_cpu_access, DMA_BUF);
 
+int dma_buf_begin_cpu_access_partial(struct dma_buf *dmabuf,
+				     enum dma_data_direction direction,
+				     unsigned int offset, unsigned int len)
+{
+	int ret = 0;
+
+	if (WARN_ON(!dmabuf))
+		return -EINVAL;
+
+	if (dmabuf->ops->begin_cpu_access_partial)
+		ret = dmabuf->ops->begin_cpu_access_partial(dmabuf, direction,
+							    offset, len);
+
+	/* Ensure that all fences are waited upon - but we first allow
+	 * the native handler the chance to do so more efficiently if it
+	 * chooses. A double invocation here will be reasonably cheap no-op.
+	 */
+	if (ret == 0)
+		ret = __dma_buf_begin_cpu_access(dmabuf, direction);
+
+	return ret;
+}
+EXPORT_SYMBOL_GPL(dma_buf_begin_cpu_access_partial);
+
 /**
  * dma_buf_end_cpu_access - Must be called after accessing a dma_buf from the
  * cpu in the kernel context. Calls end_cpu_access to allow exporter-specific
@@ -1507,6 +1587,21 @@ int dma_buf_end_cpu_access(struct dma_buf *dmabuf,
 }
 EXPORT_SYMBOL_NS_GPL(dma_buf_end_cpu_access, DMA_BUF);
 
+int dma_buf_end_cpu_access_partial(struct dma_buf *dmabuf,
+				   enum dma_data_direction direction,
+				   unsigned int offset, unsigned int len)
+{
+	int ret = 0;
+
+	WARN_ON(!dmabuf);
+
+	if (dmabuf->ops->end_cpu_access_partial)
+		ret = dmabuf->ops->end_cpu_access_partial(dmabuf, direction,
+							  offset, len);
+
+	return ret;
+}
+EXPORT_SYMBOL_GPL(dma_buf_end_cpu_access_partial);
 
 /**
  * dma_buf_mmap - Setup up a userspace mmap with the given vma
@@ -1626,6 +1721,20 @@ void dma_buf_vunmap(struct dma_buf *dmabuf, struct iosys_map *map)
 	mutex_unlock(&dmabuf->lock);
 }
 EXPORT_SYMBOL_NS_GPL(dma_buf_vunmap, DMA_BUF);
+
+int dma_buf_get_flags(struct dma_buf *dmabuf, unsigned long *flags)
+{
+	int ret = 0;
+
+	if (WARN_ON(!dmabuf) || !flags)
+		return -EINVAL;
+
+	if (dmabuf->ops->get_flags)
+		ret = dmabuf->ops->get_flags(dmabuf, flags);
+
+	return ret;
+}
+EXPORT_SYMBOL_GPL(dma_buf_get_flags);
 
 #ifdef CONFIG_DEBUG_FS
 static int dma_buf_debug_show(struct seq_file *s, void *unused)

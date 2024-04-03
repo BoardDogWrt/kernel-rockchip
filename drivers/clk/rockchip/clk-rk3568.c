@@ -89,7 +89,7 @@ static struct rockchip_pll_rate_table rk3568_pll_rates[] = {
 	RK3036_PLL_RATE(108000000, 1, 45, 8, 1, 1, 0),
 	RK3036_PLL_RATE(100000000, 1, 150, 6, 6, 1, 0),
 	RK3036_PLL_RATE(96000000, 1, 96, 6, 4, 1, 0),
-	RK3036_PLL_RATE(78750000, 1, 96, 6, 4, 1, 0),
+	RK3036_PLL_RATE(78750000, 4, 315, 6, 4, 1, 0),
 	RK3036_PLL_RATE(74250000, 2, 99, 4, 4, 1, 0),
 	{ /* sentinel */ },
 };
@@ -599,7 +599,7 @@ static struct rockchip_clk_branch rk3568_clk_branches[] __initdata = {
 	MUXGRF(CLK_DDR1X, "clk_ddr1x", clk_ddr1x_p, CLK_SET_RATE_PARENT,
 			RK3568_CLKSEL_CON(9), 15, 1, MFLAGS),
 
-	COMPOSITE_NOMUX(CLK_MSCH, "clk_msch", "clk_ddr1x", CLK_IGNORE_UNUSED,
+	COMPOSITE_NOMUX(CLK_MSCH, "clk_msch", "clk_ddr1x", CLK_IS_CRITICAL,
 			RK3568_CLKSEL_CON(10), 0, 2, DFLAGS,
 			RK3568_CLKGATE_CON(4), 2, GFLAGS),
 	GATE(CLK24_DDRMON, "clk24_ddrmon", "xin24m", CLK_IGNORE_UNUSED,
@@ -1074,13 +1074,13 @@ static struct rockchip_clk_branch rk3568_clk_branches[] __initdata = {
 			RK3568_CLKGATE_CON(20), 8, GFLAGS),
 	GATE(HCLK_VOP, "hclk_vop", "hclk_vo", 0,
 			RK3568_CLKGATE_CON(20), 9, GFLAGS),
-	COMPOSITE(DCLK_VOP0, "dclk_vop0", hpll_vpll_gpll_cpll_p, CLK_SET_RATE_PARENT | CLK_SET_RATE_NO_REPARENT,
+	COMPOSITE(DCLK_VOP0, "dclk_vop0", hpll_vpll_gpll_cpll_p, CLK_SET_RATE_NO_REPARENT,
 			RK3568_CLKSEL_CON(39), 10, 2, MFLAGS, 0, 8, DFLAGS,
 			RK3568_CLKGATE_CON(20), 10, GFLAGS),
-	COMPOSITE(DCLK_VOP1, "dclk_vop1", hpll_vpll_gpll_cpll_p, CLK_SET_RATE_PARENT | CLK_SET_RATE_NO_REPARENT,
+	COMPOSITE(DCLK_VOP1, "dclk_vop1", hpll_vpll_gpll_cpll_p, CLK_SET_RATE_NO_REPARENT,
 			RK3568_CLKSEL_CON(40), 10, 2, MFLAGS, 0, 8, DFLAGS,
 			RK3568_CLKGATE_CON(20), 11, GFLAGS),
-	COMPOSITE(DCLK_VOP2, "dclk_vop2", hpll_vpll_gpll_cpll_p, 0,
+	COMPOSITE(DCLK_VOP2, "dclk_vop2", hpll_vpll_gpll_cpll_p, CLK_SET_RATE_NO_REPARENT,
 			RK3568_CLKSEL_CON(41), 10, 2, MFLAGS, 0, 8, DFLAGS,
 			RK3568_CLKGATE_CON(20), 12, GFLAGS),
 	GATE(CLK_VOP_PWM, "clk_vop_pwm", "xin24m", 0,
@@ -1624,6 +1624,16 @@ static void rk3568_dump_cru(void)
 	}
 }
 
+static int protect_clocks[] = {
+	ACLK_VO,
+	HCLK_VO,
+	ACLK_VOP,
+	HCLK_VOP,
+	DCLK_VOP0,
+	DCLK_VOP1,
+	DCLK_VOP2,
+};
+
 static void __init rk3568_pmu_clk_init(struct device_node *np)
 {
 	struct rockchip_clk_provider *ctx;
@@ -1701,6 +1711,8 @@ static void __init rk3568_clk_init(struct device_node *np)
 
 	if (!rk_dump_cru)
 		rk_dump_cru = rk3568_dump_cru;
+
+	rockchip_clk_protect(ctx, protect_clocks, ARRAY_SIZE(protect_clocks));
 }
 
 CLK_OF_DECLARE(rk3568_cru, "rockchip,rk3568-cru", rk3568_clk_init);

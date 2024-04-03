@@ -54,6 +54,8 @@
 #include <trace/events/initcall.h>
 #define CREATE_TRACE_POINTS
 #include <trace/events/printk.h>
+#undef CREATE_TRACE_POINTS
+#include <trace/hooks/printk.h>
 
 #include "printk_ringbuffer.h"
 #include "console_cmdline.h"
@@ -2128,6 +2130,8 @@ static u16 printk_sprint(char *text, u16 size, int facility,
 	return text_len;
 }
 
+EXPORT_TRACEPOINT_SYMBOL_GPL(console);
+
 __printf(4, 0)
 int vprintk_store(int facility, int level,
 		  const struct dev_printk_info *dev_info,
@@ -2287,7 +2291,11 @@ asmlinkage int vprintk_emit(int facility, int level,
 		preempt_enable();
 	}
 
-	wake_up_klogd();
+	if (in_sched)
+		defer_console_output();
+	else
+		wake_up_klogd();
+
 	return printed_len;
 }
 EXPORT_SYMBOL(vprintk_emit);
@@ -2562,6 +2570,12 @@ void resume_console(void)
  */
 static int console_cpu_notify(unsigned int cpu)
 {
+	int flag = 0;
+
+	trace_android_vh_printk_hotplug(&flag);
+	if (flag)
+		return 0;
+
 	if (!cpuhp_tasks_frozen) {
 		/* If trylock fails, someone else is doing the printing */
 		if (console_trylock())
@@ -2569,54 +2583,6 @@ static int console_cpu_notify(unsigned int cpu)
 	}
 	return 0;
 }
-
-/**
- * console_lock - lock the console system for exclusive use.
- *
- * Acquires a lock which guarantees that the caller has
- * exclusive access to the console system and the console_drivers list.
- *
- * Can sleep, returns nothing.
- */
-void console_lock(void)
-{
-	might_sleep();
-
-	down_console_sem();
-	if (console_suspended)
-		return;
-	console_locked = 1;
-	console_may_schedule = 1;
-}
-EXPORT_SYMBOL(console_lock);
-
-/**
- * console_trylock - try to lock the console system for exclusive use.
- *
- * Try to acquire a lock which guarantees that the caller has exclusive
- * access to the console system and the console_drivers list.
- *
- * returns 1 on success, and 0 on failure to acquire the lock.
- */
-int console_trylock(void)
-{
-	if (down_trylock_console_sem())
-		return 0;
-	if (console_suspended) {
-		up_console_sem();
-		return 0;
-	}
-	console_locked = 1;
-	console_may_schedule = 0;
-	return 1;
-}
-EXPORT_SYMBOL(console_trylock);
-
-int is_console_locked(void)
-{
-	return console_locked;
-}
-EXPORT_SYMBOL(is_console_locked);
 
 /*
  * Return true when this CPU should unlock console_sem without pushing all
@@ -2636,6 +2602,61 @@ static bool abandon_console_lock_in_panic(void)
 	 */
 	return atomic_read(&panic_cpu) != raw_smp_processor_id();
 }
+
+/**
+ * console_lock - lock the console system for exclusive use.
+ *
+ * Acquires a lock which guarantees that the caller has
+ * exclusive access to the console system and the console_drivers list.
+ *
+ * Can sleep, returns nothing.
+ */
+void console_lock(void)
+{
+	might_sleep();
+
+	/* On panic, the console_lock must be left to the panic cpu. */
+	while (abandon_console_lock_in_panic())
+		msleep(1000);
+
+	down_console_sem();
+	if (console_suspended)
+		return;
+	console_locked = 1;
+	console_may_schedule = 1;
+}
+EXPORT_SYMBOL(console_lock);
+
+/**
+ * console_trylock - try to lock the console system for exclusive use.
+ *
+ * Try to acquire a lock which guarantees that the caller has exclusive
+ * access to the console system and the console_drivers list.
+ *
+ * returns 1 on success, and 0 on failure to acquire the lock.
+ */
+int console_trylock(void)
+{
+	/* On panic, the console_lock must be left to the panic cpu. */
+	if (abandon_console_lock_in_panic())
+		return 0;
+	if (down_trylock_console_sem())
+		return 0;
+	if (console_suspended) {
+		up_console_sem();
+		return 0;
+	}
+	console_locked = 1;
+	console_may_schedule = 0;
+	return 1;
+}
+EXPORT_SYMBOL(console_trylock);
+
+int is_console_locked(void)
+{
+	return console_locked;
+}
+EXPORT_SYMBOL(is_console_locked);
 
 /*
  * Check if the given console is currently capable and allowed to print
@@ -3501,11 +3522,33 @@ static void __wake_up_klogd(int val)
 	preempt_enable();
 }
 
+/**
+ * wake_up_klogd - Wake kernel logging daemon
+ *
+ * Use this function when new records have been added to the ringbuffer
+ * and the console printing of those records has already occurred or is
+ * known to be handled by some other context. This function will only
+ * wake the logging daemon.
+ *
+ * Context: Any context.
+ */
 void wake_up_klogd(void)
 {
 	__wake_up_klogd(PRINTK_PENDING_WAKEUP);
 }
 
+/**
+ * defer_console_output - Wake kernel logging daemon and trigger
+ *	console printing in a deferred context
+ *
+ * Use this function when new records have been added to the ringbuffer,
+ * this context is responsible for console printing those records, but
+ * the current context is not allowed to perform the console printing.
+ * Trigger an irq_work context to perform the console printing. This
+ * function also wakes the logging daemon.
+ *
+ * Context: Any context.
+ */
 void defer_console_output(void)
 {
 	/*
@@ -3522,12 +3565,7 @@ void printk_trigger_flush(void)
 
 int vprintk_deferred(const char *fmt, va_list args)
 {
-	int r;
-
-	r = vprintk_emit(0, LOGLEVEL_SCHED, NULL, fmt, args);
-	defer_console_output();
-
-	return r;
+	return vprintk_emit(0, LOGLEVEL_SCHED, NULL, fmt, args);
 }
 
 int _printk_deferred(const char *fmt, ...)
@@ -3541,6 +3579,7 @@ int _printk_deferred(const char *fmt, ...)
 
 	return r;
 }
+EXPORT_SYMBOL_GPL(_printk_deferred);
 
 /*
  * printk rate limiting, lifted from the networking subsystem.

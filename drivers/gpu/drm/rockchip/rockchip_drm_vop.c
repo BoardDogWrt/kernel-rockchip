@@ -42,7 +42,6 @@
 #ifdef CONFIG_DRM_ANALOGIX_DP
 #include <drm/bridge/analogix_dp.h>
 #endif
-#include <dt-bindings/soc/rockchip-system-status.h>
 
 #include <soc/rockchip/rockchip_dmc.h>
 #include <soc/rockchip/rockchip-system-status.h>
@@ -228,7 +227,6 @@ struct vop {
 	struct dentry *debugfs;
 	struct drm_info_list *debugfs_files;
 	struct drm_property *plane_feature_prop;
-	struct drm_property *plane_mask_prop;
 	struct drm_property *feature_prop;
 
 	bool is_iommu_enabled;
@@ -243,7 +241,6 @@ struct vop {
 	u32 background;
 	u32 line_flag;
 	u8 id;
-	u8 plane_mask;
 	u64 soc_id;
 	struct drm_prop_enum_list *plane_name_list;
 
@@ -323,6 +320,8 @@ static const struct drm_bus_format_enum_list drm_bus_format_enum_list[] = {
 	{ MEDIA_BUS_FMT_UYYVYY8_0_5X24, "UYYVYY8_0_5X24" },
 	{ MEDIA_BUS_FMT_YUV10_1X30, "YUV10_1X30" },
 	{ MEDIA_BUS_FMT_UYYVYY10_0_5X30, "UYYVYY10_0_5X30" },
+	{ MEDIA_BUS_FMT_RGB565_2X8_LE, "RGB565_2X8_LE" },
+	{ MEDIA_BUS_FMT_RGB666_3X6, "RGB666_3X6" },
 	{ MEDIA_BUS_FMT_RGB888_3X8, "RGB888_3X8" },
 	{ MEDIA_BUS_FMT_RGB888_DUMMY_4X8, "RGB888_DUMMY_4X8" },
 	{ MEDIA_BUS_FMT_RGB888_1X24, "RGB888_1X24" },
@@ -468,6 +467,11 @@ static void vop_load_sdr2hdr_table(struct vop *vop, uint32_t cmd)
 	const struct vop_hdr_table *table = vop->data->hdr_table;
 	uint32_t sdr2hdr_eotf_oetf_yn[65];
 	uint32_t sdr2hdr_oetf_dx_dxpow[64];
+
+	if (cmd != SDR2HDR_FOR_BT2020 && cmd != SDR2HDR_FOR_HDR && cmd != SDR2HDR_FOR_HLG_HDR) {
+		DRM_WARN("unknown sdr2hdr oetf: %d\n", cmd);
+		return;
+	}
 
 	for (i = 0; i < 65; i++) {
 		if (cmd == SDR2HDR_FOR_BT2020)
@@ -1559,6 +1563,17 @@ static int vop_crtc_atomic_gamma_set(struct drm_crtc *crtc,
 	return 0;
 }
 
+static void vop_regsbak(struct vop *vop)
+{
+	int i;
+
+	/*
+	 * No need to backup DSC/GAMMA_LUT/BPP_LUT/MMU
+	 */
+	for (i = 0; i < vop->len; i += sizeof(u32))
+		vop->regsbak[i / 4] = readl_relaxed(vop->regs + i);
+}
+
 static void vop_power_enable(struct drm_crtc *crtc)
 {
 	struct vop *vop = to_vop(crtc);
@@ -1588,7 +1603,7 @@ static void vop_power_enable(struct drm_crtc *crtc)
 		return;
 	}
 
-	memcpy(vop->regsbak, vop->regs, vop->len);
+	vop_regsbak(vop);
 
 	if (VOP_CTRL_SUPPORT(vop, version)) {
 		uint32_t version = VOP_CTRL_GET(vop, version);
@@ -1852,13 +1867,29 @@ static int vop_plane_atomic_check(struct drm_plane *plane,
 	 * need align with 2 pixel.
 	 */
 	if (fb->format->is_yuv && ((new_plane_state->src.x1 >> 16) % 2)) {
-		DRM_ERROR("Invalid Source: Yuv format not support odd xpos\n");
+		DRM_DEBUG_KMS("Invalid Source: Yuv format not support odd xpos\n");
 		return -EINVAL;
 	}
 
 	if (fb->format->is_yuv && new_plane_state->rotation & DRM_MODE_REFLECT_Y) {
-		DRM_ERROR("Invalid Source: Yuv format does not support this rotation\n");
+		DRM_DEBUG_KMS("Invalid Source: Yuv format does not support this rotation\n");
 		return -EINVAL;
+	}
+
+	if (rockchip_afbc(plane, new_plane_state->fb->modifier)) {
+		if (new_plane_state->src.x1 || new_plane_state->src.y1) {
+			DRM_DEBUG_KMS("AFBC does not support offset display, " \
+				      "xpos=%d, ypos=%d, offset=%d\n",
+				      new_plane_state->src.x1, new_plane_state->src.y1,
+				      fb->offsets[0]);
+			return -EINVAL;
+		}
+
+		if (new_plane_state->rotation && new_plane_state->rotation != DRM_MODE_ROTATE_0) {
+			DRM_DEBUG_KMS("No rotation support in AFBC, rotation=%d\n",
+				      new_plane_state->rotation);
+			return -EINVAL;
+		}
 	}
 
 	offset = (src->x1 >> 16) * fb->format->cpp[0];
@@ -1874,19 +1905,6 @@ static int vop_plane_atomic_check(struct drm_plane *plane,
 	if (fb->format->is_yuv) {
 		int hsub = fb->format->hsub;
 		int vsub = fb->format->vsub;
-
-		if (new_plane_state->src.x1 || new_plane_state->src.y1) {
-			DRM_ERROR("AFBC does not support offset display, xpos=%d, ypos=%d, offset=%d\n",
-				  new_plane_state->src.x1,
-				  new_plane_state->src.y1, fb->offsets[0]);
-			return -EINVAL;
-		}
-
-		if (new_plane_state->rotation && new_plane_state->rotation != DRM_MODE_ROTATE_0) {
-			DRM_ERROR("No rotation support in AFBC, rotation=%d\n",
-				  new_plane_state->rotation);
-			return -EINVAL;
-		}
 
 		offset = (src->x1 >> 16) * fb->format->cpp[1] / hsub;
 		offset += (src->y1 >> 16) * fb->pitches[1] / vsub;
@@ -1915,6 +1933,9 @@ static void vop_plane_atomic_disable(struct drm_plane *plane,
 
 	if (!old_state->crtc)
 		return;
+
+	rockchip_drm_dbg(vop->dev, VOP_DEBUG_PLANE, "disable win%d-area%d by %s\n",
+			 win->win_id, win->area_id, current->comm);
 
 	spin_lock(&vop->reg_lock);
 
@@ -2193,6 +2214,12 @@ static void vop_plane_atomic_update(struct drm_plane *plane,
 	VOP_WIN_SET(vop, win, enable, 1);
 	VOP_WIN_SET(vop, win, gate, 1);
 	spin_unlock(&vop->reg_lock);
+
+	rockchip_drm_dbg(vop->dev, VOP_DEBUG_PLANE,
+			 "update win%d-area%d [%dx%d->%dx%d@(%d, %d)] zpos:%d fmt[%p4cc%s] addr[%pad] by %s\n",
+			 win->win_id, win->area_id, actual_w, actual_h,
+			 dsp_w, dsp_h, dsp_stx, dsp_sty, vop_plane_state->zpos, &fb->format->format,
+			 fb->modifier ? "[AFBC]" : "", &vop_plane_state->yrgb_mst, current->comm);
 	/*
 	 * spi interface(vop_plane_state->yrgb_kvaddr, fb->pixel_format,
 	 * actual_w, actual_h)
@@ -2450,7 +2477,7 @@ static void vop_atomic_plane_reset(struct drm_plane *plane)
 		return;
 
 	__drm_atomic_helper_plane_reset(plane, &vop_plane_state->base);
-	win->state.zpos = win->zpos;
+	vop_plane_state->base.zpos = win->zpos;
 	vop_plane_state->global_alpha = 0xff;
 }
 
@@ -3204,8 +3231,8 @@ static bool vop_crtc_mode_fixup(struct drm_crtc *crtc,
 {
 	struct vop *vop = to_vop(crtc);
 	const struct vop_data *vop_data = vop->data;
-	struct rockchip_crtc_state *s =
-			to_rockchip_crtc_state(crtc->state);
+	struct drm_crtc_state *new_crtc_state = container_of(mode, struct drm_crtc_state, mode);
+	struct rockchip_crtc_state *s = to_rockchip_crtc_state(new_crtc_state);
 	unsigned long rate;
 
 	if (mode->hdisplay > vop_data->max_output.width)
@@ -3221,6 +3248,10 @@ static bool vop_crtc_mode_fixup(struct drm_crtc *crtc,
 	    (VOP_MAJOR(vop->version) == 2 && VOP_MINOR(vop->version) >= 12 &&
 	     s->output_if & VOP_OUTPUT_IF_BT656))
 		adj_mode->crtc_clock *= 2;
+
+	if (vop->mcu_timing.mcu_pix_total)
+		adj_mode->crtc_clock *= rockchip_drm_get_cycles_per_pixel(s->bus_format) *
+					(vop->mcu_timing.mcu_pix_total + 1);
 
 	/*
 	 * Clock craziness.
@@ -3248,11 +3279,11 @@ static bool vop_crtc_mode_fixup(struct drm_crtc *crtc,
 	 * 4. Store the rounded up rate so that we don't need to worry about
 	 *    this in the actual clk_set_rate().
 	 */
-	rate = clk_round_rate(vop->dclk, adj_mode->clock * 1000);
-	if (rate / 1000 != adj_mode->clock)
+	rate = clk_round_rate(vop->dclk, adj_mode->crtc_clock * 1000);
+	if (rate / 1000 != adj_mode->crtc_clock)
 		rate = clk_round_rate(vop->dclk,
-				      adj_mode->clock * 1000 + 999);
-	adj_mode->clock = DIV_ROUND_UP(rate, 1000);
+				      adj_mode->crtc_clock * 1000 + 999);
+	adj_mode->crtc_clock = DIV_ROUND_UP(rate, 1000);
 
 	return true;
 }
@@ -3396,6 +3427,12 @@ static void vop_mcu_mode(struct drm_crtc *crtc)
 {
 	struct vop *vop = to_vop(crtc);
 
+	/*
+	 * If mcu_hold_mode is 1, set 1 to mcu_frame_st will
+	 * refresh one frame from ddr. So mcu_frame_st is needed
+	 * to be initialized as 0.
+	 */
+	VOP_CTRL_SET(vop, mcu_frame_st, 0);
 	VOP_CTRL_SET(vop, mcu_clk_sel, 1);
 	VOP_CTRL_SET(vop, mcu_type, 1);
 
@@ -4187,6 +4224,7 @@ static void vop_crtc_atomic_flush(struct drm_crtc *crtc,
 	spin_lock_irqsave(&vop->irq_lock, flags);
 	vop->pre_overlay = s->hdr.pre_overlay;
 	vop_cfg_done(vop);
+	rockchip_drm_dbg(vop->dev, VOP_DEBUG_CFG_DONE, "cfg_done\n\n");
 	/*
 	 * rk322x and rk332x odd-even field will mistake when in interlace mode.
 	 * we must switch to frame effect before switch screen and switch to
@@ -4553,6 +4591,7 @@ static irqreturn_t vop_isr(int irq, void *data)
 		 * frame effective, but actually it's effective immediately, so
 		 * we config this register at frame start.
 		 */
+		rockchip_drm_dbg(vop->dev, VOP_DEBUG_VSYNC, "vsync\n");
 		spin_lock_irqsave(&vop->irq_lock, flags);
 		VOP_CTRL_SET(vop, level2_overlay_en, vop->pre_overlay);
 		VOP_CTRL_SET(vop, alpha_hard_calc, vop->pre_overlay);
@@ -4771,32 +4810,6 @@ static int vop_of_init_display_lut(struct vop *vop)
 	return 0;
 }
 
-static int vop_crtc_create_plane_mask_property(struct vop *vop, struct drm_crtc *crtc)
-{
-	struct drm_property *prop;
-
-	static const struct drm_prop_enum_list props[] = {
-		{ ROCKCHIP_VOP_WIN0, "Win0" },
-		{ ROCKCHIP_VOP_WIN1, "Win1" },
-		{ ROCKCHIP_VOP_WIN2, "Win2" },
-		{ ROCKCHIP_VOP_WIN3, "Win3" },
-	};
-
-	prop = drm_property_create_bitmask(vop->drm_dev,
-					   DRM_MODE_PROP_IMMUTABLE, "PLANE_MASK",
-					   props, ARRAY_SIZE(props),
-					   0xffffffff);
-	if (!prop) {
-		DRM_DEV_ERROR(vop->dev, "create plane_mask prop for vp%d failed\n", vop->id);
-		return -ENOMEM;
-	}
-
-	vop->plane_mask_prop = prop;
-	drm_object_attach_property(&crtc->base, vop->plane_mask_prop, vop->plane_mask);
-
-	return 0;
-}
-
 static int vop_crtc_create_feature_property(struct vop *vop, struct drm_crtc *crtc)
 {
 	const struct vop_data *vop_data = vop->data;
@@ -4924,7 +4937,6 @@ static int vop_create_crtc(struct vop *vop)
 	VOP_ATTACH_MODE_CONFIG_PROP(tv_top_margin_property, 100);
 	VOP_ATTACH_MODE_CONFIG_PROP(tv_bottom_margin_property, 100);
 #undef VOP_ATTACH_MODE_CONFIG_PROP
-	vop_crtc_create_plane_mask_property(vop, crtc);
 	vop_crtc_create_feature_property(vop, crtc);
 	ret = drm_self_refresh_helper_init(crtc);
 	if (ret)
@@ -5093,7 +5105,6 @@ static int vop_win_init(struct vop *vop)
 			vop_area->name = devm_kstrdup(vop->dev, name, GFP_KERNEL);
 			num_wins++;
 		}
-		vop->plane_mask |= BIT(vop_win->win_id);
 	}
 
 	vop->num_wins = num_wins;

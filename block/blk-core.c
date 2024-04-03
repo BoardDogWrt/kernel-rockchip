@@ -58,6 +58,12 @@ EXPORT_TRACEPOINT_SYMBOL_GPL(block_bio_complete);
 EXPORT_TRACEPOINT_SYMBOL_GPL(block_split);
 EXPORT_TRACEPOINT_SYMBOL_GPL(block_unplug);
 EXPORT_TRACEPOINT_SYMBOL_GPL(block_rq_insert);
+EXPORT_TRACEPOINT_SYMBOL_GPL(block_bio_queue);
+EXPORT_TRACEPOINT_SYMBOL_GPL(block_getrq);
+EXPORT_TRACEPOINT_SYMBOL_GPL(block_rq_issue);
+EXPORT_TRACEPOINT_SYMBOL_GPL(block_rq_merge);
+EXPORT_TRACEPOINT_SYMBOL_GPL(block_rq_requeue);
+EXPORT_TRACEPOINT_SYMBOL_GPL(block_rq_complete);
 
 DEFINE_IDA(blk_queue_ida);
 
@@ -1140,8 +1146,7 @@ void __blk_flush_plug(struct blk_plug *plug, bool from_schedule)
 {
 	if (!list_empty(&plug->cb_list))
 		flush_plug_callbacks(plug, from_schedule);
-	if (!rq_list_empty(plug->mq_list))
-		blk_mq_flush_plug_list(plug, from_schedule);
+	blk_mq_flush_plug_list(plug, from_schedule);
 	/*
 	 * Unconditionally flush out cached requests, even if the unplug
 	 * event came from schedule. Since we know hold references to the

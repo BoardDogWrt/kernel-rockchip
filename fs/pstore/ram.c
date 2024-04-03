@@ -21,6 +21,7 @@
 #include <linux/pstore_ram.h>
 #include <linux/of.h>
 #include <linux/of_address.h>
+#include <linux/of_reserved_mem.h>
 #include "internal.h"
 
 #if IS_REACHABLE(CONFIG_ROCKCHIP_MINIDUMP)
@@ -695,6 +696,7 @@ static int ramoops_parse_dt(struct platform_device *pdev,
 {
 	struct device_node *of_node = pdev->dev.of_node;
 	struct device_node *parent_node;
+	struct reserved_mem *rmem;
 	struct resource *res;
 	u32 value;
 	int ret;
@@ -703,13 +705,20 @@ static int ramoops_parse_dt(struct platform_device *pdev,
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	if (!res) {
-		dev_err(&pdev->dev,
-			"failed to locate DT /reserved-memory resource\n");
-		return -EINVAL;
+		rmem = of_reserved_mem_lookup(of_node);
+		if (rmem) {
+			pdata->mem_size = rmem->size;
+			pdata->mem_address = rmem->base;
+		} else {
+			dev_err(&pdev->dev,
+				"failed to locate DT /reserved-memory resource\n");
+			return -EINVAL;
+		}
+	} else {
+		pdata->mem_size = resource_size(res);
+		pdata->mem_address = res->start;
 	}
 
-	pdata->mem_size = resource_size(res);
-	pdata->mem_address = res->start;
 	/*
 	 * Setting "unbuffered" is deprecated and will be ignored if
 	 * "mem_type" is also specified.
@@ -790,10 +799,12 @@ static void ramoops_register_ram_zone_info_to_minidump(struct ramoops_context *c
 	int i = 0;
 	struct persistent_ram_zone *prz = NULL;
 
+#ifdef CONFIG_PSTORE_BOOT_LOG
 	for (i = 0; i < cxt->max_boot_log_cnt; i++) {
 		prz = cxt->boot_przs[i];
 		_ramoops_register_ram_zone_info_to_minidump(prz);
 	}
+#endif
 
 	for (i = 0; i < cxt->max_dump_cnt; i++) {
 		prz = cxt->dprzs[i];

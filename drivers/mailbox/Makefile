@@ -21,6 +21,8 @@ obj-$(CONFIG_OMAP2PLUS_MBOX)	+= omap-mailbox.o
 
 obj-$(CONFIG_ROCKCHIP_MBOX)	+= rockchip-mailbox.o
 
+obj-$(CONFIG_ROCKCHIP_MBOX_DEMO)	+= rockchip-mbox-demo.o
+
 obj-$(CONFIG_PCC)		+= pcc.o
 
 obj-$(CONFIG_ALTERA_MBOX)	+= mailbox-altera.o
@@ -54,6 +56,8 @@ obj-$(CONFIG_MTK_ADSP_MBOX)	+= mtk-adsp-mailbox.o
 obj-$(CONFIG_MTK_CMDQ_MBOX)	+= mtk-cmdq-mailbox.o
 
 obj-$(CONFIG_ZYNQMP_IPI_MBOX)	+= zynqmp-ipi-mailbox.o
+
+obj-$(CONFIG_GUNYAH)		+= gunyah-msgq.o
 
 obj-$(CONFIG_SUN6I_MSGBOX)	+= sun6i-msgbox.o
 

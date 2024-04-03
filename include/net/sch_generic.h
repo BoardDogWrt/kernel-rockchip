@@ -16,6 +16,7 @@
 #include <linux/rwsem.h>
 #include <linux/atomic.h>
 #include <linux/hashtable.h>
+#include <linux/android_kabi.h>
 #include <net/gen_stats.h>
 #include <net/rtnetlink.h>
 #include <net/flow_offload.h>
@@ -126,6 +127,9 @@ struct Qdisc {
 
 	struct rcu_head		rcu;
 	netdevice_tracker	dev_tracker;
+
+	ANDROID_KABI_RESERVE(1);
+
 	/* private data */
 	long privdata[] ____cacheline_aligned;
 };
@@ -135,6 +139,13 @@ static inline void qdisc_refcount_inc(struct Qdisc *qdisc)
 	if (qdisc->flags & TCQ_F_BUILTIN)
 		return;
 	refcount_inc(&qdisc->refcnt);
+}
+
+static inline bool qdisc_refcount_dec_if_one(struct Qdisc *qdisc)
+{
+	if (qdisc->flags & TCQ_F_BUILTIN)
+		return true;
+	return refcount_dec_if_one(&qdisc->refcnt);
 }
 
 /* Intended to be used by unlocked users, when concurrent qdisc release is
@@ -270,6 +281,8 @@ struct Qdisc_class_ops {
 					struct sk_buff *skb, struct tcmsg*);
 	int			(*dump_stats)(struct Qdisc *, unsigned long,
 					struct gnet_dump *);
+
+	ANDROID_KABI_RESERVE(1);
 };
 
 /* Qdisc_class_ops flag values */
@@ -315,6 +328,8 @@ struct Qdisc_ops {
 	u32			(*egress_block_get)(struct Qdisc *sch);
 
 	struct module		*owner;
+
+	ANDROID_KABI_RESERVE(1);
 };
 
 
@@ -543,7 +558,7 @@ static inline struct Qdisc *qdisc_root_bh(const struct Qdisc *qdisc)
 
 static inline struct Qdisc *qdisc_root_sleeping(const struct Qdisc *qdisc)
 {
-	return qdisc->dev_queue->qdisc_sleeping;
+	return rcu_dereference_rtnl(qdisc->dev_queue->qdisc_sleeping);
 }
 
 static inline spinlock_t *qdisc_root_sleeping_lock(const struct Qdisc *qdisc)
@@ -650,6 +665,7 @@ void dev_deactivate_many(struct list_head *head);
 struct Qdisc *dev_graft_qdisc(struct netdev_queue *dev_queue,
 			      struct Qdisc *qdisc);
 void qdisc_reset(struct Qdisc *qdisc);
+void qdisc_destroy(struct Qdisc *qdisc);
 void qdisc_put(struct Qdisc *qdisc);
 void qdisc_put_unlocked(struct Qdisc *qdisc);
 void qdisc_tree_reduce_backlog(struct Qdisc *qdisc, int n, int len);
@@ -752,7 +768,9 @@ static inline bool qdisc_tx_changing(const struct net_device *dev)
 
 	for (i = 0; i < dev->num_tx_queues; i++) {
 		struct netdev_queue *txq = netdev_get_tx_queue(dev, i);
-		if (rcu_access_pointer(txq->qdisc) != txq->qdisc_sleeping)
+
+		if (rcu_access_pointer(txq->qdisc) !=
+		    rcu_access_pointer(txq->qdisc_sleeping))
 			return true;
 	}
 	return false;

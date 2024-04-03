@@ -13,6 +13,7 @@
 #include <linux/writeback.h>
 #include <linux/pagevec.h>
 #include <linux/prefetch.h>
+#include <linux/cleancache.h>
 #include <linux/fsverity.h>
 #include "misc.h"
 #include "extent_io.h"
@@ -1764,6 +1765,15 @@ static int btrfs_do_readpage(struct page *page, struct extent_map **em_cached,
 		goto out;
 	}
 
+	if (!PageUptodate(page)) {
+		if (cleancache_get_page(page) == 0) {
+			BUG_ON(blocksize != PAGE_SIZE);
+			unlock_extent(tree, start, end, NULL);
+			unlock_page(page);
+			goto out;
+		}
+	}
+
 	if (page->index == last_byte >> PAGE_SHIFT) {
 		size_t zero_offset = offset_in_page(last_byte);
 
@@ -3015,11 +3025,12 @@ retry:
 			}
 
 			/*
-			 * the filesystem may choose to bump up nr_to_write.
+			 * The filesystem may choose to bump up nr_to_write.
 			 * We have to make sure to honor the new nr_to_write
-			 * at any time
+			 * at any time.
 			 */
-			nr_to_write_done = wbc->nr_to_write <= 0;
+			nr_to_write_done = (wbc->sync_mode == WB_SYNC_NONE &&
+					    wbc->nr_to_write <= 0);
 		}
 		pagevec_release(&pvec);
 		cond_resched();
@@ -5183,8 +5194,14 @@ void read_extent_buffer(const struct extent_buffer *eb, void *dstv,
 	char *dst = (char *)dstv;
 	unsigned long i = get_eb_page_index(start);
 
-	if (check_eb_range(eb, start, len))
+	if (check_eb_range(eb, start, len)) {
+		/*
+		 * Invalid range hit, reset the memory, so callers won't get
+		 * some random garbage for their uninitialzed memory.
+		 */
+		memset(dstv, 0, len);
 		return;
+	}
 
 	offset = get_eb_offset_in_page(eb, start);
 

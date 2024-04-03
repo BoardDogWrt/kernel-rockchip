@@ -8,6 +8,7 @@
 #include <linux/delay.h>
 #include <linux/interrupt.h>
 #include <linux/module.h>
+#include <linux/nvmem-consumer.h>
 #include <linux/of.h>
 #include <linux/of_gpio.h>
 #include <linux/of_graph.h>
@@ -22,7 +23,6 @@
 #include <media/videobuf2-dma-sg.h>
 #include <media/v4l2-fwnode.h>
 #include <linux/iommu.h>
-#include <dt-bindings/soc/rockchip-system-status.h>
 #include <soc/rockchip/rockchip-system-status.h>
 #include <linux/io.h>
 #include <linux/mfd/syscon.h>
@@ -698,6 +698,10 @@ static const struct cif_reg rk3588_cif_regs[] = {
 	[CIF_REG_MIPI_EFFECT_CODE_ID1] = CIF_REG(CSI_MIPI0_EFFECT_CODE_ID1),
 	[CIF_REG_MIPI_EFFECT_CODE_ID2] = CIF_REG(CSI_MIPI0_EFFECT_CODE_ID2),
 	[CIF_REG_MIPI_EFFECT_CODE_ID3] = CIF_REG(CSI_MIPI0_EFFECT_CODE_ID3),
+	[CIF_REG_MIPI_FRAME_SIZE_ID0] = CIF_REG(CSI_MIPI0_FRAME_SIZE_ID0),
+	[CIF_REG_MIPI_FRAME_SIZE_ID1] = CIF_REG(CSI_MIPI0_FRAME_SIZE_ID1),
+	[CIF_REG_MIPI_FRAME_SIZE_ID2] = CIF_REG(CSI_MIPI0_FRAME_SIZE_ID2),
+	[CIF_REG_MIPI_FRAME_SIZE_ID3] = CIF_REG(CSI_MIPI0_FRAME_SIZE_ID3),
 	[CIF_REG_MIPI_ON_PAD] = CIF_REG(CSI_MIPI0_ON_PAD),
 
 	[CIF_REG_GLB_CTRL] = CIF_REG(GLB_CTRL),
@@ -822,6 +826,10 @@ static const struct cif_reg rv1106_cif_regs[] = {
 	[CIF_REG_MIPI_EFFECT_CODE_ID1] = CIF_REG(CSI_MIPI0_EFFECT_CODE_ID1),
 	[CIF_REG_MIPI_EFFECT_CODE_ID2] = CIF_REG(CSI_MIPI0_EFFECT_CODE_ID2),
 	[CIF_REG_MIPI_EFFECT_CODE_ID3] = CIF_REG(CSI_MIPI0_EFFECT_CODE_ID3),
+	[CIF_REG_MIPI_FRAME_SIZE_ID0] = CIF_REG(CSI_MIPI0_FRAME_SIZE_ID0),
+	[CIF_REG_MIPI_FRAME_SIZE_ID1] = CIF_REG(CSI_MIPI0_FRAME_SIZE_ID1),
+	[CIF_REG_MIPI_FRAME_SIZE_ID2] = CIF_REG(CSI_MIPI0_FRAME_SIZE_ID2),
+	[CIF_REG_MIPI_FRAME_SIZE_ID3] = CIF_REG(CSI_MIPI0_FRAME_SIZE_ID3),
 	[CIF_REG_MIPI_ON_PAD] = CIF_REG(CSI_MIPI0_ON_PAD),
 	[CIF_REG_LVDS_ID0_CTRL0] = CIF_REG(CIF_LVDS0_ID0_CTRL0),
 	[CIF_REG_LVDS_ID1_CTRL0] = CIF_REG(CIF_LVDS0_ID1_CTRL0),
@@ -941,6 +949,10 @@ static const struct cif_reg rk3562_cif_regs[] = {
 	[CIF_REG_MIPI_EFFECT_CODE_ID1] = CIF_REG(CSI_MIPI0_EFFECT_CODE_ID1),
 	[CIF_REG_MIPI_EFFECT_CODE_ID2] = CIF_REG(CSI_MIPI0_EFFECT_CODE_ID2),
 	[CIF_REG_MIPI_EFFECT_CODE_ID3] = CIF_REG(CSI_MIPI0_EFFECT_CODE_ID3),
+	[CIF_REG_MIPI_FRAME_SIZE_ID0] = CIF_REG(CSI_MIPI0_FRAME_SIZE_ID0),
+	[CIF_REG_MIPI_FRAME_SIZE_ID1] = CIF_REG(CSI_MIPI0_FRAME_SIZE_ID1),
+	[CIF_REG_MIPI_FRAME_SIZE_ID2] = CIF_REG(CSI_MIPI0_FRAME_SIZE_ID2),
+	[CIF_REG_MIPI_FRAME_SIZE_ID3] = CIF_REG(CSI_MIPI0_FRAME_SIZE_ID3),
 	[CIF_REG_MIPI_ON_PAD] = CIF_REG(CSI_MIPI0_ON_PAD),
 
 	[CIF_REG_GLB_CTRL] = CIF_REG(GLB_CTRL),
@@ -1252,6 +1264,51 @@ void rkcif_hw_soft_reset(struct rkcif_hw *cif_hw, bool is_rst_iommu)
 		rkcif_iommu_enable(cif_hw);
 }
 
+static int rkcif_get_efuse_value(struct device_node *np, char *porp_name,
+				    u8 *value)
+{
+	struct nvmem_cell *cell;
+	unsigned char *buf;
+	size_t len;
+
+	cell = of_nvmem_cell_get(np, porp_name);
+	if (IS_ERR(cell))
+		return PTR_ERR(cell);
+
+	buf = (unsigned char *)nvmem_cell_read(cell, &len);
+
+	nvmem_cell_put(cell);
+
+	if (IS_ERR(buf))
+		return PTR_ERR(buf);
+
+	*value = buf[0];
+
+	kfree(buf);
+
+	return 0;
+}
+
+static int rkcif_get_speciand_package_number(struct device_node *np)
+{
+	u8 spec = 0, package = 0, low = 0, high = 0;
+
+	if (rkcif_get_efuse_value(np, "specification", &spec))
+		return -EINVAL;
+	if (rkcif_get_efuse_value(np, "package_low", &low))
+		return -EINVAL;
+	if (rkcif_get_efuse_value(np, "package_high", &high))
+		return -EINVAL;
+
+	package = ((high & 0x1) << 3) | low;
+
+	/* RK3588S */
+	if (spec == 0x13)
+		return package;
+
+	return -EINVAL;
+}
+
 static int rkcif_plat_hw_probe(struct platform_device *pdev)
 {
 	const struct of_device_id *match;
@@ -1265,6 +1322,7 @@ static int rkcif_plat_hw_probe(struct platform_device *pdev)
 	int i, ret, irq;
 	bool is_mem_reserved = false;
 	struct notifier_block *notifier;
+	int package = 0;
 
 	match = of_match_node(rkcif_plat_of_match, node);
 	if (IS_ERR(match))
@@ -1278,6 +1336,13 @@ static int rkcif_plat_hw_probe(struct platform_device *pdev)
 	dev_set_drvdata(dev, cif_hw);
 	cif_hw->dev = dev;
 
+	package = rkcif_get_speciand_package_number(node);
+	if (package == 0x2) {
+		cif_hw->is_rk3588s2 = true;
+		dev_info(dev, "attach rk3588s2\n");
+	} else {
+		cif_hw->is_rk3588s2 = false;
+	}
 	irq = platform_get_irq(pdev, 0);
 	if (irq < 0)
 		return irq;
@@ -1484,7 +1549,38 @@ static int __maybe_unused rkcif_runtime_resume(struct device *dev)
 	return 0;
 }
 
+static int __maybe_unused rkcif_sleep_suspend(struct device *dev)
+{
+	struct rkcif_hw *cif_hw = dev_get_drvdata(dev);
+
+	if (atomic_read(&cif_hw->power_cnt) == 0)
+		return 0;
+
+	rkcif_disable_sys_clk(cif_hw);
+
+	return pinctrl_pm_select_sleep_state(dev);
+}
+
+static int __maybe_unused rkcif_sleep_resume(struct device *dev)
+{
+	struct rkcif_hw *cif_hw = dev_get_drvdata(dev);
+	int ret;
+
+	if (atomic_read(&cif_hw->power_cnt) == 0)
+		return 0;
+
+	ret = pinctrl_pm_select_default_state(dev);
+	if (ret < 0)
+		return ret;
+	rkcif_enable_sys_clk(cif_hw);
+	rkcif_hw_soft_reset(cif_hw, true);
+
+	return 0;
+}
+
 static const struct dev_pm_ops rkcif_plat_pm_ops = {
+	SET_LATE_SYSTEM_SLEEP_PM_OPS(rkcif_sleep_suspend,
+				rkcif_sleep_resume)
 	SET_RUNTIME_PM_OPS(rkcif_runtime_suspend, rkcif_runtime_resume, NULL)
 };
 
@@ -1506,6 +1602,7 @@ int rk_cif_plat_drv_init(void)
 	ret = platform_driver_register(&rkcif_hw_plat_drv);
 	if (ret)
 		return ret;
+	rkcif_csi2_hw_plat_drv_init();
 	return rkcif_csi2_plat_drv_init();
 }
 
@@ -1513,6 +1610,7 @@ static void __exit rk_cif_plat_drv_exit(void)
 {
 	platform_driver_unregister(&rkcif_hw_plat_drv);
 	rkcif_csi2_plat_drv_exit();
+	rkcif_csi2_hw_plat_drv_exit();
 }
 
 #if defined(CONFIG_VIDEO_ROCKCHIP_THUNDER_BOOT_ISP) && !defined(CONFIG_INITCALL_ASYNC)
@@ -1527,3 +1625,4 @@ module_exit(rk_cif_plat_drv_exit);
 MODULE_AUTHOR("Rockchip Camera/ISP team");
 MODULE_DESCRIPTION("Rockchip CIF platform driver");
 MODULE_LICENSE("GPL v2");
+MODULE_IMPORT_NS(DMA_BUF);

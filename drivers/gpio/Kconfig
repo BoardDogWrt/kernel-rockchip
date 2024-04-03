@@ -882,7 +882,7 @@ config GPIO_F7188X
 	help
 	  This option enables support for GPIOs found on Fintek Super-I/O
 	  chips F71869, F71869A, F71882FG, F71889F and F81866.
-	  As well as Nuvoton Super-I/O chip NCT6116D.
+	  As well as Nuvoton Super-I/O chip NCT6126D.
 
 	  To compile this driver as a module, choose M here: the module will
 	  be called f7188x-gpio.
@@ -1055,6 +1055,14 @@ config GPIO_MAX732X_IRQ
 	help
 	  Say yes here to enable the max732x to be used as an interrupt
 	  controller. It requires the driver to be built in the kernel.
+
+config GPIO_NCA9539
+	tristate "NCA9539 I2C GPIO expander"
+	depends on I2C || COMPILE_TEST
+	select REGMAP_I2C
+	help
+	  Say yes here to support the NCA9539 series of I2C Expanders.
+	  GPIO expanders used for additional digital outputs or inputs.
 
 config GPIO_PCA953X
 	tristate "PCA95[357]x, PCA9698, TCA64xx, and MAX7310 I/O ports"

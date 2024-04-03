@@ -8,49 +8,23 @@
  * Author: Simon Xue <xxm@rock-chips.com>
  */
 
+#include <dt-bindings/phy/phy.h>
 #include <linux/clk.h>
-#include <linux/delay.h>
-#include <linux/fs.h>
 #include <linux/gpio.h>
-#include <linux/init.h>
-#include <linux/interrupt.h>
 #include <linux/iopoll.h>
-#include <linux/irq.h>
 #include <linux/irqchip/chained_irq.h>
-#include <linux/irqdomain.h>
-#include <linux/kernel.h>
-#include <linux/kthread.h>
-#include <linux/list.h>
-#include <linux/mfd/syscon.h>
-#include <linux/miscdevice.h>
-#include <linux/module.h>
 #include <linux/of_address.h>
 #include <linux/of_device.h>
-#include <linux/of_gpio.h>
 #include <linux/of_pci.h>
-#include <linux/pci.h>
 #include <linux/phy/phy.h>
 #include <linux/phy/pcie.h>
-#include <linux/platform_device.h>
-#include <linux/poll.h>
 #include <linux/regmap.h>
 #include <linux/reset.h>
-#include <linux/resource.h>
 #include <linux/rfkill-wlan.h>
-#include <linux/signal.h>
-#include <linux/types.h>
-#include <linux/uaccess.h>
-#include <linux/pci-epf.h>
 
 #include "pcie-designware.h"
-#include "../../pci.h"
 #include "../rockchip-pcie-dma.h"
 #include "pcie-dw-dmatest.h"
-
-enum rk_pcie_device_mode {
-	RK_PCIE_EP_TYPE,
-	RK_PCIE_RC_TYPE,
-};
 
 #define RK_PCIE_DBG			0
 
@@ -89,12 +63,6 @@ enum rk_pcie_device_mode {
 
 #define PCIE_DMA_CHANEL_MAX_NUM		2
 
-/* Parameters for the waiting for iATU enabled routine */
-#define LINK_WAIT_IATU_MIN		9000
-#define LINK_WAIT_IATU_MAX		10000
-
-#define PCIE_DIRECT_SPEED_CHANGE	(0x1 << 17)
-
 #define PCIE_TYPE0_STATUS_COMMAND_REG	0x4
 #define PCIE_TYPE0_BAR0_REG		0x10
 
@@ -129,33 +97,20 @@ enum rk_pcie_device_mode {
 #define PCIE_CLIENT_DBG_TRANSITION_DATA	0xffff0000
 #define PCIE_CLIENT_DBF_EN		0xffff0007
 
-#define PCIE_PHY_LINKUP			BIT(0)
-#define PCIE_DATA_LINKUP		BIT(1)
-
 #define PCIE_TYPE0_HDR_DBI2_OFFSET	0x100000
 #define PCIE_SB_BAR0_MASK_REG		0x100010
 
 #define PCIE_PL_ORDER_RULE_CTRL_OFF	0x8B4
 #define RK_PCIE_L2_TMOUT_US		5000
+#define PORT_LOGIC_LTSSM_STATE_L2(ltssm) \
+	((ltssm & PORT_LOGIC_LTSSM_STATE_MASK) == 0x15)
+#define RK_PCIE_ENUM_HW_RETRYIES	2
 
-#define PCIE_ATU_CR1			0x904
-#define PCIE_ATU_CR2			0x908
-#define PCIE_GET_ATU_OUTB_UNR_REG_OFFSET(region) \
-		((region) << 9)
-#define PCIE_GET_ATU_INB_UNR_REG_OFFSET(region) \
-		(((region) << 9) | BIT(8))
-
-enum rk_pcie_ltssm_code {
-	S_L0 = 0x11,
-	S_L0S = 0x12,
-	S_L1_IDLE = 0x14,
-	S_L2_IDLE = 0x15,
-	S_MAX = 0x1f,
-};
+#define	PORT_LOGIC_LTSSM_L2
 
 struct rk_pcie {
 	struct dw_pcie			*pci;
-	enum rk_pcie_device_mode	mode;
+	enum dw_pcie_device_mode	mode;
 	enum phy_mode			phy_mode;
 	int				phy_sub_mode;
 	unsigned char			bar_to_atu[6];
@@ -175,13 +130,9 @@ struct rk_pcie {
 	struct gpio_desc		*prsnt_gpio;
 	phys_addr_t			mem_start;
 	size_t				mem_size;
-	struct dw_pcie_rp		pp;
-	struct regmap			*usb_pcie_grf;
-	struct regmap			*pmu_grf;
 	struct dma_trx_obj		*dma_obj;
 	bool				in_suspend;
 	bool				skip_scan_in_resume;
-	bool				is_rk1808;
 	bool				is_signal_test;
 	bool				bifurcation;
 	bool				supports_clkreq;
@@ -192,14 +143,18 @@ struct rk_pcie {
 	u32				l1ss_ctl1;
 	struct dentry			*debugfs;
 	u32				msi_vector_num;
+	u32				comp_prst[2];
+	u32				intx;
 };
 
 struct rk_pcie_of_data {
-	enum rk_pcie_device_mode	mode;
+	enum dw_pcie_device_mode mode;
 	u32 msi_vector_num;
 };
 
 #define to_rk_pcie(x)	dev_get_drvdata((x)->dev)
+static int rk_pcie_disable_power(struct rk_pcie *rk_pcie);
+static int rk_pcie_enable_power(struct rk_pcie *rk_pcie);
 
 static int rk_pcie_read(void __iomem *addr, int size, u32 *val)
 {
@@ -301,7 +256,7 @@ static void rk_pcie_writel_atu(struct dw_pcie *pci, u32 reg, u32 val)
 static void rk_pcie_writel_ib_unroll(struct dw_pcie *pci, u32 index, u32 reg,
 				     u32 val)
 {
-	u32 offset = PCIE_GET_ATU_INB_UNR_REG_OFFSET(index);
+	u32 offset = PCIE_ATU_UNROLL_BASE(PCIE_ATU_REGION_DIR_IB, index);
 
 	rk_pcie_writel_atu(pci, offset + reg, val);
 }
@@ -323,7 +278,7 @@ static u32 rk_pcie_readl_atu(struct dw_pcie *pci, u32 reg)
 
 static u32 rk_pcie_readl_ib_unroll(struct dw_pcie *pci, u32 index, u32 reg)
 {
-	u32 offset = PCIE_GET_ATU_INB_UNR_REG_OFFSET(index);
+	u32 offset = PCIE_ATU_UNROLL_BASE(PCIE_ATU_REGION_DIR_IB, index);
 
 	return rk_pcie_readl_atu(pci, offset + reg);
 }
@@ -379,10 +334,10 @@ static int rk_pcie_prog_inbound_atu(struct dw_pcie *pci, u8 func_no, int index,
 	dw_pcie_writel_dbi(pci, PCIE_ATU_LOWER_TARGET, lower_32_bits(cpu_addr));
 	dw_pcie_writel_dbi(pci, PCIE_ATU_UPPER_TARGET, upper_32_bits(cpu_addr));
 
-	dw_pcie_writel_dbi(pci, PCIE_ATU_CR1, type |
-			   PCIE_ATU_FUNC_NUM(func_no));
-	dw_pcie_writel_dbi(pci, PCIE_ATU_CR2, PCIE_ATU_ENABLE |
-			   PCIE_ATU_FUNC_NUM_MATCH_EN |
+	dw_pcie_writel_dbi(pci, PCIE_ATU_VIEWPORT_BASE + PCIE_ATU_REGION_CTRL1,
+			   type | PCIE_ATU_FUNC_NUM(func_no));
+	dw_pcie_writel_dbi(pci, PCIE_ATU_VIEWPORT_BASE + PCIE_ATU_REGION_CTRL2,
+			   PCIE_ATU_ENABLE | PCIE_ATU_FUNC_NUM_MATCH_EN |
 			   PCIE_ATU_BAR_MODE_ENABLE | (bar << 8));
 
 	/*
@@ -390,7 +345,7 @@ static int rk_pcie_prog_inbound_atu(struct dw_pcie *pci, u8 func_no, int index,
 	 * and I/O accesses.
 	 */
 	for (retries = 0; retries < LINK_WAIT_MAX_IATU_RETRIES; retries++) {
-		val = dw_pcie_readl_dbi(pci, PCIE_ATU_CR2);
+		val = dw_pcie_readl_dbi(pci, PCIE_ATU_VIEWPORT_BASE + PCIE_ATU_REGION_CTRL2);
 		if (val & PCIE_ATU_ENABLE)
 			return 0;
 
@@ -439,14 +394,14 @@ static int rk_pcie_ep_inbound_atu(struct rk_pcie *rk_pcie,
 static void rk_pcie_writel_ob_unroll(struct dw_pcie *pci, u32 index, u32 reg,
 				     u32 val)
 {
-	u32 offset = PCIE_GET_ATU_OUTB_UNR_REG_OFFSET(index);
+	u32 offset = PCIE_ATU_UNROLL_BASE(PCIE_ATU_REGION_DIR_OB, index);
 
 	rk_pcie_writel_atu(pci, offset + reg, val);
 }
 
 static u32 rk_pcie_readl_ob_unroll(struct dw_pcie *pci, u32 index, u32 reg)
 {
-	u32 offset = PCIE_GET_ATU_OUTB_UNR_REG_OFFSET(index);
+	u32 offset = PCIE_ATU_UNROLL_BASE(PCIE_ATU_REGION_DIR_OB, index);
 
 	return rk_pcie_readl_atu(pci, offset + reg);
 }
@@ -517,16 +472,17 @@ static void rk_pcie_prog_outbound_atu(struct dw_pcie *pci, int index,
 			   lower_32_bits(pci_addr));
 	dw_pcie_writel_dbi(pci, PCIE_ATU_UPPER_TARGET,
 			   upper_32_bits(pci_addr));
-	dw_pcie_writel_dbi(pci, PCIE_ATU_CR1, type |
-			   PCIE_ATU_FUNC_NUM(0x0));
-	dw_pcie_writel_dbi(pci, PCIE_ATU_CR2, PCIE_ATU_ENABLE);
+	dw_pcie_writel_dbi(pci, PCIE_ATU_VIEWPORT_BASE + PCIE_ATU_REGION_CTRL1,
+			   type | PCIE_ATU_FUNC_NUM(0x0));
+	dw_pcie_writel_dbi(pci, PCIE_ATU_VIEWPORT_BASE + PCIE_ATU_REGION_CTRL2,
+			   PCIE_ATU_ENABLE);
 
 	/*
 	 * Make sure ATU enable takes effect before any subsequent config
 	 * and I/O accesses.
 	 */
 	for (retries = 0; retries < LINK_WAIT_MAX_IATU_RETRIES; retries++) {
-		val = dw_pcie_readl_dbi(pci, PCIE_ATU_CR2);
+		val = dw_pcie_readl_dbi(pci, PCIE_ATU_VIEWPORT_BASE + PCIE_ATU_REGION_CTRL2);
 		if (val & PCIE_ATU_ENABLE)
 			return;
 
@@ -633,10 +589,10 @@ static inline void disable_aspm_l1ss(struct rk_pcie *rk_pcie) { return; }
 static inline void rk_pcie_set_mode(struct rk_pcie *rk_pcie)
 {
 	switch (rk_pcie->mode) {
-	case RK_PCIE_EP_TYPE:
+	case DW_PCIE_EP_TYPE:
 		rk_pcie_writel_apb(rk_pcie, 0x0, 0xf00000);
 		break;
-	case RK_PCIE_RC_TYPE:
+	case DW_PCIE_RC_TYPE:
 		if (rk_pcie->supports_clkreq) {
 			/* Application is ready to have reference clock removed */
 			rk_pcie_writel_apb(rk_pcie, PCIE_CLIENT_POWER, 0x00010001);
@@ -646,15 +602,8 @@ static inline void rk_pcie_set_mode(struct rk_pcie *rk_pcie)
 			disable_aspm_l1ss(rk_pcie);
 		}
 		rk_pcie_writel_apb(rk_pcie, 0x0, 0xf00040);
-		/*
-		 * Disable order rule for CPL can't pass halted P queue.
-		 * Need to check producer-consumer model.
-		 * Just for RK1808 platform.
-		 */
-		if (rk_pcie->is_rk1808)
-			dw_pcie_writel_dbi(rk_pcie->pci,
-					   PCIE_PL_ORDER_RULE_CTRL_OFF,
-					   0xff00);
+		break;
+	default:
 		break;
 	}
 }
@@ -674,29 +623,9 @@ static inline void rk_pcie_enable_ltssm(struct rk_pcie *rk_pcie)
 	rk_pcie_writel_apb(rk_pcie, 0x0, 0xC000C);
 }
 
-static int rk_pcie_link_up(struct dw_pcie *pci)
-{
-	struct rk_pcie *rk_pcie = to_rk_pcie(pci);
-	u32 val;
-
-	if (rk_pcie->is_rk1808) {
-		val = rk_pcie_readl_apb(rk_pcie, PCIE_CLIENT_GENERAL_DEBUG);
-		if ((val & (PCIE_PHY_LINKUP | PCIE_DATA_LINKUP)) == 0x3)
-			return 1;
-	} else {
-		val = rk_pcie_readl_apb(rk_pcie, PCIE_CLIENT_LTSSM_STATUS);
-		if ((val & (RDLH_LINKUP | SMLH_LINKUP)) == 0x30000)
-			return 1;
-	}
-
-	return 0;
-}
-
 static void rk_pcie_enable_debug(struct rk_pcie *rk_pcie)
 {
 	if (!IS_ENABLED(CONFIG_DEBUG_FS))
-		return;
-	if (rk_pcie->is_rk1808 == true)
 		return;
 
 	rk_pcie_writel_apb(rk_pcie, PCIE_CLIENT_DBG_FIFO_PTN_HIT_D0,
@@ -729,7 +658,9 @@ static int rk_pcie_establish_link(struct dw_pcie *pci)
 {
 	int retries, power;
 	struct rk_pcie *rk_pcie = to_rk_pcie(pci);
-	bool std_rc = rk_pcie->mode == RK_PCIE_RC_TYPE && !rk_pcie->dma_obj;
+	bool std_rc = rk_pcie->mode == DW_PCIE_RC_TYPE && !rk_pcie->dma_obj;
+	int hw_retries = 0;
+	u32 ltssm;
 
 	/*
 	 * For standard RC, even if the link has been setup by firmware,
@@ -741,77 +672,92 @@ static int rk_pcie_establish_link(struct dw_pcie *pci)
 		return 0;
 	}
 
-	/* Rest the device */
-	gpiod_set_value_cansleep(rk_pcie->rst_gpio, 0);
+	for (hw_retries = 0; hw_retries < RK_PCIE_ENUM_HW_RETRYIES; hw_retries++) {
+		/* Rest the device */
+		gpiod_set_value_cansleep(rk_pcie->rst_gpio, 0);
 
-	rk_pcie_disable_ltssm(rk_pcie);
-	rk_pcie_link_status_clear(rk_pcie);
-	rk_pcie_enable_debug(rk_pcie);
+		rk_pcie_disable_ltssm(rk_pcie);
+		rk_pcie_link_status_clear(rk_pcie);
+		rk_pcie_enable_debug(rk_pcie);
 
-	/* Enable client reset or link down interrupt */
-	rk_pcie_writel_apb(rk_pcie, PCIE_CLIENT_INTR_MASK, 0x40000);
+		/* Enable client reset or link down interrupt */
+		rk_pcie_writel_apb(rk_pcie, PCIE_CLIENT_INTR_MASK, 0x40000);
 
-	/* Enable LTSSM */
-	rk_pcie_enable_ltssm(rk_pcie);
+		/* Enable LTSSM */
+		rk_pcie_enable_ltssm(rk_pcie);
 
-	/*
-	 * In resume routine, function devices' resume function must be late after
-	 * controllers'. Some devices, such as Wi-Fi, need special IO setting before
-	 * finishing training. So there must be timeout here. These kinds of devices
-	 * need rescan devices by its driver when used. So no need to waste time waiting
-	 * for training pass.
-	 */
-	if (rk_pcie->in_suspend && rk_pcie->skip_scan_in_resume) {
-		rfkill_get_wifi_power_state(&power);
-		if (!power) {
-			gpiod_set_value_cansleep(rk_pcie->rst_gpio, 1);
-			return 0;
-		}
-	}
-
-	/*
-	 * PCIe requires the refclk to be stable for 100µs prior to releasing
-	 * PERST and T_PVPERL (Power stable to PERST# inactive) should be a
-	 * minimum of 100ms.  See table 2-4 in section 2.6.2 AC, the PCI Express
-	 * Card Electromechanical Specification 3.0. So 100ms in total is the min
-	 * requuirement here. We add a 200ms by default for sake of hoping everthings
-	 * work fine. If it doesn't, please add more in DT node by add rockchip,perst-inactive-ms.
-	 */
-	msleep(rk_pcie->perst_inactive_ms);
-	gpiod_set_value_cansleep(rk_pcie->rst_gpio, 1);
-
-	/*
-	 * Add this 1ms delay because we observe link is always up stably after it and
-	 * could help us save 20ms for scanning devices.
-	 */
-	usleep_range(1000, 1100);
-
-	for (retries = 0; retries < 100; retries++) {
-		if (dw_pcie_link_up(pci)) {
-			/*
-			 * We may be here in case of L0 in Gen1. But if EP is capable
-			 * of Gen2 or Gen3, Gen switch may happen just in this time, but
-			 * we keep on accessing devices in unstable link status. Given
-			 * that LTSSM max timeout is 24ms per period, we can wait a bit
-			 * more for Gen switch.
-			 */
-			msleep(50);
-			/* In case link drop after linkup, double check it */
-			if (dw_pcie_link_up(pci)) {
-				dev_info(pci->dev, "PCIe Link up, LTSSM is 0x%x\n",
-					 rk_pcie_readl_apb(rk_pcie, PCIE_CLIENT_LTSSM_STATUS));
-				rk_pcie_debug_dump(rk_pcie);
+		/*
+		 * In resume routine, function devices' resume function must be late after
+		 * controllers'. Some devices, such as Wi-Fi, need special IO setting before
+		 * finishing training. So there must be timeout here. These kinds of devices
+		 * need rescan devices by its driver when used. So no need to waste time waiting
+		 * for training pass.
+		 */
+		if (rk_pcie->in_suspend && rk_pcie->skip_scan_in_resume) {
+			rfkill_get_wifi_power_state(&power);
+			if (!power) {
+				gpiod_set_value_cansleep(rk_pcie->rst_gpio, 1);
 				return 0;
 			}
 		}
 
-		dev_info_ratelimited(pci->dev, "PCIe Linking... LTSSM is 0x%x\n",
-				     rk_pcie_readl_apb(rk_pcie, PCIE_CLIENT_LTSSM_STATUS));
-		rk_pcie_debug_dump(rk_pcie);
-		msleep(20);
-	}
+		/*
+		 * PCIe requires the refclk to be stable for 100µs prior to releasing
+		 * PERST and T_PVPERL (Power stable to PERST# inactive) should be a
+		 * minimum of 100ms.  See table 2-4 in section 2.6.2 AC, the PCI Express
+		 * Card Electromechanical Specification 3.0. So 100ms in total is the min
+		 * requuirement here. We add a 200ms by default for sake of hoping everthings
+		 * work fine. If it doesn't, please add more in DT node by add rockchip,perst-inactive-ms.
+		 */
+		msleep(rk_pcie->perst_inactive_ms);
+		gpiod_set_value_cansleep(rk_pcie->rst_gpio, 1);
 
-	dev_err(pci->dev, "PCIe Link Fail\n");
+		/*
+		 * Add this 1ms delay because we observe link is always up stably after it and
+		 * could help us save 20ms for scanning devices.
+		 */
+		usleep_range(1000, 1100);
+
+		for (retries = 0; retries < 100; retries++) {
+			if (dw_pcie_link_up(pci)) {
+				/*
+				 * We may be here in case of L0 in Gen1. But if EP is capable
+				 * of Gen2 or Gen3, Gen switch may happen just in this time, but
+				 * we keep on accessing devices in unstable link status. Given
+				 * that LTSSM max timeout is 24ms per period, we can wait a bit
+				 * more for Gen switch.
+				 */
+				msleep(50);
+				/* In case link drop after linkup, double check it */
+				if (dw_pcie_link_up(pci)) {
+					dev_info(pci->dev, "PCIe Link up, LTSSM is 0x%x\n",
+						rk_pcie_readl_apb(rk_pcie, PCIE_CLIENT_LTSSM_STATUS));
+					rk_pcie_debug_dump(rk_pcie);
+					return 0;
+				}
+			}
+
+			dev_info_ratelimited(pci->dev, "PCIe Linking... LTSSM is 0x%x\n",
+					rk_pcie_readl_apb(rk_pcie, PCIE_CLIENT_LTSSM_STATUS));
+			rk_pcie_debug_dump(rk_pcie);
+			msleep(20);
+		}
+
+		/*
+		 * In response to the situation where PCIe peripherals cannot be
+		 * enumerated due tosignal abnormalities, reset PERST# and reset
+		 * the peripheral power supply, then restart the enumeration.
+		 */
+		ltssm = rk_pcie_readl_apb(rk_pcie, PCIE_CLIENT_LTSSM_STATUS);
+		dev_err(pci->dev, "PCIe Link Fail, LTSSM is 0x%x, hw_retries=%d\n", ltssm, hw_retries);
+		if (ltssm >= 3 && !rk_pcie->is_signal_test) {
+			rk_pcie_disable_power(rk_pcie);
+			msleep(1000);
+			rk_pcie_enable_power(rk_pcie);
+		} else {
+			break;
+		}
+	}
 
 	return rk_pcie->is_signal_test == true ? 0 : -EINVAL;
 }
@@ -829,7 +775,7 @@ static int rk_pcie_init_dma_trx(struct rk_pcie *rk_pcie)
 
 	rk_pcie->dma_obj = rk_pcie_dma_obj_probe(rk_pcie->pci->dev);
 	if (IS_ERR(rk_pcie->dma_obj)) {
-		if (rk_pcie->mode == RK_PCIE_RC_TYPE) {
+		if (rk_pcie->mode == DW_PCIE_RC_TYPE) {
 			/* dma_obj is optional for RC mode */
 			rk_pcie->dma_obj = NULL;
 			return 0;
@@ -994,7 +940,7 @@ static void rk_pcie_ep_setup(struct rk_pcie *rk_pcie)
 		break;
 	}
 
-	val |= PCIE_DIRECT_SPEED_CHANGE;
+	val |= PORT_LOGIC_SPEED_CHANGE;
 
 	dw_pcie_writel_dbi(rk_pcie->pci, PCIE_LINK_WIDTH_SPEED_CONTROL, val);
 
@@ -1025,12 +971,6 @@ static void rk_pcie_ep_setup(struct rk_pcie *rk_pcie)
 	/* Device id and class id needed for request bar address */
 	dw_pcie_writew_dbi(rk_pcie->pci, PCI_DEVICE_ID, 0x356a);
 	dw_pcie_writew_dbi(rk_pcie->pci, PCI_CLASS_DEVICE, 0x0580);
-
-	/* Set shadow BAR0 */
-	if (rk_pcie->is_rk1808) {
-		val = rk_pcie->mem_size - 1;
-		dw_pcie_writel_dbi(rk_pcie->pci, PCIE_SB_BAR0_MASK_REG, val);
-	}
 }
 
 static int rk_pcie_ep_win_parse(struct rk_pcie *rk_pcie)
@@ -1111,8 +1051,8 @@ static int rk_add_pcie_port(struct rk_pcie *rk_pcie, struct platform_device *pde
 	}
 
 	/* Disable BAR0 BAR1 */
-	dw_pcie_writel_dbi(pci, PCIE_TYPE0_HDR_DBI2_OFFSET + 0x10 + BAR_0 * 4, 0);
-	dw_pcie_writel_dbi(pci, PCIE_TYPE0_HDR_DBI2_OFFSET + 0x10 + BAR_1 * 4, 0);
+	dw_pcie_writel_dbi2(pci, PCI_BASE_ADDRESS_0, 0x0);
+	dw_pcie_writel_dbi2(pci, PCI_BASE_ADDRESS_1, 0x0);
 
 	return 0;
 }
@@ -1146,7 +1086,6 @@ static int rk_pcie_add_ep(struct rk_pcie *rk_pcie)
 		return ret;
 	}
 
-	rk_pcie->pci->dbi_base2 = rk_pcie->pci->dbi_base + PCIE_TYPE0_HDR_DBI2_OFFSET;
 	rk_pcie->pci->atu_base = rk_pcie->pci->dbi_base + DEFAULT_DBI_ATU_OFFSET;
 	rk_pcie->pci->iatu_unroll_enabled = rk_pcie_iatu_unroll_enabled(rk_pcie->pci);
 
@@ -1206,6 +1145,7 @@ static int rk_pcie_resource_get(struct platform_device *pdev,
 		return PTR_ERR(rk_pcie->dbi_base);
 
 	rk_pcie->pci->dbi_base = rk_pcie->dbi_base;
+	rk_pcie->pci->dbi_base2 = rk_pcie->pci->dbi_base + PCIE_TYPE0_HDR_DBI2_OFFSET;
 
 	apb_base = platform_get_resource_byname(pdev, IORESOURCE_MEM,
 						"pcie-apb");
@@ -1256,13 +1196,15 @@ static int rk_pcie_phy_init(struct rk_pcie *rk_pcie)
 	}
 
 	switch (rk_pcie->mode) {
-	case RK_PCIE_RC_TYPE:
+	case DW_PCIE_RC_TYPE:
 		rk_pcie->phy_mode = PHY_MODE_PCIE; /* make no sense */
 		rk_pcie->phy_sub_mode = PHY_MODE_PCIE_RC;
 		break;
-	case RK_PCIE_EP_TYPE:
+	case DW_PCIE_EP_TYPE:
 		rk_pcie->phy_mode = PHY_MODE_PCIE;
 		rk_pcie->phy_sub_mode = PHY_MODE_PCIE_EP;
+		break;
+	default:
 		break;
 	}
 
@@ -1288,19 +1230,6 @@ static int rk_pcie_phy_init(struct rk_pcie *rk_pcie)
 	phy_power_on(rk_pcie->phy);
 
 	return 0;
-}
-
-static int rk_pcie_reset_grant_ctrl(struct rk_pcie *rk_pcie,
-						bool enable)
-{
-	int ret;
-	u32 val = (0x1 << 18); /* Write mask bit */
-
-	if (enable)
-		val |= (0x1 << 2);
-
-	ret = regmap_write(rk_pcie->usb_pcie_grf, 0x0, val);
-	return ret;
 }
 
 static void rk_pcie_start_dma_rd(struct dma_trx_obj *obj, struct dma_table *cur, int ctr_off)
@@ -1474,27 +1403,19 @@ static int rk_pcie_request_sys_irq(struct rk_pcie *rk_pcie,
 }
 
 static const struct rk_pcie_of_data rk_pcie_rc_of_data = {
-	.mode = RK_PCIE_RC_TYPE,
+	.mode = DW_PCIE_RC_TYPE,
 };
 
 static const struct rk_pcie_of_data rk_pcie_ep_of_data = {
-	.mode = RK_PCIE_EP_TYPE,
+	.mode = DW_PCIE_EP_TYPE,
 };
 
 static const struct rk_pcie_of_data rk3528_pcie_rc_of_data = {
-	.mode = RK_PCIE_RC_TYPE,
+	.mode = DW_PCIE_RC_TYPE,
 	.msi_vector_num = 8,
 };
 
 static const struct of_device_id rk_pcie_of_match[] = {
-	{
-		.compatible = "rockchip,rk1808-pcie",
-		.data = &rk_pcie_rc_of_data,
-	},
-	{
-		.compatible = "rockchip,rk1808-pcie-ep",
-		.data = &rk_pcie_ep_of_data,
-	},
 	{
 		.compatible = "rockchip,rk3528-pcie",
 		.data = &rk3528_pcie_rc_of_data,
@@ -1526,41 +1447,7 @@ MODULE_DEVICE_TABLE(of, rk_pcie_of_match);
 
 static const struct dw_pcie_ops dw_pcie_ops = {
 	.start_link = rk_pcie_establish_link,
-	.link_up = rk_pcie_link_up,
 };
-
-static int rk1808_pcie_fixup(struct rk_pcie *rk_pcie, struct device_node *np)
-{
-	int ret;
-	struct device *dev = rk_pcie->pci->dev;
-
-	rk_pcie->usb_pcie_grf = syscon_regmap_lookup_by_phandle(np,
-						"rockchip,usbpciegrf");
-	if (IS_ERR(rk_pcie->usb_pcie_grf)) {
-		dev_err(dev, "failed to find usb_pcie_grf regmap\n");
-		return PTR_ERR(rk_pcie->usb_pcie_grf);
-	}
-
-	rk_pcie->pmu_grf = syscon_regmap_lookup_by_phandle(np,
-							 "rockchip,pmugrf");
-	if (IS_ERR(rk_pcie->pmu_grf)) {
-		dev_err(dev, "failed to find pmugrf regmap\n");
-		return PTR_ERR(rk_pcie->pmu_grf);
-	}
-
-	/* Workaround for pcie, switch to PCIe_PRSTNm0 */
-	ret = regmap_write(rk_pcie->pmu_grf, 0x100, 0x01000100);
-	if (ret)
-		return ret;
-
-	ret = regmap_write(rk_pcie->pmu_grf, 0x0, 0x0c000000);
-	if (ret)
-		return ret;
-
-	/* release link reset grant */
-	ret = rk_pcie_reset_grant_ctrl(rk_pcie, true);
-	return ret;
-}
 
 static void rk_pcie_fast_link_setup(struct rk_pcie *rk_pcie)
 {
@@ -1606,7 +1493,7 @@ static struct irq_chip rk_pcie_legacy_irq_chip = {
 static int rk_pcie_intx_map(struct irq_domain *domain, unsigned int irq,
 			    irq_hw_number_t hwirq)
 {
-	irq_set_chip_and_handler(irq, &rk_pcie_legacy_irq_chip, handle_simple_irq);
+	irq_set_chip_and_handler(irq, &rk_pcie_legacy_irq_chip, handle_level_irq);
 	irq_set_chip_data(irq, domain->host_data);
 
 	return 0;
@@ -1623,7 +1510,7 @@ static void rk_pcie_legacy_int_handler(struct irq_desc *desc)
 	struct device *dev = rockchip->pci->dev;
 	u32 reg;
 	u32 hwirq;
-	u32 virq;
+	int ret;
 
 	chained_irq_enter(chip, desc);
 
@@ -1634,10 +1521,8 @@ static void rk_pcie_legacy_int_handler(struct irq_desc *desc)
 		hwirq = ffs(reg) - 1;
 		reg &= ~BIT(hwirq);
 
-		virq = irq_find_mapping(rockchip->irq_domain, hwirq);
-		if (virq)
-			generic_handle_irq(virq);
-		else
+		ret = generic_handle_domain_irq(rockchip->irq_domain, hwirq);
+		if (ret)
 			dev_err(dev, "unexpected IRQ, INT%d\n", hwirq);
 	}
 
@@ -1862,8 +1747,7 @@ static int rk_pcie_really_probe(void *p)
 	int ret;
 	const struct of_device_id *match;
 	const struct rk_pcie_of_data *data;
-	enum rk_pcie_device_mode mode;
-	struct device_node *np = pdev->dev.of_node;
+	enum dw_pcie_device_mode mode;
 	u32 val = 0;
 	int irq;
 
@@ -1874,7 +1758,7 @@ static int rk_pcie_really_probe(void *p)
 	}
 
 	data = (struct rk_pcie_of_data *)match->data;
-	mode = (enum rk_pcie_device_mode)data->mode;
+	mode = (enum dw_pcie_device_mode)data->mode;
 
 	rk_pcie = devm_kzalloc(dev, sizeof(*rk_pcie), GFP_KERNEL);
 	if (!rk_pcie) {
@@ -1895,12 +1779,6 @@ static int rk_pcie_really_probe(void *p)
 	rk_pcie->msi_vector_num = data->msi_vector_num;
 	rk_pcie->pci = pci;
 
-	if (of_device_is_compatible(np, "rockchip,rk1808-pcie") ||
-	    of_device_is_compatible(np, "rockchip,rk1808-pcie-ep"))
-		rk_pcie->is_rk1808 = true;
-	else
-		rk_pcie->is_rk1808 = false;
-
 	if (device_property_read_bool(dev, "rockchip,bifurcation"))
 		rk_pcie->bifurcation = true;
 
@@ -1917,6 +1795,7 @@ static int rk_pcie_really_probe(void *p)
 
 	if (!IS_ERR_OR_NULL(rk_pcie->prsnt_gpio)) {
 		if (!gpiod_get_value(rk_pcie->prsnt_gpio)) {
+			dev_info(dev, "device isn't present\n");
 			ret = -ENODEV;
 			goto release_driver;
 		}
@@ -1978,13 +1857,7 @@ retry_regulator:
 
 	dw_pcie_dbi_ro_wr_en(pci);
 
-	if (rk_pcie->is_rk1808) {
-		ret = rk1808_pcie_fixup(rk_pcie, np);
-		if (ret)
-			goto deinit_clk;
-	} else {
-		rk_pcie_fast_link_setup(rk_pcie);
-	}
+	rk_pcie_fast_link_setup(rk_pcie);
 
 	/* Legacy interrupt is optional */
 	ret = rk_pcie_init_irq_domain(rk_pcie);
@@ -2012,11 +1885,25 @@ retry_regulator:
 		rk_pcie->is_signal_test = true;
 	}
 
-	/* Force into compliance mode */
-	if (device_property_read_bool(dev, "rockchip,compliance-mode")) {
-		val = dw_pcie_readl_dbi(pci, PCIE_CAP_LINK_CONTROL2_LINK_STATUS);
-		val |= BIT(4);
-		dw_pcie_writel_dbi(pci, PCIE_CAP_LINK_CONTROL2_LINK_STATUS, val);
+	/*
+	 * Force into compliance mode
+	 * comp_prst is a two dimensional array of which the first element
+	 * stands for speed mode, and the second one is preset value encoding:
+	 * [0] 0->SMA tool control the signal switch, 1/2/3 is for manual Gen setting
+	 * [1] transmitter setting for manual Gen setting, valid only if [0] isn't zero.
+	 */
+	if (!device_property_read_u32_array(dev, "rockchip,compliance-mode",
+					    rk_pcie->comp_prst, 2)) {
+		BUG_ON(rk_pcie->comp_prst[0] > 3 || rk_pcie->comp_prst[1] > 10);
+		if (!rk_pcie->comp_prst[0]) {
+			dev_info(dev, "Auto compliance mode for SMA tool.\n");
+		} else {
+			dev_info(dev, "compliance mode for soldered board Gen%d, P%d.\n",
+				 rk_pcie->comp_prst[0], rk_pcie->comp_prst[1]);
+			val = dw_pcie_readl_dbi(pci, PCIE_CAP_LINK_CONTROL2_LINK_STATUS);
+			val |= BIT(4) | rk_pcie->comp_prst[0] | (rk_pcie->comp_prst[1] << 12);
+			dw_pcie_writel_dbi(pci, PCIE_CAP_LINK_CONTROL2_LINK_STATUS, val);
+		}
 		rk_pcie->is_signal_test = true;
 	}
 
@@ -2025,11 +1912,13 @@ retry_regulator:
 		rk_pcie->skip_scan_in_resume = true;
 
 	switch (rk_pcie->mode) {
-	case RK_PCIE_RC_TYPE:
+	case DW_PCIE_RC_TYPE:
 		ret = rk_add_pcie_port(rk_pcie, pdev);
 		break;
-	case RK_PCIE_EP_TYPE:
+	case DW_PCIE_EP_TYPE:
 		ret = rk_pcie_add_ep(rk_pcie);
+		break;
+	default:
 		break;
 	}
 
@@ -2048,13 +1937,6 @@ retry_regulator:
 	if (rk_pcie->dma_obj) {
 		rk_pcie->dma_obj->start_dma_func = rk_pcie_start_dma_dwc;
 		rk_pcie->dma_obj->config_dma_func = rk_pcie_config_dma_dwc;
-	}
-
-	if (rk_pcie->is_rk1808) {
-		/* hold link reset grant after link-up */
-		ret = rk_pcie_reset_grant_ctrl(rk_pcie, false);
-		if (ret)
-			goto remove_irq_domain;
 	}
 
 	dw_pcie_dbi_ro_wr_dis(pci);
@@ -2088,7 +1970,6 @@ remove_irq_domain:
 disable_phy:
 	phy_power_off(rk_pcie->phy);
 	phy_exit(rk_pcie->phy);
-deinit_clk:
 	clk_bulk_disable_unprepare(rk_pcie->clk_cnt, rk_pcie->clks);
 disable_vpcie3v3:
 	rk_pcie_disable_power(rk_pcie);
@@ -2252,18 +2133,26 @@ static int __maybe_unused rockchip_dw_pcie_suspend(struct device *dev)
 
 	/* 5. Check we are in L2 */
 	ret = readl_poll_timeout(rk_pcie->apb_base + PCIE_CLIENT_LTSSM_STATUS,
-				 status, ((status & S_MAX) == S_L2_IDLE), 20, RK_PCIE_L2_TMOUT_US);
+				 status, PORT_LOGIC_LTSSM_STATE_L2(status), 20, RK_PCIE_L2_TMOUT_US);
 	if (ret)
 		dev_err(pci->dev, "Link isn't in L2 idle!\n");
 
 no_l2:
 	rk_pcie_disable_ltssm(rk_pcie);
 
+	ret = phy_validate(rk_pcie->phy, PHY_TYPE_PCIE, 0, NULL);
+	if (ret && ret != -EOPNOTSUPP) {
+		dev_err(dev, "PHY is reused by other controller, check the dts!\n");
+		return ret;
+	}
+
 	/* make sure assert phy success */
 	usleep_range(200, 300);
 
 	phy_power_off(rk_pcie->phy);
 	phy_exit(rk_pcie->phy);
+
+	rk_pcie->intx = rk_pcie_readl_apb(rk_pcie, PCIE_CLIENT_INTR_MASK_LEGACY);
 
 	clk_bulk_disable_unprepare(rk_pcie->clk_cnt, rk_pcie->clks);
 
@@ -2278,7 +2167,7 @@ no_l2:
 static int __maybe_unused rockchip_dw_pcie_resume(struct device *dev)
 {
 	struct rk_pcie *rk_pcie = dev_get_drvdata(dev);
-	bool std_rc = rk_pcie->mode == RK_PCIE_RC_TYPE && !rk_pcie->dma_obj;
+	bool std_rc = rk_pcie->mode == DW_PCIE_RC_TYPE && !rk_pcie->dma_obj;
 	int ret;
 
 	reset_control_assert(rk_pcie->rsts);
@@ -2314,20 +2203,16 @@ static int __maybe_unused rockchip_dw_pcie_resume(struct device *dev)
 
 	dw_pcie_dbi_ro_wr_en(rk_pcie->pci);
 
-	if (rk_pcie->is_rk1808) {
-		/* release link reset grant */
-		ret = rk_pcie_reset_grant_ctrl(rk_pcie, true);
-		if (ret)
-			return ret;
-	} else {
-		rk_pcie_fast_link_setup(rk_pcie);
-	}
+	rk_pcie_fast_link_setup(rk_pcie);
 
 	/* Set PCIe mode */
 	rk_pcie_set_mode(rk_pcie);
 
 	if (std_rc)
 		dw_pcie_setup_rc(&rk_pcie->pci->pp);
+
+	rk_pcie_writel_apb(rk_pcie, PCIE_CLIENT_INTR_MASK_LEGACY,
+			   rk_pcie->intx | 0xffff0000);
 
 	ret = rk_pcie_establish_link(rk_pcie->pci);
 	if (ret) {
@@ -2350,12 +2235,6 @@ static int __maybe_unused rockchip_dw_pcie_resume(struct device *dev)
 
 std_rc_done:
 	dw_pcie_dbi_ro_wr_dis(rk_pcie->pci);
-	/* hold link reset grant after link-up */
-	if (rk_pcie->is_rk1808) {
-		ret = rk_pcie_reset_grant_ctrl(rk_pcie, false);
-		if (ret)
-			goto err;
-	}
 
 	return 0;
 err:

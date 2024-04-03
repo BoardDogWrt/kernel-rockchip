@@ -425,6 +425,9 @@ void fib6_select_path(const struct net *net, struct fib6_result *res,
 	if (match->nh && have_oif_match && res->nh)
 		return;
 
+	if (skb)
+		IP6CB(skb)->flags |= IP6SKB_MULTIPATH;
+
 	/* We might have already computed the hash for ICMPv6 errors. In such
 	 * case it will always be non-zero. Otherwise now is the time to do it.
 	 */
@@ -633,15 +636,15 @@ static void rt6_probe(struct fib6_nh *fib6_nh)
 
 	nh_gw = &fib6_nh->fib_nh_gw6;
 	dev = fib6_nh->fib_nh_dev;
-	rcu_read_lock_bh();
+	rcu_read_lock();
 	last_probe = READ_ONCE(fib6_nh->last_probe);
 	idev = __in6_dev_get(dev);
 	neigh = __ipv6_neigh_lookup_noref(dev, nh_gw);
 	if (neigh) {
-		if (neigh->nud_state & NUD_VALID)
+		if (READ_ONCE(neigh->nud_state) & NUD_VALID)
 			goto out;
 
-		write_lock(&neigh->lock);
+		write_lock_bh(&neigh->lock);
 		if (!(neigh->nud_state & NUD_VALID) &&
 		    time_after(jiffies,
 			       neigh->updated + idev->cnf.rtr_probe_interval)) {
@@ -649,7 +652,7 @@ static void rt6_probe(struct fib6_nh *fib6_nh)
 			if (work)
 				__neigh_set_probe_once(neigh);
 		}
-		write_unlock(&neigh->lock);
+		write_unlock_bh(&neigh->lock);
 	} else if (time_after(jiffies, last_probe +
 				       idev->cnf.rtr_probe_interval)) {
 		work = kmalloc(sizeof(*work), GFP_ATOMIC);
@@ -667,7 +670,7 @@ static void rt6_probe(struct fib6_nh *fib6_nh)
 	}
 
 out:
-	rcu_read_unlock_bh();
+	rcu_read_unlock();
 }
 #else
 static inline void rt6_probe(struct fib6_nh *fib6_nh)
@@ -683,25 +686,25 @@ static enum rt6_nud_state rt6_check_neigh(const struct fib6_nh *fib6_nh)
 	enum rt6_nud_state ret = RT6_NUD_FAIL_HARD;
 	struct neighbour *neigh;
 
-	rcu_read_lock_bh();
+	rcu_read_lock();
 	neigh = __ipv6_neigh_lookup_noref(fib6_nh->fib_nh_dev,
 					  &fib6_nh->fib_nh_gw6);
 	if (neigh) {
-		read_lock(&neigh->lock);
-		if (neigh->nud_state & NUD_VALID)
+		u8 nud_state = READ_ONCE(neigh->nud_state);
+
+		if (nud_state & NUD_VALID)
 			ret = RT6_NUD_SUCCEED;
 #ifdef CONFIG_IPV6_ROUTER_PREF
-		else if (!(neigh->nud_state & NUD_FAILED))
+		else if (!(nud_state & NUD_FAILED))
 			ret = RT6_NUD_SUCCEED;
 		else
 			ret = RT6_NUD_FAIL_PROBE;
 #endif
-		read_unlock(&neigh->lock);
 	} else {
 		ret = IS_ENABLED(CONFIG_IPV6_ROUTER_PREF) ?
 		      RT6_NUD_SUCCEED : RT6_NUD_FAIL_DO_RR;
 	}
-	rcu_read_unlock_bh();
+	rcu_read_unlock();
 
 	return ret;
 }
@@ -2952,7 +2955,8 @@ void ip6_sk_update_pmtu(struct sk_buff *skb, struct sock *sk, __be32 mtu)
 	if (!oif && skb->dev)
 		oif = l3mdev_master_ifindex(skb->dev);
 
-	ip6_update_pmtu(skb, sock_net(sk), mtu, oif, sk->sk_mark, sk->sk_uid);
+	ip6_update_pmtu(skb, sock_net(sk), mtu, oif, READ_ONCE(sk->sk_mark),
+			sk->sk_uid);
 
 	dst = __sk_dst_get(sk);
 	if (!dst || !dst->obsolete ||
@@ -3173,8 +3177,8 @@ void ip6_redirect_no_header(struct sk_buff *skb, struct net *net, int oif)
 
 void ip6_sk_redirect(struct sk_buff *skb, struct sock *sk)
 {
-	ip6_redirect(skb, sock_net(sk), sk->sk_bound_dev_if, sk->sk_mark,
-		     sk->sk_uid);
+	ip6_redirect(skb, sock_net(sk), sk->sk_bound_dev_if,
+		     READ_ONCE(sk->sk_mark), sk->sk_uid);
 }
 EXPORT_SYMBOL_GPL(ip6_sk_redirect);
 
@@ -4251,7 +4255,7 @@ static struct fib6_info *rt6_get_route_info(struct net *net,
 					   const struct in6_addr *gwaddr,
 					   struct net_device *dev)
 {
-	u32 tb_id = l3mdev_fib_table(dev) ? : RT6_TABLE_INFO;
+	u32 tb_id = l3mdev_fib_table(dev) ? : addrconf_rt_table(dev, RT6_TABLE_INFO);
 	int ifindex = dev->ifindex;
 	struct fib6_node *fn;
 	struct fib6_info *rt = NULL;
@@ -4305,7 +4309,7 @@ static struct fib6_info *rt6_add_route_info(struct net *net,
 		.fc_nlinfo.nl_net = net,
 	};
 
-	cfg.fc_table = l3mdev_fib_table(dev) ? : RT6_TABLE_INFO;
+	cfg.fc_table = l3mdev_fib_table(dev) ? : addrconf_rt_table(dev, RT6_TABLE_INFO);
 	cfg.fc_dst = *prefix;
 	cfg.fc_gateway = *gwaddr;
 
@@ -4323,7 +4327,7 @@ struct fib6_info *rt6_get_dflt_router(struct net *net,
 				     const struct in6_addr *addr,
 				     struct net_device *dev)
 {
-	u32 tb_id = l3mdev_fib_table(dev) ? : RT6_TABLE_DFLT;
+	u32 tb_id = l3mdev_fib_table(dev) ? : addrconf_rt_table(dev, RT6_TABLE_DFLT);
 	struct fib6_info *rt;
 	struct fib6_table *table;
 
@@ -4358,7 +4362,7 @@ struct fib6_info *rt6_add_dflt_router(struct net *net,
 				     u32 defrtr_usr_metric)
 {
 	struct fib6_config cfg = {
-		.fc_table	= l3mdev_fib_table(dev) ? : RT6_TABLE_DFLT,
+		.fc_table	= l3mdev_fib_table(dev) ? : addrconf_rt_table(dev, RT6_TABLE_DFLT),
 		.fc_metric	= defrtr_usr_metric,
 		.fc_ifindex	= dev->ifindex,
 		.fc_flags	= RTF_GATEWAY | RTF_ADDRCONF | RTF_DEFAULT |
@@ -4383,47 +4387,24 @@ struct fib6_info *rt6_add_dflt_router(struct net *net,
 	return rt6_get_dflt_router(net, gwaddr, dev);
 }
 
-static void __rt6_purge_dflt_routers(struct net *net,
-				     struct fib6_table *table)
+static int rt6_addrconf_purge(struct fib6_info *rt, void *arg)
 {
-	struct fib6_info *rt;
+	struct net_device *dev = fib6_info_nh_dev(rt);
+	struct inet6_dev *idev = dev ? __in6_dev_get(dev) : NULL;
 
-restart:
-	rcu_read_lock();
-	for_each_fib6_node_rt_rcu(&table->tb6_root) {
-		struct net_device *dev = fib6_info_nh_dev(rt);
-		struct inet6_dev *idev = dev ? __in6_dev_get(dev) : NULL;
-
-		if (rt->fib6_flags & (RTF_DEFAULT | RTF_ADDRCONF) &&
-		    (!idev || idev->cnf.accept_ra != 2) &&
-		    fib6_info_hold_safe(rt)) {
-			rcu_read_unlock();
-			ip6_del_rt(net, rt, false);
-			goto restart;
-		}
+	if (rt->fib6_flags & (RTF_DEFAULT | RTF_ADDRCONF) &&
+	    (!idev || idev->cnf.accept_ra != 2)) {
+		/* Delete this route. See fib6_clean_tree() */
+		return -1;
 	}
-	rcu_read_unlock();
 
-	table->flags &= ~RT6_TABLE_HAS_DFLT_ROUTER;
+	/* Continue walking */
+	return 0;
 }
 
 void rt6_purge_dflt_routers(struct net *net)
 {
-	struct fib6_table *table;
-	struct hlist_head *head;
-	unsigned int h;
-
-	rcu_read_lock();
-
-	for (h = 0; h < FIB6_TABLE_HASHSZ; h++) {
-		head = &net->ipv6.fib_table_hash[h];
-		hlist_for_each_entry_rcu(table, head, tb6_hlist) {
-			if (table->flags & RT6_TABLE_HAS_DFLT_ROUTER)
-				__rt6_purge_dflt_routers(net, table);
-		}
-	}
-
-	rcu_read_unlock();
+	fib6_clean_all(net, rt6_addrconf_purge, NULL);
 }
 
 static void rtmsg_to_fib6_config(struct net *net,

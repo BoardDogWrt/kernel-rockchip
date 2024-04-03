@@ -162,6 +162,7 @@ static int rk3588_npu_set_read_margin(struct device *dev,
 				      struct rockchip_opp_info *opp_info,
 				      u32 rm)
 {
+	struct rknpu_device *rknpu_dev = dev_get_drvdata(dev);
 	u32 offset = 0, val = 0;
 	int i, ret = 0;
 
@@ -173,7 +174,7 @@ static int rk3588_npu_set_read_margin(struct device *dev,
 
 	LOG_DEV_DEBUG(dev, "set rm to %d\n", rm);
 
-	for (i = 0; i < 3; i++) {
+	for (i = 0; i < rknpu_dev->config->num_irqs; i++) {
 		ret = regmap_read(opp_info->grf, offset, &val);
 		if (ret < 0) {
 			LOG_DEV_ERROR(dev, "failed to get rm from 0x%x\n",
@@ -234,13 +235,15 @@ static const struct of_device_id rockchip_npu_of_match[] = {
 #if KERNEL_VERSION(6, 1, 0) <= LINUX_VERSION_CODE
 void rknpu_devfreq_lock(struct rknpu_device *rknpu_dev)
 {
-	rockchip_opp_dvfs_lock(&rknpu_dev->opp_info);
+	if (rknpu_dev->devfreq)
+		rockchip_opp_dvfs_lock(&rknpu_dev->opp_info);
 }
 EXPORT_SYMBOL(rknpu_devfreq_lock);
 
 void rknpu_devfreq_unlock(struct rknpu_device *rknpu_dev)
 {
-	rockchip_opp_dvfs_unlock(&rknpu_dev->opp_info);
+	if (rknpu_dev->devfreq)
+		rockchip_opp_dvfs_unlock(&rknpu_dev->opp_info);
 }
 EXPORT_SYMBOL(rknpu_devfreq_unlock);
 
@@ -332,6 +335,7 @@ int rknpu_devfreq_init(struct rknpu_device *rknpu_dev)
 	if (IS_ERR(rknpu_dev->devfreq)) {
 		LOG_DEV_ERROR(dev, "failed to add devfreq\n");
 		ret = PTR_ERR(rknpu_dev->devfreq);
+		rknpu_dev->devfreq = NULL;
 		goto err_remove_governor;
 	}
 

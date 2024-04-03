@@ -96,7 +96,6 @@
 #include <linux/cache.h>
 #include <linux/rodata_test.h>
 #include <linux/jump_label.h>
-#include <linux/mem_encrypt.h>
 #include <linux/kcsan.h>
 #include <linux/init_syscalls.h>
 #include <linux/stackdepot.h>
@@ -104,15 +103,12 @@
 #include <net/net_namespace.h>
 
 #include <asm/io.h>
-#include <asm/bugs.h>
 #include <asm/setup.h>
 #include <asm/sections.h>
 #include <asm/cacheflush.h>
 
 #define CREATE_TRACE_POINTS
 #include <trace/events/initcall.h>
-
-#include <kunit/test.h>
 
 static int kernel_init(void *);
 
@@ -781,8 +777,6 @@ void __init __weak thread_stack_cache_init(void)
 }
 #endif
 
-void __init __weak mem_encrypt_init(void) { }
-
 void __init __weak poking_init(void) { }
 
 void __init __weak pgtable_cache_init(void) { }
@@ -860,6 +854,7 @@ static void __init mm_init(void)
 	/* Should be run after espfix64 is set up. */
 	pti_init();
 	kmsan_init_runtime();
+	mm_cache_init();
 }
 
 #ifdef CONFIG_RANDOMIZE_KSTACK_OFFSET
@@ -1011,7 +1006,7 @@ asmlinkage __visible void __init __no_sanitize_address start_kernel(void)
 	sort_main_extable();
 	trap_init();
 	mm_init();
-
+	poking_init();
 	ftrace_init();
 
 	/* trace_printk can be enabled here */
@@ -1100,14 +1095,6 @@ asmlinkage __visible void __init __no_sanitize_address start_kernel(void)
 	 */
 	locking_selftest();
 
-	/*
-	 * This needs to be called before any devices perform DMA
-	 * operations that might use the SWIOTLB bounce buffers. It will
-	 * mark the bounce buffers as decrypted so that their usage will
-	 * not cause "plain-text" data to be decrypted when accessed.
-	 */
-	mem_encrypt_init();
-
 #ifdef CONFIG_BLK_DEV_INITRD
 	if (initrd_start && !initrd_below_start_ok &&
 	    page_to_pfn(virt_to_page((void *)initrd_start)) < min_low_pfn) {
@@ -1124,6 +1111,9 @@ asmlinkage __visible void __init __no_sanitize_address start_kernel(void)
 		late_time_init();
 	sched_clock_init();
 	calibrate_delay();
+
+	arch_cpu_finalize_init();
+
 	pid_idr_init();
 	anon_vma_init();
 #ifdef CONFIG_X86
@@ -1149,9 +1139,6 @@ asmlinkage __visible void __init __no_sanitize_address start_kernel(void)
 	cgroup_init();
 	taskstats_init_early();
 	delayacct_init();
-
-	poking_init();
-	check_bugs();
 
 	acpi_subsystem_init();
 	arch_post_acpi_subsys_init();
@@ -1841,8 +1828,6 @@ static noinline void __init kernel_init_freeable(void)
 		page_ext_init();
 
 	do_basic_setup();
-
-	kunit_run_all_tests();
 
 	wait_for_initramfs();
 	console_on_rootfs();

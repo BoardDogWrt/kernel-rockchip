@@ -74,7 +74,7 @@ static void pwm_backlight_power_off(struct pwm_bl_data *pb)
 	struct pwm_state state;
 
 	pwm_get_state(pb->pwm, &state);
-	if (!pb->enabled)
+	if (!pb->enabled && !state.enabled)
 		return;
 
 	if (pb->enable_gpio)
@@ -671,6 +671,10 @@ static int pwm_backlight_suspend(struct device *dev)
 	struct backlight_device *bl = dev_get_drvdata(dev);
 	struct pwm_bl_data *pb = bl_get_data(bl);
 
+#ifdef CONFIG_ROCKCHIP_LITE_ULTRA_SUSPEND
+	if (mem_sleep_current == PM_SUSPEND_MEM_LITE)
+		return 0;
+#endif
 	if (pb->notify)
 		pb->notify(pb->dev, 0);
 
@@ -686,6 +690,10 @@ static int pwm_backlight_resume(struct device *dev)
 {
 	struct backlight_device *bl = dev_get_drvdata(dev);
 
+#ifdef CONFIG_ROCKCHIP_LITE_ULTRA_SUSPEND
+	if (mem_sleep_current == PM_SUSPEND_MEM_LITE)
+		return 0;
+#endif
 	backlight_update_status(bl);
 
 	return 0;

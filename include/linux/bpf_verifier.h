@@ -8,6 +8,7 @@
 #include <linux/btf.h> /* for struct btf and btf_id() */
 #include <linux/filter.h> /* for MAX_BPF_STACK */
 #include <linux/tnum.h>
+#include <linux/android_kabi.h>
 
 /* Maximum variable offset umax_value permitted when resolving memory accesses.
  * In practice this is far bigger than any realistic pointer offset; this limit
@@ -483,6 +484,8 @@ struct bpf_subprog_info {
 	bool tail_call_reachable;
 	bool has_ld_abs;
 	bool is_async_cb;
+
+	ANDROID_KABI_RESERVE(1);
 };
 
 /* single container for all structs
@@ -553,6 +556,9 @@ struct bpf_verifier_env {
 	u32 prev_log_len, prev_insn_print_len;
 	/* buffer used in reg_type_str() to generate reg_type string */
 	char type_str_buf[TYPE_STR_BUF_LEN];
+
+	ANDROID_KABI_RESERVE(1);
+	ANDROID_KABI_RESERVE(2);
 };
 
 __printf(2, 0) void bpf_verifier_vlog(struct bpf_verifier_log *log,
@@ -646,6 +652,19 @@ static inline enum bpf_prog_type resolve_prog_type(const struct bpf_prog *prog)
 {
 	return prog->type == BPF_PROG_TYPE_EXT ?
 		prog->aux->dst_prog->type : prog->type;
+}
+
+static inline bool bpf_prog_check_recur(const struct bpf_prog *prog)
+{
+	switch (resolve_prog_type(prog)) {
+	case BPF_PROG_TYPE_TRACING:
+		return prog->expected_attach_type != BPF_TRACE_ITER;
+	case BPF_PROG_TYPE_STRUCT_OPS:
+	case BPF_PROG_TYPE_LSM:
+		return false;
+	default:
+		return true;
+	}
 }
 
 #endif /* _LINUX_BPF_VERIFIER_H */

@@ -364,8 +364,8 @@ static int rkcif_scale_enum_framesizes(struct file *file, void *prov,
 	input_rect.height = RKCIF_DEFAULT_HEIGHT;
 
 	if (terminal_sensor && terminal_sensor->sd)
-		get_input_fmt(terminal_sensor->sd,
-			      &input_rect, 0, &csi_info);
+		rkcif_get_input_fmt(dev,
+				    &input_rect, 0, &csi_info);
 
 	switch (fsize->index) {
 	case SCALE_8TIMES:
@@ -968,7 +968,7 @@ static void rkcif_scale_vb_done_oneframe(struct rkcif_scale_vdev *scale_vdev,
 				      scale_vdev->pixm.plane_fmt[i].sizeimage);
 	}
 
-	vb_done->vb2_buf.timestamp = ktime_get_ns();
+	vb_done->vb2_buf.timestamp = rkcif_time_get_ns(scale_vdev->cifdev);
 
 	vb2_buffer_done(&vb_done->vb2_buf, VB2_BUF_STATE_DONE);
 }

@@ -35,6 +35,7 @@
 #include <linux/mnt_idmapping.h>
 
 #include "internal.h"
+#include <trace/hooks/syscall_check.h>
 
 int do_truncate(struct user_namespace *mnt_userns, struct dentry *dentry,
 		loff_t length, unsigned int time_attrs, struct file *filp)
@@ -865,6 +866,7 @@ static int do_dentry_open(struct file *f,
 		error = -ENODEV;
 		goto cleanup_all;
 	}
+	trace_android_vh_check_file_open(f);
 
 	error = security_file_open(f);
 	if (error)
@@ -1158,13 +1160,21 @@ inline int build_open_flags(const struct open_how *how, struct open_flags *op)
 	}
 
 	/*
-	 * In order to ensure programs get explicit errors when trying to use
-	 * O_TMPFILE on old kernels, O_TMPFILE is implemented such that it
-	 * looks like (O_DIRECTORY|O_RDWR & ~O_CREAT) to old kernels. But we
-	 * have to require userspace to explicitly set it.
+	 * Block bugs where O_DIRECTORY | O_CREAT created regular files.
+	 * Note, that blocking O_DIRECTORY | O_CREAT here also protects
+	 * O_TMPFILE below which requires O_DIRECTORY being raised.
 	 */
+	if ((flags & (O_DIRECTORY | O_CREAT)) == (O_DIRECTORY | O_CREAT))
+		return -EINVAL;
+
+	/* Now handle the creative implementation of O_TMPFILE. */
 	if (flags & __O_TMPFILE) {
-		if ((flags & O_TMPFILE_MASK) != O_TMPFILE)
+		/*
+		 * In order to ensure programs get explicit errors when trying
+		 * to use O_TMPFILE on old kernels we enforce that O_DIRECTORY
+		 * is raised alongside __O_TMPFILE.
+		 */
+		if (!(flags & O_DIRECTORY))
 			return -EINVAL;
 		if (!(acc_mode & MAY_WRITE))
 			return -EINVAL;
@@ -1225,7 +1235,7 @@ inline int build_open_flags(const struct open_how *how, struct open_flags *op)
 		lookup_flags |= LOOKUP_IN_ROOT;
 	if (how->resolve & RESOLVE_CACHED) {
 		/* Don't bother even trying for create/truncate/tmpfile open */
-		if (flags & (O_TRUNC | O_CREAT | O_TMPFILE))
+		if (flags & (O_TRUNC | O_CREAT | __O_TMPFILE))
 			return -EAGAIN;
 		lookup_flags |= LOOKUP_CACHED;
 	}
@@ -1278,6 +1288,27 @@ struct file *filp_open(const char *filename, int flags, umode_t mode)
 	return file;
 }
 EXPORT_SYMBOL(filp_open);
+
+
+/* ANDROID: Allow drivers to open only block files from kernel mode */
+struct file *filp_open_block(const char *filename, int flags, umode_t mode)
+{
+	struct file *file;
+
+	file = filp_open(filename, flags, mode);
+	if (IS_ERR(file))
+		goto err_out;
+
+	/* Drivers should only be allowed to open block devices */
+	if (!S_ISBLK(file->f_mapping->host->i_mode)) {
+		filp_close(file, NULL);
+		file = ERR_PTR(-ENOTBLK);
+	}
+
+err_out:
+	return file;
+}
+EXPORT_SYMBOL_GPL(filp_open_block);
 
 struct file *file_open_root(const struct path *root,
 			    const char *filename, int flags, umode_t mode)

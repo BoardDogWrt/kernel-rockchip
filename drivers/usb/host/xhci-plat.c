@@ -175,6 +175,41 @@ static const struct of_device_id usb_xhci_of_match[] = {
 MODULE_DEVICE_TABLE(of, usb_xhci_of_match);
 #endif
 
+static struct xhci_plat_priv_overwrite xhci_plat_vendor_overwrite;
+
+int xhci_plat_register_vendor_ops(struct xhci_vendor_ops *vendor_ops)
+{
+	if (vendor_ops == NULL)
+		return -EINVAL;
+
+	xhci_plat_vendor_overwrite.vendor_ops = vendor_ops;
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(xhci_plat_register_vendor_ops);
+
+static int xhci_vendor_init(struct xhci_hcd *xhci)
+{
+	struct xhci_vendor_ops *ops = NULL;
+
+	if (xhci_plat_vendor_overwrite.vendor_ops)
+		ops = xhci->vendor_ops = xhci_plat_vendor_overwrite.vendor_ops;
+
+	if (ops && ops->vendor_init)
+		return ops->vendor_init(xhci);
+	return 0;
+}
+
+static void xhci_vendor_cleanup(struct xhci_hcd *xhci)
+{
+	struct xhci_vendor_ops *ops = xhci_vendor_get_ops(xhci);
+
+	if (ops && ops->vendor_cleanup)
+		ops->vendor_cleanup(xhci);
+
+	xhci->vendor_ops = NULL;
+}
+
 static int xhci_plat_probe(struct platform_device *pdev)
 {
 	const struct xhci_plat_priv *priv_match;
@@ -304,7 +339,7 @@ static int xhci_plat_probe(struct platform_device *pdev)
 			xhci->quirks |= XHCI_BROKEN_PORT_PED;
 
 		if (device_property_read_bool(tmpdev, "quirk-skip-phy-init"))
-			xhci->quirks |= XHCI_SKIP_PHY_INIT;
+			hcd->skip_phy_initialization = 1;
 
 		if (device_property_read_bool(tmpdev,
 					      "xhci-u2-broken-suspend"))
@@ -325,6 +360,10 @@ static int xhci_plat_probe(struct platform_device *pdev)
 		if (ret)
 			goto disable_clk;
 	}
+
+	ret = xhci_vendor_init(xhci);
+	if (ret)
+		goto disable_usb_phy;
 
 	hcd->tpl_support = of_usb_host_tpl_support(sysdev->of_node);
 
@@ -404,8 +443,8 @@ static int xhci_plat_remove(struct platform_device *dev)
 	struct clk *reg_clk = xhci->reg_clk;
 	struct usb_hcd *shared_hcd = xhci->shared_hcd;
 
-	pm_runtime_get_sync(&dev->dev);
 	xhci->xhc_state |= XHCI_STATE_REMOVING;
+	pm_runtime_get_sync(&dev->dev);
 
 	if (shared_hcd) {
 		usb_remove_hcd(shared_hcd);
@@ -418,6 +457,8 @@ static int xhci_plat_remove(struct platform_device *dev)
 
 	if (shared_hcd)
 		usb_put_hcd(shared_hcd);
+
+	xhci_vendor_cleanup(xhci);
 
 	clk_disable_unprepare(clk);
 	clk_disable_unprepare(reg_clk);

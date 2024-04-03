@@ -227,7 +227,7 @@ static inline struct page *
 alloc_zeroed_user_highpage_movable(struct vm_area_struct *vma,
 				   unsigned long vaddr)
 {
-	struct page *page = alloc_page_vma(GFP_HIGHUSER_MOVABLE, vma, vaddr);
+	struct page *page = alloc_page_vma(GFP_HIGHUSER_MOVABLE | __GFP_CMA, vma, vaddr);
 
 	if (page)
 		clear_user_highpage(page, vaddr);
@@ -317,6 +317,32 @@ static inline void copy_user_highpage(struct page *to, struct page *from,
 	kunmap_local(vfrom);
 }
 
+#endif
+
+#ifdef copy_mc_to_kernel
+static inline int copy_mc_user_highpage(struct page *to, struct page *from,
+					unsigned long vaddr, struct vm_area_struct *vma)
+{
+	unsigned long ret;
+	char *vfrom, *vto;
+
+	vfrom = kmap_local_page(from);
+	vto = kmap_local_page(to);
+	ret = copy_mc_to_kernel(vto, vfrom, PAGE_SIZE);
+	if (!ret)
+		kmsan_unpoison_memory(page_address(to), PAGE_SIZE);
+	kunmap_local(vto);
+	kunmap_local(vfrom);
+
+	return ret;
+}
+#else
+static inline int copy_mc_user_highpage(struct page *to, struct page *from,
+					unsigned long vaddr, struct vm_area_struct *vma)
+{
+	copy_user_highpage(to, from, vaddr, vma);
+	return 0;
+}
 #endif
 
 #ifndef __HAVE_ARCH_COPY_HIGHPAGE

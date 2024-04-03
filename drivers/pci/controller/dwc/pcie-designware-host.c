@@ -83,6 +83,7 @@ irqreturn_t dw_handle_msi_irq(struct dw_pcie_rp *pp)
 
 	return ret;
 }
+EXPORT_SYMBOL_GPL(dw_handle_msi_irq);
 
 /* Chained MSI interrupt service routine */
 static void dw_chained_msi_isr(struct irq_desc *desc)
@@ -342,7 +343,7 @@ static int dw_pcie_msi_host_init(struct dw_pcie_rp *pp)
 
 	if (!pp->num_vectors)
 		pp->num_vectors = MSI_DEF_NUM_VECTORS;
-	num_ctrls = pp->num_vectors / MAX_MSI_IRQS_PER_CTRL;
+	num_ctrls = DIV_ROUND_UP(pp->num_vectors, MAX_MSI_IRQS_PER_CTRL);
 
 	if (!pp->msi_irq[0]) {
 		pp->msi_irq[0] = platform_get_irq_byname_optional(pdev, "msi");

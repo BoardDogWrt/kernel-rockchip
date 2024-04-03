@@ -73,6 +73,7 @@ enum rockchip_drm_debug_category {
 	VOP_DEBUG_OVERLAY	= BIT(1),
 	VOP_DEBUG_WB		= BIT(2),
 	VOP_DEBUG_CFG_DONE	= BIT(3),
+	VOP_DEBUG_CLK		= BIT(4),
 	VOP_DEBUG_VSYNC		= BIT(7),
 };
 
@@ -114,6 +115,12 @@ enum rockchip_drm_split_area {
 	ROCKCHIP_DRM_SPLIT_UNSET = 0,
 	ROCKCHIP_DRM_SPLIT_LEFT_SIDE = 1,
 	ROCKCHIP_DRM_SPLIT_RIGHT_SIDE = 2,
+};
+
+enum rockchip_drm_vop_aclk_mode {
+	ROCKCHIP_VOP_ACLK_NORMAL_MODE = 0,
+	ROCKCHIP_VOP_ACLK_ADVANCED_MODE = 1,
+	ROCKCHIP_VOP_ACLK_MAX_MODE = 2,
 };
 
 struct rockchip_drm_sub_dev {
@@ -461,6 +468,7 @@ struct rockchip_crtc_funcs {
 	int (*wait_vact_end)(struct drm_crtc *crtc, unsigned int mstimeout);
 	void (*crtc_standby)(struct drm_crtc *crtc, bool standby);
 	int (*crtc_set_color_bar)(struct drm_crtc *crtc, enum rockchip_color_bar_mode mode);
+	int (*set_aclk)(struct drm_crtc *crtc, enum rockchip_drm_vop_aclk_mode aclk_mode);
 };
 
 struct rockchip_dclk_pll {
@@ -527,6 +535,7 @@ struct rockchip_drm_private {
 
 	dma_addr_t cubic_lut_dma_addr;
 	void *cubic_lut_kvaddr;
+	int aclk_adjust_frame_num;
 	struct drm_mm_node *clut_reserved_node;
 	struct loader_cubic_lut cubic_lut[ROCKCHIP_MAX_CRTC];
 };
@@ -577,6 +586,7 @@ int rockchip_drm_endpoint_is_subdriver(struct device_node *ep);
 uint32_t rockchip_drm_of_find_possible_crtcs(struct drm_device *dev,
 					     struct device_node *port);
 uint32_t rockchip_drm_get_bpp(const struct drm_format_info *info);
+uint32_t rockchip_drm_get_cycles_per_pixel(uint32_t bus_format);
 int rockchip_drm_get_yuv422_format(struct drm_connector *connector,
 				   struct edid *edid);
 int rockchip_drm_parse_cea_ext(struct rockchip_drm_dsc_cap *dsc_cap,
@@ -586,6 +596,8 @@ int rockchip_drm_parse_next_hdr(struct next_hdr_sink_data *sink_data,
 				const struct edid *edid);
 int rockchip_drm_parse_colorimetry_data_block(u8 *colorimetry, const struct edid *edid);
 struct dma_buf *rockchip_drm_gem_prime_export(struct drm_gem_object *obj, int flags);
+long rockchip_drm_dclk_round_rate(u32 version, struct clk *dclk, unsigned long rate);
+int rockchip_drm_dclk_set_rate(u32 version, struct clk *dclk, unsigned long rate);
 
 __printf(3, 4)
 void rockchip_drm_dbg(const struct device *dev, enum rockchip_drm_debug_category category,

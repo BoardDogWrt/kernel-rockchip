@@ -2074,7 +2074,7 @@ static inline char *mmap_cmd2str(enum mlx5_ib_mmap_cmd cmd)
 	case MLX5_IB_MMAP_DEVICE_MEM:
 		return "Device Memory";
 	default:
-		return NULL;
+		return "Unknown";
 	}
 }
 
@@ -2091,7 +2091,7 @@ static int mlx5_ib_mmap_clock_info_page(struct mlx5_ib_dev *dev,
 
 	if (vma->vm_flags & (VM_WRITE | VM_EXEC))
 		return -EPERM;
-	vma->vm_flags &= ~VM_MAYWRITE;
+	vm_flags_clear(vma, VM_MAYWRITE);
 
 	if (!dev->mdev->clock_info)
 		return -EOPNOTSUPP;
@@ -2315,7 +2315,7 @@ static int mlx5_ib_mmap(struct ib_ucontext *ibcontext, struct vm_area_struct *vm
 
 		if (vma->vm_flags & VM_WRITE)
 			return -EPERM;
-		vma->vm_flags &= ~VM_MAYWRITE;
+		vm_flags_clear(vma, VM_MAYWRITE);
 
 		/* Don't expose to user-space information it shouldn't have */
 		if (PAGE_SIZE > 4096)
@@ -4250,6 +4250,9 @@ const struct mlx5_ib_profile raw_eth_profile = {
 	STAGE_CREATE(MLX5_IB_STAGE_POST_IB_REG_UMR,
 		     mlx5_ib_stage_post_ib_reg_umr_init,
 		     NULL),
+	STAGE_CREATE(MLX5_IB_STAGE_DELAY_DROP,
+		     mlx5_ib_stage_delay_drop_init,
+		     mlx5_ib_stage_delay_drop_cleanup),
 	STAGE_CREATE(MLX5_IB_STAGE_RESTRACK,
 		     mlx5_ib_restrack_init,
 		     NULL),

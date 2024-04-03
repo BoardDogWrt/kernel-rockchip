@@ -211,6 +211,7 @@ static struct ipv6_devconf ipv6_devconf __read_mostly = {
 	.accept_ra_rt_info_max_plen = 0,
 #endif
 #endif
+	.accept_ra_rt_table	= 0,
 	.proxy_ndp		= 0,
 	.accept_source_route	= 0,	/* we do not accept RH0 by default. */
 	.disable_ipv6		= 0,
@@ -271,6 +272,7 @@ static struct ipv6_devconf ipv6_devconf_dflt __read_mostly = {
 	.accept_ra_rt_info_max_plen = 0,
 #endif
 #endif
+	.accept_ra_rt_table	= 0,
 	.proxy_ndp		= 0,
 	.accept_source_route	= 0,	/* we do not accept RH0 by default. */
 	.disable_ipv6		= 0,
@@ -318,9 +320,8 @@ static void addrconf_del_dad_work(struct inet6_ifaddr *ifp)
 static void addrconf_mod_rs_timer(struct inet6_dev *idev,
 				  unsigned long when)
 {
-	if (!timer_pending(&idev->rs_timer))
+	if (!mod_timer(&idev->rs_timer, jiffies + when))
 		in6_dev_hold(idev);
-	mod_timer(&idev->rs_timer, jiffies + when);
 }
 
 static void addrconf_mod_dad_work(struct inet6_ifaddr *ifp,
@@ -1034,7 +1035,7 @@ static int ipv6_add_addr_hash(struct net_device *dev, struct inet6_ifaddr *ifa)
 	unsigned int hash = inet6_addr_hash(net, &ifa->addr);
 	int err = 0;
 
-	spin_lock(&net->ipv6.addrconf_hash_lock);
+	spin_lock_bh(&net->ipv6.addrconf_hash_lock);
 
 	/* Ignore adding duplicate addresses on an interface */
 	if (ipv6_chk_same_addr(net, &ifa->addr, dev, hash)) {
@@ -1044,7 +1045,7 @@ static int ipv6_add_addr_hash(struct net_device *dev, struct inet6_ifaddr *ifa)
 		hlist_add_head_rcu(&ifa->addr_lst, &net->ipv6.inet6_addr_lst[hash]);
 	}
 
-	spin_unlock(&net->ipv6.addrconf_hash_lock);
+	spin_unlock_bh(&net->ipv6.addrconf_hash_lock);
 
 	return err;
 }
@@ -1139,15 +1140,15 @@ ipv6_add_addr(struct inet6_dev *idev, struct ifa6_config *cfg,
 	/* For caller */
 	refcount_set(&ifa->refcnt, 1);
 
-	rcu_read_lock_bh();
+	rcu_read_lock();
 
 	err = ipv6_add_addr_hash(idev->dev, ifa);
 	if (err < 0) {
-		rcu_read_unlock_bh();
+		rcu_read_unlock();
 		goto out;
 	}
 
-	write_lock(&idev->lock);
+	write_lock_bh(&idev->lock);
 
 	/* Add to inet6_dev unicast addr list. */
 	ipv6_link_dev_addr(idev, ifa);
@@ -1158,9 +1159,9 @@ ipv6_add_addr(struct inet6_dev *idev, struct ifa6_config *cfg,
 	}
 
 	in6_ifa_hold(ifa);
-	write_unlock(&idev->lock);
+	write_unlock_bh(&idev->lock);
 
-	rcu_read_unlock_bh();
+	rcu_read_unlock();
 
 	inet6addr_notifier_call_chain(NETDEV_UP, ifa);
 out:
@@ -1369,7 +1370,7 @@ retry:
 	 * idev->desync_factor if it's larger
 	 */
 	cnf_temp_preferred_lft = READ_ONCE(idev->cnf.temp_prefered_lft);
-	max_desync_factor = min_t(__u32,
+	max_desync_factor = min_t(long,
 				  idev->cnf.max_desync_factor,
 				  cnf_temp_preferred_lft - regen_advance);
 
@@ -2390,6 +2391,26 @@ regen:
 		goto regen;
 }
 
+u32 addrconf_rt_table(const struct net_device *dev, u32 default_table)
+{
+	struct inet6_dev *idev = in6_dev_get(dev);
+	int sysctl;
+	u32 table;
+
+	if (!idev)
+		return default_table;
+	sysctl = idev->cnf.accept_ra_rt_table;
+	if (sysctl == 0) {
+		table = default_table;
+	} else if (sysctl > 0) {
+		table = (u32) sysctl;
+	} else {
+		table = (unsigned) dev->ifindex + (-sysctl);
+	}
+	in6_dev_put(idev);
+	return table;
+}
+
 /*
  *	Add prefix route.
  */
@@ -2400,7 +2421,7 @@ addrconf_prefix_route(struct in6_addr *pfx, int plen, u32 metric,
 		      u32 flags, gfp_t gfp_flags)
 {
 	struct fib6_config cfg = {
-		.fc_table = l3mdev_fib_table(dev) ? : RT6_TABLE_PREFIX,
+		.fc_table = l3mdev_fib_table(dev) ? : addrconf_rt_table(dev, RT6_TABLE_PREFIX),
 		.fc_metric = metric ? : IP6_RT_PRIO_ADDRCONF,
 		.fc_ifindex = dev->ifindex,
 		.fc_expires = expires,
@@ -2435,7 +2456,7 @@ static struct fib6_info *addrconf_get_prefix_route(const struct in6_addr *pfx,
 	struct fib6_node *fn;
 	struct fib6_info *rt = NULL;
 	struct fib6_table *table;
-	u32 tb_id = l3mdev_fib_table(dev) ? : RT6_TABLE_PREFIX;
+	u32 tb_id = l3mdev_fib_table(dev) ? : addrconf_rt_table(dev, RT6_TABLE_PREFIX);
 
 	table = fib6_get_table(dev_net(dev), tb_id);
 	if (!table)
@@ -2562,12 +2583,18 @@ static void manage_tempaddrs(struct inet6_dev *idev,
 			ipv6_ifa_notify(0, ift);
 	}
 
-	if ((create || list_empty(&idev->tempaddr_list)) &&
-	    idev->cnf.use_tempaddr > 0) {
+	/* Also create a temporary address if it's enabled but no temporary
+	 * address currently exists.
+	 * However, we get called with valid_lft == 0, prefered_lft == 0, create == false
+	 * as part of cleanup (ie. deleting the mngtmpaddr).
+	 * We don't want that to result in creating a new temporary ip address.
+	 */
+	if (list_empty(&idev->tempaddr_list) && (valid_lft || prefered_lft))
+		create = true;
+
+	if (create && idev->cnf.use_tempaddr > 0) {
 		/* When a new public address is created as described
 		 * in [ADDRCONF], also create a new temporary address.
-		 * Also create a temporary address if it's enabled but
-		 * no temporary address currently exists.
 		 */
 		read_unlock_bh(&idev->lock);
 		ipv6_create_tempaddr(ifp, false);
@@ -6828,6 +6855,13 @@ static const struct ctl_table addrconf_sysctl[] = {
 	},
 #endif
 #endif
+	{
+		.procname	= "accept_ra_rt_table",
+		.data		= &ipv6_devconf.accept_ra_rt_table,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec,
+	},
 	{
 		.procname	= "proxy_ndp",
 		.data		= &ipv6_devconf.proxy_ndp,

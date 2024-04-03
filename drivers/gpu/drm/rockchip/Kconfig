@@ -89,6 +89,7 @@ config ROCKCHIP_DRM_TVE
 
 config ROCKCHIP_DW_HDMI
 	bool "Rockchip specific extensions for Synopsys DW HDMI"
+	select DRM_DISPLAY_HDCP_HELPER
 	help
 	  This selects support for Rockchip SoC specific extensions
 	  for the Synopsys DesignWare HDMI driver. If you want to
@@ -107,6 +108,7 @@ config ROCKCHIP_DW_MIPI_DSI
 config ROCKCHIP_DW_DP
 	bool "Rockchip specific extensions for Synopsys DW DPTX"
 	select DRM_DISPLAY_HDCP_HELPER
+	select DRM_DISPLAY_HDMI_HELPER
 	help
 	  Choose this option for Synopsys DesignWare Cores DisplayPort
 	  transmit controller support on Rockchip SoC.
@@ -164,5 +166,6 @@ config ROCKCHIP_DW_HDCP2
 
 source "drivers/gpu/drm/rockchip/rk618/Kconfig"
 source "drivers/gpu/drm/rockchip/rk628/Kconfig"
+source "drivers/gpu/drm/rockchip/ebc-dev/Kconfig"
 
 endif

@@ -538,7 +538,6 @@ int vgic_v3_map_resources(struct kvm *kvm)
 {
 	struct vgic_dist *dist = &kvm->arch.vgic;
 	struct kvm_vcpu *vcpu;
-	int ret = 0;
 	unsigned long c;
 
 	kvm_for_each_vcpu(c, vcpu, kvm) {
@@ -566,12 +565,6 @@ int vgic_v3_map_resources(struct kvm *kvm)
 	 */
 	if (!vgic_initialized(kvm)) {
 		return -EBUSY;
-	}
-
-	ret = vgic_register_dist_iodev(kvm, dist->vgic_dist_base, VGIC_V3);
-	if (ret) {
-		kvm_err("Unable to register VGICv3 dist MMIO regions\n");
-		return ret;
 	}
 
 	if (kvm_vgic_global_state.has_gicv4_1)
@@ -721,15 +714,8 @@ void vgic_v3_load(struct kvm_vcpu *vcpu)
 {
 	struct vgic_v3_cpu_if *cpu_if = &vcpu->arch.vgic_cpu.vgic_v3;
 
-	/*
-	 * If dealing with a GICv2 emulation on GICv3, VMCR_EL2.VFIQen
-	 * is dependent on ICC_SRE_EL1.SRE, and we have to perform the
-	 * VMCR_EL2 save/restore in the world switch.
-	 */
-	if (likely(cpu_if->vgic_sre))
-		kvm_call_hyp(__vgic_v3_write_vmcr, cpu_if->vgic_vmcr);
-
-	kvm_call_hyp(__vgic_v3_restore_aprs, cpu_if);
+	if (likely(!is_protected_kvm_enabled()))
+		kvm_call_hyp(__vgic_v3_restore_vmcr_aprs, cpu_if);
 
 	if (has_vhe())
 		__vgic_v3_activate_traps(cpu_if);
@@ -737,23 +723,14 @@ void vgic_v3_load(struct kvm_vcpu *vcpu)
 	WARN_ON(vgic_v4_load(vcpu));
 }
 
-void vgic_v3_vmcr_sync(struct kvm_vcpu *vcpu)
+void vgic_v3_put(struct kvm_vcpu *vcpu, bool blocking)
 {
 	struct vgic_v3_cpu_if *cpu_if = &vcpu->arch.vgic_cpu.vgic_v3;
 
-	if (likely(cpu_if->vgic_sre))
-		cpu_if->vgic_vmcr = kvm_call_hyp_ret(__vgic_v3_read_vmcr);
-}
+	WARN_ON(vgic_v4_put(vcpu));
 
-void vgic_v3_put(struct kvm_vcpu *vcpu)
-{
-	struct vgic_v3_cpu_if *cpu_if = &vcpu->arch.vgic_cpu.vgic_v3;
-
-	WARN_ON(vgic_v4_put(vcpu, false));
-
-	vgic_v3_vmcr_sync(vcpu);
-
-	kvm_call_hyp(__vgic_v3_save_aprs, cpu_if);
+	if (likely(!is_protected_kvm_enabled()))
+		kvm_call_hyp(__vgic_v3_save_vmcr_aprs, cpu_if);
 
 	if (has_vhe())
 		__vgic_v3_deactivate_traps(cpu_if);

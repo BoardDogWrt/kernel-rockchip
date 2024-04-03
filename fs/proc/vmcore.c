@@ -132,7 +132,7 @@ ssize_t read_from_oldmem(struct iov_iter *iter, size_t count,
 			 u64 *ppos, bool encrypted)
 {
 	unsigned long pfn, offset;
-	size_t nr_bytes;
+	ssize_t nr_bytes;
 	ssize_t read = 0, tmp;
 	int idx;
 
@@ -582,8 +582,7 @@ static int mmap_vmcore(struct file *file, struct vm_area_struct *vma)
 	if (vma->vm_flags & (VM_WRITE | VM_EXEC))
 		return -EPERM;
 
-	vma->vm_flags &= ~(VM_MAYWRITE | VM_MAYEXEC);
-	vma->vm_flags |= VM_MIXEDMAP;
+	vm_flags_mod(vma, VM_MIXEDMAP, VM_MAYWRITE | VM_MAYEXEC);
 	vma->vm_ops = &vmcore_mmap_ops;
 
 	len = 0;

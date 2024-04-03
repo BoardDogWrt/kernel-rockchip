@@ -285,6 +285,9 @@ config ARCH_HAS_DMA_SET_UNCACHED
 config ARCH_HAS_DMA_CLEAR_UNCACHED
 	bool
 
+config ARCH_HAS_CPU_FINALIZE_INIT
+	bool
+
 # Select if arch init_task must go in the __init_task_data section
 config ARCH_TASK_STRUCT_ON_STACK
 	bool
@@ -650,6 +653,13 @@ config SHADOW_CALL_STACK
 	  of shadow stacks in memory, which means an attacker capable of
 	  reading and writing arbitrary memory may be able to locate them
 	  and hijack control flow by modifying the stacks.
+
+config DYNAMIC_SCS
+	bool
+	help
+	  Set by the arch code if it relies on code patching to insert the
+	  shadow call stack push and pop instructions rather than on the
+	  compiler.
 
 config LTO
 	bool
@@ -1314,6 +1324,9 @@ config RELR
 	  are compatible).
 
 config ARCH_HAS_MEM_ENCRYPT
+	bool
+
+config ARCH_HAS_MEM_RELINQUISH
 	bool
 
 config ARCH_HAS_CC_PLATFORM

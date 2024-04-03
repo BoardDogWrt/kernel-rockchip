@@ -187,7 +187,7 @@ static int dw_mci_v2_execute_tuning(struct dw_mci_slot *slot, u32 opcode)
 	}
 
 	if (i == ARRAY_SIZE(degrees)) {
-		dev_warn(host->dev, "All phases bad!");
+		dev_warn(host->dev, "V2 All phases bad!");
 		return -EIO;
 	}
 
@@ -221,8 +221,7 @@ static int dw_mci_rk3288_execute_tuning(struct dw_mci_slot *slot, u32 opcode)
 	}
 
 	if (priv->use_v2_tuning) {
-		ret = dw_mci_v2_execute_tuning(slot, opcode);
-		if (!ret)
+		if (!dw_mci_v2_execute_tuning(slot, opcode))
 			return 0;
 		/* Otherwise we continue using fine tuning */
 	}
@@ -473,8 +472,10 @@ static int dw_mci_rockchip_probe(struct platform_device *pdev)
 	if (!pdev->dev.of_node)
 		return -ENODEV;
 
-	if (!device_property_read_bool(&pdev->dev, "non-removable") &&
-	    !device_property_read_bool(&pdev->dev, "cd-gpios"))
+	if ((!device_property_read_bool(&pdev->dev, "non-removable") &&
+	     !device_property_read_bool(&pdev->dev, "cd-gpios")) ||
+	    (device_property_read_bool(&pdev->dev, "no-sd") &&
+	     device_property_read_bool(&pdev->dev, "no-mmc")))
 		use_rpm = false;
 
 	match = of_match_node(dw_mci_rockchip_match, pdev->dev.of_node);

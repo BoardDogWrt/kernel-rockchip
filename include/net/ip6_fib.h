@@ -13,6 +13,7 @@
 #include <linux/rtnetlink.h>
 #include <linux/spinlock.h>
 #include <linux/notifier.h>
+#include <linux/android_kabi.h>
 #include <net/dst.h>
 #include <net/flow.h>
 #include <net/ip_fib.h>
@@ -68,6 +69,8 @@ struct fib6_config {
 	struct nlattr	*fc_encap;
 	u16		fc_encap_type;
 	bool		fc_is_fdb;
+
+	ANDROID_KABI_RESERVE(1);
 };
 
 struct fib6_node {
@@ -84,6 +87,8 @@ struct fib6_node {
 	int			fn_sernum;
 	struct fib6_info __rcu	*rr_ptr;
 	struct rcu_head		rcu;
+
+	ANDROID_KABI_RESERVE(1);
 };
 
 struct fib6_gc_args {
@@ -203,6 +208,9 @@ struct fib6_info {
 
 	struct rcu_head			rcu;
 	struct nexthop			*nh;
+
+	ANDROID_KABI_RESERVE(1);
+
 	struct fib6_nh			fib6_nh[];
 };
 
@@ -222,6 +230,8 @@ struct rt6_info {
 
 	/* more non-fragment space at head required */
 	unsigned short			rt6i_nfheader_len;
+
+	ANDROID_KABI_RESERVE(1);
 };
 
 struct fib6_result {
@@ -472,13 +482,10 @@ void rt6_get_prefsrc(const struct rt6_info *rt, struct in6_addr *addr)
 	rcu_read_lock();
 
 	from = rcu_dereference(rt->from);
-	if (from) {
+	if (from)
 		*addr = from->fib6_prefsrc.addr;
-	} else {
-		struct in6_addr in6_zero = {};
-
-		*addr = in6_zero;
-	}
+	else
+		*addr = in6addr_any;
 
 	rcu_read_unlock();
 }
@@ -610,7 +617,10 @@ static inline bool fib6_rules_early_flow_dissect(struct net *net,
 	if (!net->ipv6.fib6_rules_require_fldissect)
 		return false;
 
-	skb_flow_dissect_flow_keys(skb, flkeys, flag);
+	memset(flkeys, 0, sizeof(*flkeys));
+	__skb_flow_dissect(net, skb, &flow_keys_dissector,
+			   flkeys, NULL, 0, 0, 0, flag);
+
 	fl6->fl6_sport = flkeys->ports.src;
 	fl6->fl6_dport = flkeys->ports.dst;
 	fl6->flowi6_proto = flkeys->basic.ip_proto;

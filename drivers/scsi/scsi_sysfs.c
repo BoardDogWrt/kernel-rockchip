@@ -456,6 +456,8 @@ static void scsi_device_dev_release_usercontext(struct work_struct *work)
 
 	mod = sdev->host->hostt->module;
 
+	might_sleep();
+
 	scsi_dh_release_device(sdev);
 
 	parent = sdev->sdev_gendev.parent;
@@ -762,7 +764,7 @@ static ssize_t
 store_rescan_field (struct device *dev, struct device_attribute *attr,
 		    const char *buf, size_t count)
 {
-	scsi_rescan_device(dev);
+	scsi_rescan_device(to_scsi_device(dev));
 	return count;
 }
 static DEVICE_ATTR(rescan, S_IWUSR, NULL, store_rescan_field);
@@ -855,7 +857,7 @@ store_state_field(struct device *dev, struct device_attribute *attr,
 		 * waiting for pending I/O to finish.
 		 */
 		blk_mq_run_hw_queues(sdev->request_queue, true);
-		scsi_rescan_device(dev);
+		scsi_rescan_device(sdev);
 	}
 
 	return ret == 0 ? count : -EINVAL;
@@ -1486,6 +1488,7 @@ void __scsi_remove_device(struct scsi_device *sdev)
 	mutex_unlock(&sdev->state_mutex);
 
 	blk_mq_destroy_queue(sdev->request_queue);
+	blk_put_queue(sdev->request_queue);
 	kref_put(&sdev->host->tagset_refcnt, scsi_mq_free_tags);
 	cancel_work_sync(&sdev->requeue_work);
 

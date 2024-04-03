@@ -571,7 +571,7 @@ static int spinand_read_page(struct spinand_device *spinand,
 			     const struct nand_page_io_req *req)
 {
 	struct nand_device *nand = spinand_to_nand(spinand);
-	u8 status;
+	u8 status = 0;
 	int ret;
 
 	ret = nand_ecc_prepare_io_req(nand, (struct nand_page_io_req *)req);
@@ -586,6 +586,16 @@ static int spinand_read_page(struct spinand_device *spinand,
 			   SPINAND_READ_INITIAL_DELAY_US,
 			   SPINAND_READ_POLL_DELAY_US,
 			   &status);
+	/*
+	 * When there is data outside of OIP in the status, the status data is
+	 * inaccurate and needs to be reconfirmed
+	 */
+	if (spinand->id.data[0] == 0x01 && status && !ret) {
+		ret = spinand_wait(spinand,
+				   SPINAND_READ_INITIAL_DELAY_US,
+				   SPINAND_READ_POLL_DELAY_US,
+				   &status);
+	}
 	if (ret < 0)
 		return ret;
 
@@ -959,6 +969,7 @@ static const struct spinand_manufacturer *spinand_manufacturers[] = {
 	&skyhigh_spinand_manufacturer,
 	&toshiba_spinand_manufacturer,
 	&unim_spinand_manufacturer,
+	&unim_zl_spinand_manufacturer,
 	&winbond_spinand_manufacturer,
 	&xincun_spinand_manufacturer,
 	&xtx_spinand_manufacturer,
@@ -1198,6 +1209,13 @@ static int spinand_init_flash(struct spinand_device *spinand)
 		ret = spinand_select_target(spinand, i);
 		if (ret)
 			break;
+
+		/* HWP_EN must be enabled first before block unlock region is set */
+		if (spinand->id.data[0] == 0x01) {
+			ret = spinand_lock_block(spinand, HWP_EN);
+			if (ret)
+				return ret;
+		}
 
 		ret = spinand_lock_block(spinand, BL_ALL_UNLOCKED);
 		if (ret)

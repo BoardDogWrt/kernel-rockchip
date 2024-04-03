@@ -26,6 +26,7 @@
 #include <linux/posix-timers.h>
 #include <linux/context_tracking.h>
 #include <linux/mm.h>
+#include <trace/hooks/sched.h>
 
 #include <asm/irq_regs.h>
 
@@ -161,8 +162,19 @@ static ktime_t tick_init_jiffy_update(void)
 	raw_spin_lock(&jiffies_lock);
 	write_seqcount_begin(&jiffies_seq);
 	/* Did we start the jiffies update yet ? */
-	if (last_jiffies_update == 0)
+	if (last_jiffies_update == 0) {
+		u32 rem;
+
+		/*
+		 * Ensure that the tick is aligned to a multiple of
+		 * TICK_NSEC.
+		 */
+		div_u64_rem(tick_next_period, TICK_NSEC, &rem);
+		if (rem)
+			tick_next_period += TICK_NSEC - rem;
+
 		last_jiffies_update = tick_next_period;
+	}
 	period = last_jiffies_update;
 	write_seqcount_end(&jiffies_seq);
 	raw_spin_unlock(&jiffies_lock);
@@ -195,8 +207,10 @@ static void tick_sched_do_timer(struct tick_sched *ts, ktime_t now)
 #endif
 
 	/* Check, if the jiffies need an update */
-	if (tick_do_timer_cpu == cpu)
+	if (tick_do_timer_cpu == cpu) {
 		tick_do_update_jiffies64(now);
+		trace_android_vh_jiffies_update(NULL);
+	}
 
 	/*
 	 * If jiffies update stalled for too long (timekeeper in stop_machine()
@@ -278,6 +292,11 @@ static bool check_tick_dependency(atomic_t *dep)
 
 	if (val & TICK_DEP_MASK_RCU) {
 		trace_tick_stop(0, TICK_DEP_MASK_RCU);
+		return true;
+	}
+
+	if (val & TICK_DEP_MASK_RCU_EXP) {
+		trace_tick_stop(0, TICK_DEP_MASK_RCU_EXP);
 		return true;
 	}
 
@@ -527,7 +546,7 @@ void __init tick_nohz_full_setup(cpumask_var_t cpumask)
 	tick_nohz_full_running = true;
 }
 
-static int tick_nohz_cpu_down(unsigned int cpu)
+bool tick_nohz_cpu_hotpluggable(unsigned int cpu)
 {
 	/*
 	 * The tick_do_timer_cpu CPU handles housekeeping duty (unbound
@@ -535,8 +554,13 @@ static int tick_nohz_cpu_down(unsigned int cpu)
 	 * CPUs. It must remain online when nohz full is enabled.
 	 */
 	if (tick_nohz_full_running && tick_do_timer_cpu == cpu)
-		return -EBUSY;
-	return 0;
+		return false;
+	return true;
+}
+
+static int tick_nohz_cpu_down(unsigned int cpu)
+{
+	return tick_nohz_cpu_hotpluggable(cpu) ? 0 : -EBUSY;
 }
 
 void __init tick_nohz_init(void)
@@ -1025,11 +1049,11 @@ static bool report_idle_softirq(void)
 			return false;
 	}
 
-	if (ratelimit < 10)
+	if (ratelimit >= 10)
 		return false;
 
 	/* On RT, softirqs handling may be waiting on some lock */
-	if (!local_bh_blocked())
+	if (local_bh_blocked())
 		return false;
 
 	pr_warn("NOHZ tick-stop error: local softirq work is pending, handler #%02x!!!\n",
@@ -1248,6 +1272,7 @@ ktime_t tick_nohz_get_sleep_length(ktime_t *delta_next)
 
 	return ktime_sub(next_event, now);
 }
+EXPORT_SYMBOL_GPL(tick_nohz_get_sleep_length);
 
 /**
  * tick_nohz_get_idle_calls_cpu - return the current idle calls counter value
@@ -1261,6 +1286,7 @@ unsigned long tick_nohz_get_idle_calls_cpu(int cpu)
 
 	return ts->idle_calls;
 }
+EXPORT_SYMBOL_GPL(tick_nohz_get_idle_calls_cpu);
 
 /**
  * tick_nohz_get_idle_calls - return the current idle calls counter value

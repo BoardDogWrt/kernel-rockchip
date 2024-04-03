@@ -39,7 +39,11 @@
 #include <linux/fs_parser.h>
 #include <linux/swapfile.h>
 #include <linux/iversion.h>
+#include <linux/mm_inline.h>
 #include "swap.h"
+
+#undef CREATE_TRACE_POINTS
+#include <trace/hooks/mm.h>
 
 static struct vfsmount *shm_mnt;
 
@@ -79,6 +83,7 @@ static struct vfsmount *shm_mnt;
 #include <linux/userfaultfd_k.h>
 #include <linux/rmap.h>
 #include <linux/uuid.h>
+#include <linux/android_vendor.h>
 
 #include <linux/uaccess.h>
 
@@ -800,14 +805,16 @@ unsigned long shmem_partial_swap_usage(struct address_space *mapping,
 	XA_STATE(xas, &mapping->i_pages, start);
 	struct page *page;
 	unsigned long swapped = 0;
+	unsigned long max = end - 1;
 
 	rcu_read_lock();
-	xas_for_each(&xas, page, end - 1) {
+	xas_for_each(&xas, page, max) {
 		if (xas_retry(&xas, page))
 			continue;
 		if (xa_is_value(page))
 			swapped++;
-
+		if (xas.xa_index == max)
+			break;
 		if (need_resched()) {
 			xas_pause(&xas);
 			cond_resched_rcu();
@@ -1564,10 +1571,14 @@ static struct folio *shmem_alloc_folio(gfp_t gfp,
 			struct shmem_inode_info *info, pgoff_t index)
 {
 	struct vm_area_struct pvma;
-	struct folio *folio;
+	struct folio *folio = NULL;
 
 	shmem_pseudo_vma_init(&pvma, info, index);
+	trace_android_rvh_shmem_get_folio(info, &folio);
+	if (folio)
+		goto done;
 	folio = vma_alloc_folio(gfp, 0, &pvma, 0, false);
+done:
 	shmem_pseudo_vma_destroy(&pvma);
 
 	return folio;
@@ -2288,7 +2299,7 @@ static int shmem_mmap(struct file *file, struct vm_area_struct *vma)
 		return ret;
 
 	/* arm64 - allow memory tagging on RAM-based files */
-	vma->vm_flags |= VM_MTE_ALLOWED;
+	vm_flags_set(vma, VM_MTE_ALLOWED);
 
 	file_accessed(file);
 	vma->vm_ops = &shmem_vm_ops;
@@ -2344,6 +2355,7 @@ static struct inode *shmem_get_inode(struct super_block *sb, struct inode *dir,
 		inode->i_generation = get_random_u32();
 		info = SHMEM_I(inode);
 		memset(info, 0, (char *)inode - (char *)info);
+		android_init_vendor_data(info, 1);
 		spin_lock_init(&info->lock);
 		atomic_set(&info->stop_eviction, 0);
 		info->seals = F_SEAL_SEAL;
@@ -3483,6 +3495,8 @@ static int shmem_parse_one(struct fs_context *fc, struct fs_parameter *param)
 	unsigned long long size;
 	char *rest;
 	int opt;
+	kuid_t kuid;
+	kgid_t kgid;
 
 	opt = fs_parse(fc, shmem_fs_parameters, param, &result);
 	if (opt < 0)
@@ -3518,14 +3532,32 @@ static int shmem_parse_one(struct fs_context *fc, struct fs_parameter *param)
 		ctx->mode = result.uint_32 & 07777;
 		break;
 	case Opt_uid:
-		ctx->uid = make_kuid(current_user_ns(), result.uint_32);
-		if (!uid_valid(ctx->uid))
+		kuid = make_kuid(current_user_ns(), result.uint_32);
+		if (!uid_valid(kuid))
 			goto bad_value;
+
+		/*
+		 * The requested uid must be representable in the
+		 * filesystem's idmapping.
+		 */
+		if (!kuid_has_mapping(fc->user_ns, kuid))
+			goto bad_value;
+
+		ctx->uid = kuid;
 		break;
 	case Opt_gid:
-		ctx->gid = make_kgid(current_user_ns(), result.uint_32);
-		if (!gid_valid(ctx->gid))
+		kgid = make_kgid(current_user_ns(), result.uint_32);
+		if (!gid_valid(kgid))
 			goto bad_value;
+
+		/*
+		 * The requested gid must be representable in the
+		 * filesystem's idmapping.
+		 */
+		if (!kgid_has_mapping(fc->user_ns, kgid))
+			goto bad_value;
+
+		ctx->gid = kgid;
 		break;
 	case Opt_huge:
 		ctx->huge = result.uint_32;
@@ -4137,7 +4169,7 @@ static struct file_system_type shmem_fs_type = {
 	.name		= "tmpfs",
 	.init_fs_context = ramfs_init_fs_context,
 	.parameters	= ramfs_fs_parameters,
-	.kill_sb	= kill_litter_super,
+	.kill_sb	= ramfs_kill_sb,
 	.fs_flags	= FS_USERNS_MOUNT,
 };
 
@@ -4335,3 +4367,41 @@ struct page *shmem_read_mapping_page_gfp(struct address_space *mapping,
 #endif
 }
 EXPORT_SYMBOL_GPL(shmem_read_mapping_page_gfp);
+
+int reclaim_shmem_address_space(struct address_space *mapping)
+{
+#ifdef CONFIG_SHMEM
+	pgoff_t start = 0;
+	struct page *page;
+	LIST_HEAD(page_list);
+	XA_STATE(xas, &mapping->i_pages, start);
+
+	if (!shmem_mapping(mapping))
+		return -EINVAL;
+
+	lru_add_drain();
+
+	rcu_read_lock();
+	xas_for_each(&xas, page, ULONG_MAX) {
+		if (xas_retry(&xas, page))
+			continue;
+		if (xa_is_value(page))
+			continue;
+		if (isolate_lru_page(page))
+			continue;
+
+		list_add(&page->lru, &page_list);
+
+		if (need_resched()) {
+			xas_pause(&xas);
+			cond_resched_rcu();
+		}
+	}
+	rcu_read_unlock();
+
+	return reclaim_pages(&page_list);
+#else
+	return 0;
+#endif
+}
+EXPORT_SYMBOL_GPL(reclaim_shmem_address_space);

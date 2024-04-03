@@ -18,7 +18,7 @@
 		status = "okay";
 		compatible = "simple-audio-card";
 		simple-audio-card,format = "dsp_a";
-		simple-audio-card,bitclock-inversion = <1>;
+		simple-audio-card,bitclock-inversion;
 		simple-audio-card,mclk-fs = <512>;
 		simple-audio-card,name = "rockchip,bt";
 		#simple-audio-card,bitclock-master = <&sound2_master>;
@@ -207,7 +207,7 @@
 		     &gmac1m1_rgmii_bus
 		     &eth1m1_pins>;
 
-	tx_delay = <0x47>;
+	tx_delay = <0x30>;
 	rx_delay = <0x28>;
 
 	phy-handle = <&rgmii_phy1>;
@@ -242,7 +242,7 @@
 &i2s1_8ch {
 	status = "okay";
 	#sound-dai-cells = <0>;
-	rockchip,clk-trcm = <1>;
+	rockchip,trcm-sync-tx-only;
 	pinctrl-names = "default";
 	pinctrl-0 = <&i2s1m0_sclktx
 		     &i2s1m0_lrcktx

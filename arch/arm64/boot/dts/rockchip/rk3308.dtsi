@@ -281,7 +281,7 @@
 			route_rgb: route-rgb {
 				status = "disabled";
 				logo,uboot = "logo.bmp";
-				/* logo,kernel = "logo_kernel.bmp"; */
+				logo,kernel = "logo_kernel.bmp";
 				logo,mode = "center";
 				charge_logo,mode = "center";
 				connect = <&vop_out_rgb>;
@@ -916,6 +916,14 @@
 			polling-delay = <1000>; /* milliseconds */
 
 			thermal-sensors = <&tsadc 1>;
+
+			trips {
+				gpu_crit: gpu_crit {
+					temperature = <115000>; /* millicelsius */
+					hysteresis = <2000>; /* millicelsius */
+					type = "critical";
+				};
+			};
 		};
 	};
 
@@ -1133,7 +1141,7 @@
 		dma-names = "tx", "rx";
 		resets = <&cru SRST_I2S0_2CH_M>, <&cru SRST_I2S0_2CH_H>;
 		reset-names = "reset-m", "reset-h";
-		rockchip,clk-trcm = <1>;
+		rockchip,trcm-sync-tx-only;
 		pinctrl-names = "default";
 		pinctrl-0 = <&i2s_2ch_0_sclk
 			     &i2s_2ch_0_lrck

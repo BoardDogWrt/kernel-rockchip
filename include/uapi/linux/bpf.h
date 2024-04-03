@@ -978,6 +978,16 @@ enum bpf_prog_type {
 	BPF_PROG_TYPE_LSM,
 	BPF_PROG_TYPE_SK_LOOKUP,
 	BPF_PROG_TYPE_SYSCALL, /* a program that can execute syscalls */
+
+	/*
+	 * Until fuse-bpf is upstreamed, this value must be at the end to allow for
+	 * other recently-added upstreamed values to be correct.
+	 * This works because no one should use this value directly, rather they must
+	 * read the value from /sys/fs/fuse/bpf_prog_type_fuse
+	 * Please maintain this value at the end of the list until fuse-bpf is
+	 * upstreamed.
+	 */
+	BPF_PROG_TYPE_FUSE,
 };
 
 enum bpf_attach_type {
@@ -1837,7 +1847,9 @@ union bpf_attr {
  * 		performed again, if the helper is used in combination with
  * 		direct packet access.
  * 	Return
- * 		0 on success, or a negative error in case of failure.
+ * 		0 on success, or a negative error in case of failure. Positive
+ * 		error indicates a potential drop or congestion in the target
+ * 		device. The particular positive error codes are not defined.
  *
  * u64 bpf_get_current_pid_tgid(void)
  * 	Description
@@ -3110,6 +3122,11 @@ union bpf_attr {
  *		**BPF_FIB_LOOKUP_OUTPUT**
  *			Perform lookup from an egress perspective (default is
  *			ingress).
+ *		**BPF_FIB_LOOKUP_SKIP_NEIGH**
+ *			Skip the neighbour table lookup. *params*->dmac
+ *			and *params*->smac will not be set as output. A common
+ *			use case is to call **bpf_redirect_neigh**\ () after
+ *			doing **bpf_fib_lookup**\ ().
  *
  *		*ctx* is either **struct xdp_md** for XDP programs or
  *		**struct sk_buff** tc cls_act programs.
@@ -6676,6 +6693,7 @@ struct bpf_raw_tracepoint_args {
 enum {
 	BPF_FIB_LOOKUP_DIRECT  = (1U << 0),
 	BPF_FIB_LOOKUP_OUTPUT  = (1U << 1),
+	BPF_FIB_LOOKUP_SKIP_NEIGH = (1U << 2),
 };
 
 enum {

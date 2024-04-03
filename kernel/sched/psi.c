@@ -136,6 +136,7 @@
  * cost-wise, yet way more sensitive and accurate than periodic
  * sampling of the aggregate task states would be.
  */
+#include <trace/hooks/psi.h>
 
 static int psi_bug __read_mostly;
 
@@ -160,7 +161,6 @@ __setup("psi=", setup_psi);
 #define EXP_300s	2034		/* 1/exp(2s/300s) */
 
 /* PSI trigger definitions */
-#define WINDOW_MIN_US 500000	/* Min window size is 500ms */
 #define WINDOW_MAX_US 10000000	/* Max window size is 10s */
 #define UPDATES_PER_WINDOW 10	/* 10 updates per window */
 
@@ -1254,8 +1254,7 @@ struct psi_trigger *psi_trigger_create(struct psi_group *group,
 	if (state >= PSI_NONIDLE)
 		return ERR_PTR(-EINVAL);
 
-	if (window_us < WINDOW_MIN_US ||
-		window_us > WINDOW_MAX_US)
+	if (window_us == 0 || window_us > WINDOW_MAX_US)
 		return ERR_PTR(-EINVAL);
 
 	/* Check threshold */
@@ -1568,11 +1567,11 @@ static int __init psi_proc_init(void)
 {
 	if (psi_enable) {
 		proc_mkdir("pressure", NULL);
-		proc_create("pressure/io", 0666, NULL, &psi_io_proc_ops);
-		proc_create("pressure/memory", 0666, NULL, &psi_memory_proc_ops);
-		proc_create("pressure/cpu", 0666, NULL, &psi_cpu_proc_ops);
+		proc_create("pressure/io", 0, NULL, &psi_io_proc_ops);
+		proc_create("pressure/memory", 0, NULL, &psi_memory_proc_ops);
+		proc_create("pressure/cpu", 0, NULL, &psi_cpu_proc_ops);
 #ifdef CONFIG_IRQ_TIME_ACCOUNTING
-		proc_create("pressure/irq", 0666, NULL, &psi_irq_proc_ops);
+		proc_create("pressure/irq", 0, NULL, &psi_irq_proc_ops);
 #endif
 	}
 	return 0;

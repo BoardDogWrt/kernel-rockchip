@@ -12,6 +12,7 @@
 #include <linux/nvmem-consumer.h>
 #include <linux/regmap.h>
 #include <linux/regulator/consumer.h>
+#include <linux/rockchip/rockchip_sip.h>
 #include <linux/slab.h>
 #include <linux/soc/rockchip/pvtm.h>
 #include <linux/thermal.h>
@@ -1016,15 +1017,15 @@ static void rockchip_pvtpll_add_length(struct rockchip_opp_info *info)
 	}
 
 	if (of_property_read_u32(np, "rockchip,pvtpll-len-min-rate", &min_rate))
-		return;
+		goto out;
 	if (of_property_read_u32(np, "rockchip,pvtpll-len-max-rate", &max_rate))
-		return;
+		goto out;
 	if (of_property_read_u32(np, "rockchip,pvtpll-len-margin", &margin))
-		return;
+		goto out;
 
 	opp_table = dev_pm_opp_get_opp_table(info->dev);
 	if (!opp_table)
-		return;
+		goto out;
 	old_rate = clk_get_rate(opp_table->clk);
 	opp_flag = OPP_ADD_LENGTH | ((margin & OPP_LENGTH_MASK) << OPP_LENGTH_SHIFT);
 
@@ -1045,6 +1046,8 @@ static void rockchip_pvtpll_add_length(struct rockchip_opp_info *info)
 	clk_set_rate(opp_table->clk, old_rate);
 
 	dev_pm_opp_put_opp_table(opp_table);
+out:
+	of_node_put(np);
 }
 
 static int rockchip_get_pvtm_pvtpll(struct device *dev, struct device_node *np,
@@ -1176,12 +1179,13 @@ static int rockchip_get_pvtm(struct device *dev, struct device_node *np,
 }
 
 static void rockchip_of_get_pvtm_sel(struct device *dev, struct device_node *np,
-				     const char *reg_name, int process,
+				     const char *reg_name, int bin, int process,
 				     int *volt_sel, int *scale_sel)
 {
 	struct property *prop = NULL;
 	char name[NAME_MAX];
 	int pvtm, ret;
+	u32 hw = 0;
 
 	if (of_property_read_bool(np, "rockchip,pvtm-pvtpll"))
 		pvtm = rockchip_get_pvtm_pvtpll(dev, np, reg_name);
@@ -1196,6 +1200,17 @@ static void rockchip_of_get_pvtm_sel(struct device *dev, struct device_node *np,
 		snprintf(name, sizeof(name),
 			 "rockchip,p%d-pvtm-voltage-sel", process);
 		prop = of_find_property(np, name, NULL);
+	} else if (bin > 0) {
+		of_property_read_u32(np, "rockchip,pvtm-hw", &hw);
+		if (hw && (hw & BIT(bin))) {
+			sprintf(name, "rockchip,pvtm-voltage-sel-hw");
+			prop = of_find_property(np, name, NULL);
+		}
+		if (!prop) {
+			snprintf(name, sizeof(name),
+				 "rockchip,pvtm-voltage-sel-B%d", bin);
+			prop = of_find_property(np, name, NULL);
+		}
 	}
 	if (!prop)
 		sprintf(name, "rockchip,pvtm-voltage-sel");
@@ -1206,6 +1221,7 @@ static void rockchip_of_get_pvtm_sel(struct device *dev, struct device_node *np,
 next:
 	if (!scale_sel)
 		return;
+	prop = NULL;
 	if (process >= 0) {
 		snprintf(name, sizeof(name),
 			 "rockchip,p%d-pvtm-scaling-sel", process);
@@ -1301,6 +1317,157 @@ static int rockchip_get_volt_rm_table(struct device *dev, struct device_node *np
 	return 0;
 }
 
+static int rockchip_get_soc_info(struct device *dev, struct device_node *np,
+				 int *bin, int *process)
+{
+	u8 value = 0;
+	int ret = 0;
+
+	if (*bin >= 0 || *process >= 0)
+		return 0;
+
+	if (of_property_match_string(np, "nvmem-cell-names",
+				     "remark_spec_serial_number") >= 0)
+		rockchip_nvmem_cell_read_u8(np, "remark_spec_serial_number", &value);
+
+	if (!value && of_property_match_string(np, "nvmem-cell-names",
+					       "specification_serial_number") >= 0) {
+		ret = rockchip_nvmem_cell_read_u8(np,
+						  "specification_serial_number",
+						  &value);
+		if (ret) {
+			dev_err(dev,
+				"Failed to get specification_serial_number\n");
+			return ret;
+		}
+	}
+
+	/* M */
+	if (value == 0xd)
+		*bin = 1;
+	/* J */
+	else if (value == 0xa)
+		*bin = 2;
+
+	if (*bin < 0)
+		*bin = 0;
+	dev_info(dev, "bin=%d\n", *bin);
+
+	return 0;
+}
+
+static void rockchip_init_pvtpll_table(struct device *dev,
+				       struct rockchip_opp_info *info)
+{
+	struct device_node *np = NULL;
+	struct property *prop = NULL;
+	struct of_phandle_args clkspec = { 0 };
+	struct arm_smccc_res res;
+	char prop_name[NAME_MAX];
+	u32 *value;
+	int count;
+	int ret, i;
+
+	if (!info)
+		return;
+
+	np = of_parse_phandle(dev->of_node, "operating-points-v2", 0);
+	if (!np) {
+		dev_warn(dev, "OPP-v2 not supported\n");
+		return;
+	}
+
+	ret = of_parse_phandle_with_args(dev->of_node, "clocks", "#clock-cells",
+					 0, &clkspec);
+	if (ret)
+		goto out;
+	info->pvtpll_clk_id = clkspec.args[0];
+	of_node_put(clkspec.np);
+
+	res = sip_smc_get_pvtpll_info(PVTPLL_GET_INFO, info->pvtpll_clk_id);
+	if (res.a0)
+		goto out;
+	if (!res.a1)
+		info->pvtpll_low_temp = true;
+
+	if (info->bin > 0) {
+		snprintf(prop_name, sizeof(prop_name),
+			 "rockchip,pvtpll-table-B%d", info->bin);
+		prop = of_find_property(np, prop_name, NULL);
+	}
+	if (!prop)
+		sprintf(prop_name, "rockchip,pvtpll-table");
+
+	prop = of_find_property(np, prop_name, NULL);
+	if (!prop)
+		goto out;
+
+	count = of_property_count_u32_elems(np, prop_name);
+	if (count < 0) {
+		dev_err(dev, "%s: Invalid %s property (%d)\n", __func__,
+			prop_name, count);
+		goto out;
+	} else if (count % 5) {
+		dev_err(dev, "Invalid count of %s\n", prop_name);
+		goto out;
+	}
+
+	value = kmalloc_array(count, sizeof(*value), GFP_KERNEL);
+	if (!value)
+		goto out;
+	ret = of_property_read_u32_array(np, prop_name, value, count);
+	if (ret) {
+		dev_err(dev, "%s: error parsing %s: %d\n", __func__,
+			prop_name, ret);
+		goto free_value;
+	}
+
+	for (i = 0; i < count; i += 5) {
+		res = sip_smc_pvtpll_config(PVTPLL_ADJUST_TABLE,
+					    info->pvtpll_clk_id, value[i],
+					    value[i + 1], value[i + 2],
+					    value[i + 3], value[i + 4]);
+		if (res.a0) {
+			dev_err(dev,
+				"%s: error cfg clk_id=%u %u %u %u %u %u (%d)\n",
+				__func__, info->pvtpll_clk_id, value[i],
+				value[i + 1], value[i + 2], value[i + 3],
+				value[i + 4], (int)res.a0);
+			goto free_value;
+		}
+	}
+
+free_value:
+	kfree(value);
+out:
+	of_node_put(np);
+}
+
+static int rockchip_set_opp_supported_hw(struct device *dev,
+					 struct device_node *np,
+					 struct rockchip_opp_info *info)
+{
+	u32 version = 0, speed = 0;
+
+	if (!of_property_read_bool(np, "rockchip,supported-hw"))
+		return 0;
+	if (info->supported_hw[0] || info->supported_hw[1])
+		return 0;
+
+	if (info->bin >= 0)
+		version = info->bin;
+	if (info->volt_sel >= 0)
+		speed = info->volt_sel;
+	/* SoC Version */
+	info->supported_hw[0] = BIT(version);
+	/* Speed Grade */
+	info->supported_hw[1] = BIT(speed);
+
+	dev_info(dev, "soc version=%d, speed=%d\n", version, speed);
+
+	return 0;
+}
+
 static void rockchip_get_scale_volt_sel(struct device *dev, char *lkg_name,
 					const char *reg_name,
 					struct rockchip_opp_info *info)
@@ -1318,7 +1485,7 @@ static void rockchip_get_scale_volt_sel(struct device *dev, char *lkg_name,
 
 	rockchip_of_get_lkg_sel(dev, np, lkg_name, info->process,
 				&lkg_volt_sel, &lkg_scale);
-	rockchip_of_get_pvtm_sel(dev, np, reg_name, info->process,
+	rockchip_of_get_pvtm_sel(dev, np, reg_name, info->bin, info->process,
 				 &pvtm_volt_sel, &pvtm_scale);
 	rockchip_of_get_bin_sel(dev, np, info->bin, &bin_scale);
 	rockchip_of_get_bin_volt_sel(dev, np, info->bin, &bin_volt_sel);
@@ -1342,15 +1509,21 @@ static int rockchip_opp_set_config(struct device *dev, struct rockchip_opp_info 
 
 	if (clk_name) {
 		clk = clk_get(dev, clk_name);
+		if (IS_ERR_OR_NULL(clk)) {
+			if (!of_property_read_string_index(dev->of_node,
+							   "clock-names",
+							   0, &clk_name))
+				clk = clk_get(dev, clk_name);
+		}
 		if (!IS_ERR_OR_NULL(clk)) {
 			if (strstr(__clk_get_name(clk), "scmi"))
 				info->is_scmi_clk = true;
 			clk_names[0] = clk_name;
 			config.clk_names = clk_names;
 			clk_put(clk);
+			if (info->data && info->data->config_clks)
+				config.config_clks = info->data->config_clks;
 		}
-		if (info->data && info->data->config_clks)
-			config.config_clks = info->data->config_clks;
 	}
 
 	if (info->process >= 0) {
@@ -1404,11 +1577,76 @@ void rockchip_opp_dvfs_unlock(struct rockchip_opp_info *info)
 }
 EXPORT_SYMBOL(rockchip_opp_dvfs_unlock);
 
+static int rockchip_get_opp_clk(struct device *dev, struct device_node *np,
+				struct rockchip_opp_info *info)
+{
+	struct clk_bulk_data *clocks;
+	struct of_phandle_args clkspec;
+	int ret = 0, nclocks = 0, i;
+
+	if (of_find_property(np, "rockchip,opp-clocks", NULL)) {
+		nclocks = of_count_phandle_with_args(np, "rockchip,opp-clocks",
+						     "#clock-cells");
+		if (nclocks <= 0)
+			return 0;
+		clocks = devm_kcalloc(dev, nclocks, sizeof(*clocks), GFP_KERNEL);
+		if (!clocks)
+			return -ENOMEM;
+		for (i = 0; i < nclocks; i++) {
+			ret = of_parse_phandle_with_args(np,
+							 "rockchip,opp-clocks",
+							 "#clock-cells", i,
+							 &clkspec);
+			if (ret < 0) {
+				dev_err(dev, "%s: failed to parse opp clk %d\n",
+					np->name, i);
+				goto error;
+			}
+			clocks[i].clk = of_clk_get_from_provider(&clkspec);
+			of_node_put(clkspec.np);
+			if (IS_ERR(clocks[i].clk)) {
+				ret = PTR_ERR(clocks[i].clk);
+				clocks[i].clk = NULL;
+				dev_err(dev, "%s: failed to get opp clk %d\n",
+					np->name, i);
+				goto error;
+			}
+		}
+	} else {
+		nclocks = of_clk_get_parent_count(np);
+		if (nclocks <= 0)
+			return 0;
+		clocks = devm_kcalloc(dev, nclocks, sizeof(*clocks), GFP_KERNEL);
+		if (!clocks)
+			return -ENOMEM;
+		for (i = 0; i < nclocks; i++) {
+			clocks[i].clk = of_clk_get(np, i);
+			if (IS_ERR(clocks[i].clk)) {
+				ret = PTR_ERR(clocks[i].clk);
+				clocks[i].clk = NULL;
+				dev_err(dev, "%s: failed to get clk %d\n",
+					np->name, i);
+				goto error;
+			}
+		}
+	}
+	info->clocks = clocks;
+	info->nclocks = nclocks;
+
+	return 0;
+error:
+	while (--i >= 0)
+		clk_put(clocks[i].clk);
+	devm_kfree(dev, clocks);
+
+	return ret;
+}
+
 int rockchip_init_opp_info(struct device *dev, struct rockchip_opp_info *info,
 			   char *clk_name, char *reg_name)
 {
 	struct device_node *np;
-	int ret = 0, nclocks = 0, i;
+	int ret = 0;
 	u32 freq;
 
 	/* Get OPP descriptor node */
@@ -1436,24 +1674,10 @@ int rockchip_init_opp_info(struct device *dev, struct rockchip_opp_info *info,
 	if (IS_ERR(info->dsu_grf))
 		info->dsu_grf = NULL;
 
-	nclocks = of_clk_get_parent_count(np);
-	if (nclocks > 0) {
-		info->clocks = devm_kcalloc(dev, nclocks, sizeof(*info->clocks),
-					    GFP_KERNEL);
-		if (!info->clocks) {
-			ret = -ENOMEM;
-			goto out;
-		}
-		for (i = 0; i < nclocks; i++) {
-			info->clocks[i].clk = of_clk_get(np, i);
-			if (IS_ERR(info->clocks[i].clk)) {
-				ret = PTR_ERR(info->clocks[i].clk);
-				dev_err(dev, "%s: failed to get clk %d\n",
-					np->name, i);
-				goto out;
-			}
-		}
-		info->nclocks = nclocks;
+	ret = rockchip_get_opp_clk(dev, np, info);
+	if (ret)
+		goto out;
+	if (info->clocks) {
 		ret = clk_bulk_prepare_enable(info->nclocks, info->clocks);
 		if (ret) {
 			dev_err(dev, "failed to enable opp clks\n");
@@ -1476,11 +1700,14 @@ int rockchip_init_opp_info(struct device *dev, struct rockchip_opp_info *info,
 
 	if (info->data && info->data->get_soc_info)
 		info->data->get_soc_info(dev, np, &info->bin, &info->process);
+	rockchip_get_soc_info(dev, np, &info->bin, &info->process);
 
+	rockchip_init_pvtpll_table(dev, info);
 	rockchip_get_scale_volt_sel(dev, "leakage", reg_name, info);
 
 	if (info && info->data && info->data->set_soc_info)
 		info->data->set_soc_info(dev, np, info);
+	rockchip_set_opp_supported_hw(dev, np, info);
 
 	ret = rockchip_opp_set_config(dev, info, clk_name, reg_name);
 
@@ -1699,6 +1926,10 @@ static int rockchip_adjust_power_scale(struct device *dev, struct rockchip_opp_i
 	rockchip_adjust_opp_by_irdrop(dev, np, &safe_rate, &max_rate);
 
 	dev_info(dev, "avs=%d\n", avs);
+
+	if (!safe_rate && !info->scale)
+		goto out_np;
+
 	clk = of_clk_get_by_name(np, NULL);
 	if (IS_ERR(clk)) {
 		if (!safe_rate)
@@ -1712,14 +1943,14 @@ static int rockchip_adjust_power_scale(struct device *dev, struct rockchip_opp_i
 
 	if (safe_rate)
 		irdrop_scale = rockchip_pll_clk_rate_to_scale(clk, safe_rate);
-	if (max_rate)
-		opp_scale = rockchip_pll_clk_rate_to_scale(clk, max_rate);
 	target_scale = max(irdrop_scale, info->scale);
 	if (target_scale <= 0)
 		goto out_clk;
 	dev_dbg(dev, "target_scale=%d, irdrop_scale=%d, scale=%d\n",
 		target_scale, irdrop_scale, info->scale);
 
+	if (max_rate)
+		opp_scale = rockchip_pll_clk_rate_to_scale(clk, max_rate);
 	if (avs == AVS_SCALING_RATE) {
 		ret = rockchip_pll_clk_adaptive_scaling(clk, target_scale);
 		if (ret)
@@ -2050,12 +2281,20 @@ int rockchip_opp_config_clks(struct device *dev, struct opp_table *opp_table,
 	if (!info->is_runtime_active)
 		return 0;
 
+	ret = clk_bulk_prepare_enable(info->nclocks, info->clocks);
+	if (ret) {
+		dev_err(dev, "failed to enable opp clks\n");
+		return ret;
+	}
+
 	dev_dbg(dev, "%lu -> %lu (Hz)\n", opp_table->rate_clk_single, *target);
 	ret = clk_set_rate(opp_table->clk, *target);
 	if (ret)
 		dev_err(dev, "failed to set clock rate: %lu\n", *target);
 	else
 		opp_table->rate_clk_single = *target;
+
+	clk_bulk_disable_unprepare(info->nclocks, info->clocks);
 
 	return ret;
 }
@@ -2130,6 +2369,14 @@ int rockchip_opp_check_rate_volt(struct device *dev, struct rockchip_opp_info *i
 	dev_dbg(dev, "%s: %lu Hz --> %lu Hz, %lu %lu uV\n", __func__,
 		old_rate, new_rate, new_volt, new_volt_mem);
 	if (new_rate >= old_rate) {
+		if (old_volt > new_volt) {
+			ret = regulator_set_voltage(vdd_reg, new_volt, INT_MAX);
+			if (ret) {
+				dev_err(dev, "%s: failed to set volt: %lu\n",
+					__func__, new_volt);
+				goto restore_voltage;
+			}
+		}
 		if (info->regulator_count > 1) {
 			ret = regulator_set_voltage(mem_reg, new_volt_mem,
 						    INT_MAX);
@@ -2139,11 +2386,13 @@ int rockchip_opp_check_rate_volt(struct device *dev, struct rockchip_opp_info *i
 				goto disable_clk;
 			}
 		}
-		ret = regulator_set_voltage(vdd_reg, new_volt, INT_MAX);
-		if (ret) {
-			dev_err(dev, "%s: failed to set volt: %lu\n",
-				__func__, new_volt);
-			goto restore_voltage;
+		if (old_volt <= new_volt) {
+			ret = regulator_set_voltage(vdd_reg, new_volt, INT_MAX);
+			if (ret) {
+				dev_err(dev, "%s: failed to set volt: %lu\n",
+					__func__, new_volt);
+				goto restore_voltage;
+			}
 		}
 		rockchip_set_read_margin(dev, info, target_rm, is_set_rm);
 		if (new_rate == old_rate)
@@ -2192,9 +2441,12 @@ restore_rm:
 	rockchip_get_read_margin(dev, info, old_volt, &target_rm);
 	rockchip_set_read_margin(dev, info, target_rm, is_set_rm);
 restore_voltage:
+	if (old_volt <= new_volt)
+		regulator_set_voltage(vdd_reg, old_volt, INT_MAX);
 	if (info->regulator_count > 1)
 		regulator_set_voltage(mem_reg, old_volt_mem, INT_MAX);
-	regulator_set_voltage(vdd_reg, old_volt, INT_MAX);
+	if (old_volt > new_volt)
+		regulator_set_voltage(vdd_reg, old_volt, INT_MAX);
 disable_clk:
 	clk_bulk_disable_unprepare(info->nclocks, info->clocks);
 
@@ -2228,8 +2480,8 @@ EXPORT_SYMBOL(rockchip_init_opp_table);
 
 void rockchip_uninit_opp_table(struct device *dev, struct rockchip_opp_info *info)
 {
-	rockchip_uninit_opp_info(dev, info);
 	dev_pm_opp_of_remove_table(dev);
+	rockchip_uninit_opp_info(dev, info);
 }
 EXPORT_SYMBOL(rockchip_uninit_opp_table);
 

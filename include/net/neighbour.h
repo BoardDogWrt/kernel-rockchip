@@ -28,6 +28,7 @@
 #include <linux/err.h>
 #include <linux/sysctl.h>
 #include <linux/workqueue.h>
+#include <linux/android_kabi.h>
 #include <net/rtnetlink.h>
 
 /*
@@ -86,6 +87,8 @@ struct neigh_parms {
 	u32	qlen;
 	int	data[NEIGH_VAR_DATA_MAX];
 	DECLARE_BITMAP(data_state, NEIGH_VAR_DATA_MAX);
+
+	ANDROID_KABI_RESERVE(1);
 };
 
 static inline void neigh_var_set(struct neigh_parms *p, int index, int val)
@@ -162,6 +165,9 @@ struct neighbour {
 	struct rcu_head		rcu;
 	struct net_device	*dev;
 	netdevice_tracker	dev_tracker;
+
+	ANDROID_KABI_RESERVE(1);
+
 	u8			primary_key[0];
 } __randomize_layout;
 
@@ -180,7 +186,7 @@ struct pneigh_entry {
 	netdevice_tracker	dev_tracker;
 	u32			flags;
 	u8			protocol;
-	u8			key[];
+	u32			key[];
 };
 
 /*
@@ -234,6 +240,8 @@ struct neigh_table {
 	struct neigh_statistics	__percpu *stats;
 	struct neigh_hash_table __rcu *nht;
 	struct pneigh_entry	**phash_buckets;
+
+	ANDROID_KABI_RESERVE(1);
 };
 
 enum {
@@ -299,14 +307,14 @@ static inline struct neighbour *___neigh_lookup_noref(
 	const void *pkey,
 	struct net_device *dev)
 {
-	struct neigh_hash_table *nht = rcu_dereference_bh(tbl->nht);
+	struct neigh_hash_table *nht = rcu_dereference(tbl->nht);
 	struct neighbour *n;
 	u32 hash_val;
 
 	hash_val = hash(pkey, dev, nht->hash_rnd) >> (32 - nht->hash_shift);
-	for (n = rcu_dereference_bh(nht->hash_buckets[hash_val]);
+	for (n = rcu_dereference(nht->hash_buckets[hash_val]);
 	     n != NULL;
-	     n = rcu_dereference_bh(n->next)) {
+	     n = rcu_dereference(n->next)) {
 		if (n->dev == dev && key_eq(n, pkey))
 			return n;
 	}
@@ -336,8 +344,6 @@ void neigh_table_init(int index, struct neigh_table *tbl);
 int neigh_table_clear(int index, struct neigh_table *tbl);
 struct neighbour *neigh_lookup(struct neigh_table *tbl, const void *pkey,
 			       struct net_device *dev);
-struct neighbour *neigh_lookup_nodev(struct neigh_table *tbl, struct net *net,
-				     const void *pkey);
 struct neighbour *__neigh_create(struct neigh_table *tbl, const void *pkey,
 				 struct net_device *dev, bool want_ref);
 static inline struct neighbour *neigh_create(struct neigh_table *tbl,
@@ -466,7 +472,7 @@ static __always_inline int neigh_event_send_probe(struct neighbour *neigh,
 
 	if (READ_ONCE(neigh->used) != now)
 		WRITE_ONCE(neigh->used, now);
-	if (!(neigh->nud_state & (NUD_CONNECTED | NUD_DELAY | NUD_PROBE)))
+	if (!(READ_ONCE(neigh->nud_state) & (NUD_CONNECTED | NUD_DELAY | NUD_PROBE)))
 		return __neigh_event_send(neigh, skb, immediate_ok);
 	return 0;
 }
@@ -543,7 +549,7 @@ static inline int neigh_output(struct neighbour *n, struct sk_buff *skb,
 	    READ_ONCE(hh->hh_len))
 		return neigh_hh_output(hh, skb);
 
-	return n->output(n, skb);
+	return READ_ONCE(n->output)(n, skb);
 }
 
 static inline struct neighbour *

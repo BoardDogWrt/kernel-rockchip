@@ -177,6 +177,7 @@ config SND_SOC_ALL_CODECS
 	imply SND_SOC_RK3528
 	imply SND_SOC_RK730
 	imply SND_SOC_RK817
+	imply SND_SOC_ROCKCHIP_SPI_CODEC
 	imply SND_SOC_RT274
 	imply SND_SOC_RT286
 	imply SND_SOC_RT298
@@ -210,6 +211,7 @@ config SND_SOC_ALL_CODECS
 	imply SND_SOC_RT715_SDCA_SDW
 	imply SND_SOC_RT1308_SDW
 	imply SND_SOC_RT1316_SDW
+	imply SND_SOC_RT1318_SDW
 	imply SND_SOC_RT9120
 	imply SND_SOC_RV1106
 	imply SND_SOC_SDW_MOCKUP
@@ -239,6 +241,7 @@ config SND_SOC_ALL_CODECS
 	imply SND_SOC_TAS5720
 	imply SND_SOC_TAS6424
 	imply SND_SOC_TDA7419
+	imply SND_SOC_TDA7803
 	imply SND_SOC_TFA9879
 	imply SND_SOC_TFA989X
 	imply SND_SOC_TLV320ADC3XXX
@@ -1344,6 +1347,15 @@ config SND_SOC_RL6347A
 	default m if SND_SOC_RT286=m
 	default m if SND_SOC_RT298=m
 
+config SND_SOC_ROCKCHIP_SPI_CODEC
+	tristate "Rockchip SPI CODEC"
+	depends on ARCH_ROCKCHIP
+	depends on SPI_MASTER
+	select REGMAP_SPI
+	help
+	  Enable support for a remote audio dsp which act as a codec.
+	  Control the adsp by spi.
+
 config SND_SOC_RT274
 	tristate
 	depends on I2C
@@ -1390,6 +1402,11 @@ config SND_SOC_RT1308_SDW
 
 config SND_SOC_RT1316_SDW
 	tristate "Realtek RT1316 Codec - SDW"
+	depends on SOUNDWIRE
+	select REGMAP_SOUNDWIRE
+
+config SND_SOC_RT1318_SDW
+	tristate "Realtek RT1318 Codec - SDW"
 	depends on SOUNDWIRE
 	select REGMAP_SOUNDWIRE
 
@@ -1632,6 +1649,7 @@ config SND_SOC_STA529
 config SND_SOC_STAC9766
 	tristate
 	depends on SND_SOC_AC97_BUS
+	select REGMAP_AC97
 
 config SND_SOC_STI_SAS
 	tristate "codec Audio support for STI SAS codec"
@@ -1695,6 +1713,11 @@ config SND_SOC_TAS6424
 
 config SND_SOC_TDA7419
 	tristate "ST TDA7419 audio processor"
+	depends on I2C
+	select REGMAP_I2C
+
+config SND_SOC_TDA7803
+	tristate "ST TDA7803 audio processor"
 	depends on I2C
 	select REGMAP_I2C
 

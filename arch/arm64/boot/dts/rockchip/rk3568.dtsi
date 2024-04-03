@@ -10,6 +10,16 @@
 
 	aliases {
 		ethernet0 = &gmac0;
+		lvds0 = &lvds;
+		lvds1 = &lvds1;
+	};
+
+	edac: edac {
+		compatible = "rockchip,rk3568-edac";
+		interrupts = <GIC_SPI 173 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 175 IRQ_TYPE_LEVEL_HIGH>;
+		interrupt-names = "ce", "ue";
+		status = "disabled";
 	};
 
 	gmac0_clkin: external-gmac0-clock {
@@ -101,10 +111,10 @@
 		reg = <0x3 0xc0400000 0x0 0x00400000>,
 		      <0x0 0xfe270000 0x0 0x00010000>,
 		      <0x0 0xf2000000 0x0 0x00100000>;
-		ranges = <0x81000000 0x0 0xf2100000 0x0 0xf2100000 0x0 0x100000
-			  0x82000000 0x0 0xf2200000 0x0 0xf2200000 0x0 0x1e00000
-			  0xc3000000 0x3 0x40000000 0x3 0x40000000 0x0 0x40000000>;
 		reg-names = "pcie-dbi", "pcie-apb", "config";
+		ranges = <0x01000000 0x0 0xf2100000 0x0 0xf2100000 0x0 0x00100000>,
+			 <0x02000000 0x0 0xf2200000 0x0 0xf2200000 0x0 0x01e00000>,
+			 <0x03000000 0x3 0x40000000 0x3 0x40000000 0x0 0x40000000>;
 		resets = <&cru SRST_PCIE30X1_POWERUP>;
 		reset-names = "pipe";
 		/* rockchip,bifurcation; lane1 when using 1+1 */
@@ -155,10 +165,10 @@
 		reg = <0x3 0xc0800000 0x0 0x00400000>,
 		      <0x0 0xfe280000 0x0 0x00010000>,
 		      <0x0 0xf0000000 0x0 0x00100000>;
-		ranges = <0x81000000 0x0 0xf0100000 0x0 0xf0100000 0x0 0x100000
-			  0x82000000 0x0 0xf0200000 0x0 0xf0200000 0x0 0x1e00000
-			  0xc3000000 0x3 0x80000000 0x3 0x80000000 0x0 0x40000000>;
 		reg-names = "pcie-dbi", "pcie-apb", "config";
+		ranges = <0x01000000 0x0 0xf0100000 0x0 0xf0100000 0x0 0x00100000>,
+			 <0x02000000 0x0 0xf0200000 0x0 0xf0200000 0x0 0x01e00000>,
+			 <0x03000000 0x3 0x80000000 0x3 0x80000000 0x0 0x40000000>;
 		resets = <&cru SRST_PCIE30X2_POWERUP>;
 		reset-names = "pipe";
 		/* rockchip,bifurcation; lane0 when using 1+1 */
@@ -262,6 +272,7 @@
 
 &cpu0_opp_table {
 	opp-1992000000 {
+		opp-supported-hw = <0xf9 0xffff>;
 		opp-hz = /bits/ 64 <1992000000>;
 		opp-microvolt = <1150000 1150000 1150000>;
 		opp-microvolt-L0 = <1150000 1150000 1150000>;
@@ -269,6 +280,100 @@
 		opp-microvolt-L2 = <1125000 1125000 1150000>;
 		opp-microvolt-L3 = <1100000 1100000 1150000>;
 		clock-latency-ns = <40000>;
+	};
+
+	/* RK3568J cpu OPPs */
+	opp-j-1008000000 {
+		opp-supported-hw = <0x04 0xffff>;
+		opp-hz = /bits/ 64 <1008000000>;
+		opp-microvolt = <850000 850000 1150000>;
+		clock-latency-ns = <40000>;
+	};
+
+	opp-j-1416000000 {
+		opp-supported-hw = <0x04 0xffff>;
+		opp-hz = /bits/ 64 <1416000000>;
+		opp-microvolt = <900000 900000 1150000>;
+		clock-latency-ns = <40000>;
+	};
+
+	/* RK3568M cpu OPPs */
+	opp-m-1608000000 {
+		opp-supported-hw = <0x02 0xffff>;
+		opp-hz = /bits/ 64 <1608000000>;
+		opp-microvolt = <1000000 1000000 1150000>;
+		clock-latency-ns = <40000>;
+	};
+};
+
+&dmc_opp_table {
+	/* RK3568J/M dmc OPPs */
+	opp-j-m-1560000000 {
+		opp-supported-hw = <0x06 0xffff>;
+		opp-hz = /bits/ 64 <1560000000>;
+		opp-microvolt = <875000 875000 1000000>;
+	};
+};
+
+&gpu_opp_table {
+	/* RK3568J gpu OPPs */
+	opp-j-600000000 {
+		opp-supported-hw = <0x04 0xffff>;
+		opp-hz = /bits/ 64 <600000000>;
+		opp-microvolt = <900000 900000 1000000>;
+	};
+
+	/* RK3568M gpu OPPs */
+	opp-m-800000000 {
+		opp-supported-hw = <0x02 0xffff>;
+		opp-hz = /bits/ 64 <800000000>;
+		opp-microvolt = <950000 950000 1000000>;
+	};
+};
+
+&grf {
+	lvds1: lvds1 {
+		compatible = "rockchip,rk3568-lvds";
+		phys = <&video_phy1>;
+		phy-names = "phy";
+		status = "disabled";
+
+		ports {
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			port@0 {
+				reg = <0>;
+				#address-cells = <1>;
+				#size-cells = <0>;
+
+				lvds1_in_vp1: endpoint@0 {
+					reg = <0>;
+					remote-endpoint = <&vp1_out_lvds1>;
+				};
+
+				lvds1_in_vp2: endpoint@1 {
+					reg = <1>;
+					remote-endpoint = <&vp2_out_lvds1>;
+				};
+			};
+		};
+	};
+};
+
+&npu_opp_table {
+	/* RK3568J npu OPPs */
+	opp-j-600000000 {
+		opp-supported-hw = <0x04 0xffff>;
+		opp-hz = /bits/ 64 <600000000>;
+		opp-microvolt = <900000 900000 1000000>;
+	};
+
+	/* RK3568M npu OPPs */
+	opp-m-900000000 {
+		opp-supported-hw = <0x02 0xffff>;
+		opp-hz = /bits/ 64 <900000000>;
+		opp-microvolt = <925000 925000 1000000>;
 	};
 };
 
@@ -295,4 +400,18 @@
 &usbdrd_dwc3 {
 	phys = <&u2phy0_otg>, <&combphy0_us PHY_TYPE_USB3>;
 	phy-names = "usb2-phy", "usb3-phy";
+};
+
+&vp1 {
+	vp1_out_lvds1: endpoint@5 {
+		reg = <5>;
+		remote-endpoint = <&lvds1_in_vp1>;
+	};
+};
+
+&vp2 {
+	vp2_out_lvds1: endpoint@2 {
+		reg = <2>;
+		remote-endpoint = <&lvds1_in_vp2>;
+	};
 };

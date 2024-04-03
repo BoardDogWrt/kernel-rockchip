@@ -9,6 +9,7 @@
 #include <linux/sched/task.h>
 
 #include <asm/set_memory.h>
+#include <asm/cpu_device_id.h>
 #include <asm/e820/api.h>
 #include <asm/init.h>
 #include <asm/page.h>
@@ -26,6 +27,7 @@
 #include <asm/pti.h>
 #include <asm/text-patching.h>
 #include <asm/memtype.h>
+#include <asm/paravirt.h>
 
 /*
  * We need to define the tracepoints somewhere, and tlb.c
@@ -110,6 +112,12 @@ static unsigned long __initdata pgt_buf_top;
 static unsigned long min_pfn_mapped;
 
 static bool __initdata can_use_brk_pgt = true;
+
+/*
+ * Provide a run-time mean of disabling ZONE_DMA32 if it is enabled via
+ * CONFIG_ZONE_DMA32.
+ */
+static bool disable_dma32 __ro_after_init;
 
 /*
  * Pages returned are already directly mapped.
@@ -260,6 +268,24 @@ static void __init probe_page_size_mask(void)
 	}
 }
 
+#define INTEL_MATCH(_model) { .vendor  = X86_VENDOR_INTEL,	\
+			      .family  = 6,			\
+			      .model = _model,			\
+			    }
+/*
+ * INVLPG may not properly flush Global entries
+ * on these CPUs when PCIDs are enabled.
+ */
+static const struct x86_cpu_id invlpg_miss_ids[] = {
+	INTEL_MATCH(INTEL_FAM6_ALDERLAKE   ),
+	INTEL_MATCH(INTEL_FAM6_ALDERLAKE_L ),
+	INTEL_MATCH(INTEL_FAM6_ALDERLAKE_N ),
+	INTEL_MATCH(INTEL_FAM6_RAPTORLAKE  ),
+	INTEL_MATCH(INTEL_FAM6_RAPTORLAKE_P),
+	INTEL_MATCH(INTEL_FAM6_RAPTORLAKE_S),
+	{}
+};
+
 static void setup_pcid(void)
 {
 	if (!IS_ENABLED(CONFIG_X86_64))
@@ -267,6 +293,12 @@ static void setup_pcid(void)
 
 	if (!boot_cpu_has(X86_FEATURE_PCID))
 		return;
+
+	if (x86_match_cpu(invlpg_miss_ids)) {
+		pr_info("Incomplete global flushes, disabling PCID");
+		setup_clear_cpu_cap(X86_FEATURE_PCID);
+		return;
+	}
 
 	if (boot_cpu_has(X86_FEATURE_PGE)) {
 		/*
@@ -801,8 +833,11 @@ void __init poking_init(void)
 	spinlock_t *ptl;
 	pte_t *ptep;
 
-	poking_mm = copy_init_mm();
+	poking_mm = mm_alloc();
 	BUG_ON(!poking_mm);
+
+	/* Xen PV guests need the PGD to be pinned. */
+	paravirt_arch_dup_mmap(NULL, poking_mm);
 
 	/*
 	 * Randomize the poking address, but make sure that the following page
@@ -1028,7 +1063,7 @@ void __init zone_sizes_init(void)
 	max_zone_pfns[ZONE_DMA]		= min(MAX_DMA_PFN, max_low_pfn);
 #endif
 #ifdef CONFIG_ZONE_DMA32
-	max_zone_pfns[ZONE_DMA32]	= min(MAX_DMA32_PFN, max_low_pfn);
+	max_zone_pfns[ZONE_DMA32]	= disable_dma32 ? 0 : min(MAX_DMA32_PFN, max_low_pfn);
 #endif
 	max_zone_pfns[ZONE_NORMAL]	= max_low_pfn;
 #ifdef CONFIG_HIGHMEM
@@ -1037,6 +1072,18 @@ void __init zone_sizes_init(void)
 
 	free_area_init(max_zone_pfns);
 }
+
+static int __init early_disable_dma32(char *buf)
+{
+	if (!buf)
+		return -EINVAL;
+
+	if (!strcmp(buf, "on"))
+		disable_dma32 = true;
+
+	return 0;
+}
+early_param("disable_dma32", early_disable_dma32);
 
 __visible DEFINE_PER_CPU_ALIGNED(struct tlb_state, cpu_tlbstate) = {
 	.loaded_mm = &init_mm,

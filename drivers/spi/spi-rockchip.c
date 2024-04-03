@@ -478,8 +478,8 @@ static u32 rockchip_spi_calc_burst_size(u32 data_len)
 {
 	u32 i;
 
-	/* burst size: 1, 2, 4, 8 */
-	for (i = 1; i < 8; i <<= 1) {
+	/* burst size: 1, 2, 4, 8, 16 */
+	for (i = 1; i < 16; i <<= 1) {
 		if (data_len & i)
 			break;
 	}
@@ -909,6 +909,8 @@ static int rockchip_spi_setup(struct spi_device *spi)
 		cr0 |= BIT(spi->chip_select) << CR0_SOI_OFFSET;
 	else if (spi->chip_select <= 1)
 		cr0 &= ~(BIT(spi->chip_select) << CR0_SOI_OFFSET);
+	if (spi_controller_is_slave(spi->controller))
+		cr0 |= CR0_OPM_SLAVE << CR0_OPM_OFFSET;
 
 	writel_relaxed(cr0, rs->regs + ROCKCHIP_SPI_CTRLR0);
 
@@ -952,8 +954,8 @@ static int rockchip_spi_mmap(struct file *filp, struct vm_area_struct *vma)
 		return -EINVAL;
 	}
 
-	vma->vm_flags |= VM_IO;
-	vma->vm_flags |= (VM_DONTEXPAND | VM_DONTDUMP);
+	vm_flags_set(vma, VM_IO);
+	vm_flags_set(vma, VM_DONTEXPAND | VM_DONTDUMP);
 	vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
 
 	err = remap_pfn_range(vma, vma->vm_start,
@@ -982,6 +984,7 @@ static int rockchip_spi_probe(struct platform_device *pdev)
 	bool slave_mode;
 	struct pinctrl *pinctrl = NULL;
 	const struct rockchip_spi_quirks *quirks_cfg;
+	u32 val;
 
 	slave_mode = of_property_read_bool(np, "spi-slave");
 
@@ -995,6 +998,7 @@ static int rockchip_spi_probe(struct platform_device *pdev)
 	if (!ctlr)
 		return -ENOMEM;
 
+	ctlr->rt = device_property_read_bool(&pdev->dev, "rockchip,rt");
 	platform_set_drvdata(pdev, ctlr);
 
 	rs = spi_controller_get_devdata(ctlr);
@@ -1107,6 +1111,13 @@ static int rockchip_spi_probe(struct platform_device *pdev)
 	quirks_cfg = device_get_match_data(&pdev->dev);
 	if (quirks_cfg)
 		rs->max_baud_div_in_cpha = quirks_cfg->max_baud_div_in_cpha;
+
+	if (!device_property_read_u32(&pdev->dev, "rockchip,autosuspend-delay-ms", &val)) {
+		if (val > 0) {
+			pm_runtime_set_autosuspend_delay(&pdev->dev, val);
+			pm_runtime_use_autosuspend(&pdev->dev);
+		}
+	}
 
 	pm_runtime_set_active(&pdev->dev);
 	pm_runtime_enable(&pdev->dev);

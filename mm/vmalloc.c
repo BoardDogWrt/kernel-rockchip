@@ -40,6 +40,7 @@
 #include <linux/uaccess.h>
 #include <linux/hugetlb.h>
 #include <linux/sched/mm.h>
+#include <linux/io.h>
 #include <asm/tlbflush.h>
 #include <asm/shmparam.h>
 
@@ -317,12 +318,17 @@ int ioremap_page_range(unsigned long addr, unsigned long end,
 {
 	int err;
 
-	err = vmap_range_noflush(addr, end, phys_addr, pgprot_nx(prot),
+	prot = pgprot_nx(prot);
+	err = vmap_range_noflush(addr, end, phys_addr, prot,
 				 ioremap_max_page_shift);
 	flush_cache_vmap(addr, end);
 	if (!err)
-		kmsan_ioremap_page_range(addr, end, phys_addr, prot,
-					 ioremap_max_page_shift);
+		err = kmsan_ioremap_page_range(addr, end, phys_addr, prot,
+					       ioremap_max_page_shift);
+
+	if (IS_ENABLED(CONFIG_ARCH_HAS_IOREMAP_PHYS_HOOKS) && !err)
+		ioremap_phys_range_hook(phys_addr, end - addr, prot);
+
 	return err;
 }
 
@@ -613,7 +619,11 @@ int __vmap_pages_range_noflush(unsigned long addr, unsigned long end,
 int vmap_pages_range_noflush(unsigned long addr, unsigned long end,
 		pgprot_t prot, struct page **pages, unsigned int page_shift)
 {
-	kmsan_vmap_pages_range_noflush(addr, end, prot, pages, page_shift);
+	int ret = kmsan_vmap_pages_range_noflush(addr, end, prot, pages,
+						 page_shift);
+
+	if (ret)
+		return ret;
 	return __vmap_pages_range_noflush(addr, end, prot, pages, page_shift);
 }
 
@@ -805,6 +815,7 @@ unsigned long vmalloc_nr_pages(void)
 {
 	return atomic_long_read(&nr_vmalloc_pages);
 }
+EXPORT_SYMBOL_GPL(vmalloc_nr_pages);
 
 /* Look up the first VA which satisfies addr < va_end, NULL if none. */
 static struct vmap_area *find_vmap_area_exceed_addr(unsigned long addr)
@@ -2696,6 +2707,10 @@ static void __vunmap(const void *addr, int deallocate_pages)
 
 	kasan_poison_vmalloc(area->addr, get_vm_area_size(area));
 
+	if (IS_ENABLED(CONFIG_ARCH_HAS_IOREMAP_PHYS_HOOKS) &&
+	    area->flags & VM_IOREMAP)
+		iounmap_phys_range_hook(area->phys_addr, get_vm_area_size(area));
+
 	vm_remove_mappings(area, deallocate_pages);
 
 	if (deallocate_pages) {
@@ -2905,6 +2920,10 @@ void *vmap_pfn(unsigned long *pfns, unsigned int count, pgprot_t prot)
 		free_vm_area(area);
 		return NULL;
 	}
+
+	flush_cache_vmap((unsigned long)area->addr,
+			 (unsigned long)area->addr + count * PAGE_SIZE);
+
 	return area->addr;
 }
 EXPORT_SYMBOL_GPL(vmap_pfn);
@@ -3645,7 +3664,7 @@ int remap_vmalloc_range_partial(struct vm_area_struct *vma, unsigned long uaddr,
 		size -= PAGE_SIZE;
 	} while (size > 0);
 
-	vma->vm_flags |= VM_DONTEXPAND | VM_DONTDUMP;
+	vm_flags_set(vma, VM_DONTEXPAND | VM_DONTDUMP);
 
 	return 0;
 }
@@ -4033,14 +4052,32 @@ void pcpu_free_vm_areas(struct vm_struct **vms, int nr_vms)
 #ifdef CONFIG_PRINTK
 bool vmalloc_dump_obj(void *object)
 {
-	struct vm_struct *vm;
 	void *objp = (void *)PAGE_ALIGN((unsigned long)object);
+	const void *caller;
+	struct vm_struct *vm;
+	struct vmap_area *va;
+	unsigned long addr;
+	unsigned int nr_pages;
 
-	vm = find_vm_area(objp);
-	if (!vm)
+	if (!spin_trylock(&vmap_area_lock))
 		return false;
+	va = __find_vmap_area((unsigned long)objp, &vmap_area_root);
+	if (!va) {
+		spin_unlock(&vmap_area_lock);
+		return false;
+	}
+
+	vm = va->vm;
+	if (!vm) {
+		spin_unlock(&vmap_area_lock);
+		return false;
+	}
+	addr = (unsigned long)vm->addr;
+	caller = vm->caller;
+	nr_pages = vm->nr_pages;
+	spin_unlock(&vmap_area_lock);
 	pr_cont(" %u-page vmalloc region starting at %#lx allocated at %pS\n",
-		vm->nr_pages, (unsigned long)vm->addr, vm->caller);
+		nr_pages, addr, caller);
 	return true;
 }
 #endif

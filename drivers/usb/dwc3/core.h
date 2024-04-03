@@ -22,6 +22,7 @@
 #include <linux/debugfs.h>
 #include <linux/wait.h>
 #include <linux/workqueue.h>
+#include <linux/android_kabi.h>
 
 #include <linux/usb/ch9.h>
 #include <linux/usb/gadget.h>
@@ -32,6 +33,8 @@
 #include <linux/phy/phy.h>
 
 #include <linux/power_supply.h>
+
+#include <linux/android_kabi.h>
 
 #define DWC3_MSG_MAX	500
 
@@ -254,15 +257,13 @@
 #define DWC3_GCTL_GBLHIBERNATIONEN	BIT(1)
 #define DWC3_GCTL_DSBLCLKGTNG		BIT(0)
 
-/* Global User Control Register */
-#define DWC3_GUCTL_HSTINAUTORETRY	BIT(14)
-
 /* Global User Control 1 Register */
 #define DWC3_GUCTL1_DEV_DECOUPLE_L1L2_EVT	BIT(31)
 #define DWC3_GUCTL1_TX_IPGAP_LINECHECK_DIS	BIT(28)
 #define DWC3_GUCTL1_DEV_FORCE_20_CLK_FOR_30_CLK	BIT(26)
 #define DWC3_GUCTL1_DEV_L1_EXIT_BY_HW		BIT(24)
 #define DWC3_GUCTL1_PARKMODE_DISABLE_SS		BIT(17)
+#define DWC3_GUCTL1_PARKMODE_DISABLE_HS		BIT(16)
 #define DWC3_GUCTL1_RESUME_OPMODE_HS_HOST	BIT(10)
 
 /* Global Status Register */
@@ -678,6 +679,8 @@ struct dwc3_event_buffer {
 	dma_addr_t		dma;
 
 	struct dwc3		*dwc;
+
+	ANDROID_KABI_RESERVE(1);
 };
 
 #define DWC3_EP_FLAG_STALLED	BIT(0)
@@ -773,6 +776,9 @@ struct dwc3_ep {
 	/* For isochronous START TRANSFER workaround only */
 	u8			combo_num;
 	int			start_cmd_status;
+
+	ANDROID_KABI_RESERVE(1);
+	ANDROID_KABI_RESERVE(2);
 };
 
 enum dwc3_phy {
@@ -884,6 +890,9 @@ struct dwc3_hwparams {
 	u32	hwparams7;
 	u32	hwparams8;
 	u32	hwparams9;
+
+	ANDROID_KABI_RESERVE(1);
+	ANDROID_KABI_RESERVE(2);
 };
 
 /* HWPARAMS0 */
@@ -957,6 +966,9 @@ struct dwc3_request {
 	unsigned int		needs_extra_trb:1;
 	unsigned int		direction:1;
 	unsigned int		mapped:1;
+
+	ANDROID_KABI_RESERVE(1);
+	ANDROID_KABI_RESERVE(2);
 };
 
 /*
@@ -1107,6 +1119,8 @@ struct dwc3_scratchpad_array {
  *			generation after resume from suspend.
  * @parkmode_disable_ss_quirk: set if we need to disable all SuperSpeed
  *			instances in park mode.
+ * @parkmode_disable_hs_quirk: set if we need to disable all HishSpeed
+ *			instances in park mode.
  * @tx_de_emphasis_quirk: set if we enable Tx de-emphasis quirk
  * @tx_de_emphasis: Tx de-emphasis value
  *	0	- -6dB de-emphasis
@@ -1115,6 +1129,7 @@ struct dwc3_scratchpad_array {
  *	3	- Reserved
  * @dis_metastability_quirk: set to disable metastability quirk.
  * @dis_split_quirk: set to disable split boundary.
+ * @suspended: set to track suspend event due to U3/L2.
  * @imod_interval: set the interrupt moderation interval in 250ns
  *			increments or 0 to disable.
  * @max_cfg_eps: current max number of IN eps used across all USB configs.
@@ -1327,6 +1342,9 @@ struct dwc3 {
 	unsigned		dis_tx_ipgap_linecheck_quirk:1;
 	unsigned		resume_hs_terminations:1;
 	unsigned		parkmode_disable_ss_quirk:1;
+#ifdef CONFIG_NO_GKI
+	unsigned		parkmode_disable_hs_quirk:1;
+#endif
 	unsigned		gfladj_refclk_lpm_sel:1;
 
 	unsigned		tx_de_emphasis_quirk:1;
@@ -1336,6 +1354,7 @@ struct dwc3 {
 
 	unsigned		dis_split_quirk:1;
 	unsigned		async_callbacks:1;
+	unsigned		suspended:1;
 
 	u16			imod_interval;
 
@@ -1343,6 +1362,11 @@ struct dwc3 {
 	int			last_fifo_depth;
 	int			num_ep_resized;
 	struct dentry		*debug_root;
+
+	ANDROID_KABI_RESERVE(1);
+	ANDROID_KABI_RESERVE(2);
+	ANDROID_KABI_RESERVE(3);
+	ANDROID_KABI_RESERVE(4);
 };
 
 #define INCRX_BURST_MODE 0

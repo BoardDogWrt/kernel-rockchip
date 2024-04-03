@@ -5083,6 +5083,13 @@ T:	git git://git.kernel.org/pub/scm/linux/kernel/git/kees/linux.git for-next/har
 F:	include/linux/cfi.h
 F:	kernel/cfi.c
 
+CLEANCACHE API
+M:	Konrad Rzeszutek Wilk <konrad.wilk@oracle.com>
+L:	linux-kernel@vger.kernel.org
+S:	Maintained
+F:	include/linux/cleancache.h
+F:	mm/cleancache.c
+
 CLK API
 M:	Russell King <linux@armlinux.org.uk>
 L:	linux-clk@vger.kernel.org
@@ -5183,8 +5190,8 @@ S:	Supported
 W:	https://wiki.samba.org/index.php/LinuxCIFS
 T:	git git://git.samba.org/sfrench/cifs-2.6.git
 F:	Documentation/admin-guide/cifs/
-F:	fs/cifs/
-F:	fs/smbfs_common/
+F:	fs/smb/client/
+F:	fs/smb/common/
 F:	include/uapi/linux/cifs
 
 COMPACTPCI HOTPLUG CORE
@@ -6027,7 +6034,7 @@ S:	Supported
 F:	Documentation/networking/devlink
 F:	include/net/devlink.h
 F:	include/uapi/linux/devlink.h
-F:	net/core/devlink.c
+F:	net/devlink/
 
 DH ELECTRONICS IMX6 DHCOM BOARD SUPPORT
 M:	Christoph Niedermaier <cniedermaier@dh-electronics.com>
@@ -7831,6 +7838,8 @@ M:	Chao Yu <chao@kernel.org>
 L:	linux-f2fs-devel@lists.sourceforge.net
 S:	Maintained
 W:	https://f2fs.wiki.kernel.org/
+Q:	https://patchwork.kernel.org/project/f2fs/list/
+B:	https://bugzilla.kernel.org/enter_bug.cgi?product=File%20System&component=f2fs
 T:	git git://git.kernel.org/pub/scm/linux/kernel/git/jaegeuk/f2fs.git
 F:	Documentation/ABI/testing/sysfs-fs-f2fs
 F:	Documentation/filesystems/f2fs.rst
@@ -8656,6 +8665,19 @@ F:	include/vdso/
 F:	kernel/time/vsyscall.c
 F:	lib/vdso/
 
+GENIEZONE HYPERVISOR DRIVER
+M:	Yingshiuan Pan <yingshiuan.pan@mediatek.com>
+M:	Ze-Yu Wang <ze-yu.wang@mediatek.com>
+M:	Yi-De Wu <yi-de.wu@mediatek.com>
+F:	Documentation/devicetree/bindings/hypervisor/mediatek,geniezone-hyp.yaml
+F:	Documentation/virt/geniezone/
+F:	arch/arm64/geniezone/
+F:	arch/arm64/include/uapi/asm/gzvm_arch.h
+F:	drivers/virt/geniezone/
+F:	include/linux/gzvm_drv.h
+F	include/uapi/asm-generic/gzvm_arch.h
+F:	include/uapi/linux/gzvm.h
+
 GENWQE (IBM Generic Workqueue Card)
 M:	Frank Haverkamp <haver@linux.ibm.com>
 S:	Supported
@@ -8933,6 +8955,19 @@ M:	Davidlohr Bueso <dave@stgolabs.net>
 L:	linux-efi@vger.kernel.org
 S:	Maintained
 F:	block/partitions/efi.*
+
+GUNYAH HYPERVISOR DRIVER
+M:	Elliot Berman <quic_eberman@quicinc.com>
+M:	Prakruthi Deepak Heragu <quic_pheragu@quicinc.com>
+L:	linux-arm-msm@vger.kernel.org
+S:	Supported
+F:	Documentation/devicetree/bindings/firmware/gunyah-hypervisor.yaml
+F:	Documentation/virt/gunyah/
+F:	arch/arm64/gunyah/
+F:	drivers/mailbox/gunyah-msgq.c
+F:	drivers/virt/gunyah/
+F:	include/linux/gunyah*.h
+F:	samples/gunyah/
 
 HABANALABS PCI DRIVER
 M:	Oded Gabbay <ogabbay@kernel.org>
@@ -9362,7 +9397,7 @@ F:	drivers/net/wireless/intersil/hostap/
 HP COMPAQ TC1100 TABLET WMI EXTRAS DRIVER
 L:	platform-driver-x86@vger.kernel.org
 S:	Orphan
-F:	drivers/platform/x86/tc1100-wmi.c
+F:	drivers/platform/x86/hp/tc1100-wmi.c
 
 HPET:	High Precision Event Timers driver
 M:	Clemens Ladisch <clemens@ladisch.de>
@@ -10021,6 +10056,13 @@ S:	Maintained
 F:	Documentation/hwmon/ina2xx.rst
 F:	drivers/hwmon/ina2xx.c
 F:	include/linux/platform_data/ina2xx.h
+
+INCREMENTAL FILE SYSTEM
+M:	Paul Lawrence <paullawrence@google.com>
+L:	linux-unionfs@vger.kernel.org
+S:	Supported
+F:	fs/incfs/
+F:	tools/testing/selftests/filesystems/incfs/
 
 INDUSTRY PACK SUBSYSTEM (IPACK)
 M:	Samuel Iglesias Gonsalvez <siglesias@igalia.com>
@@ -11168,8 +11210,8 @@ L:	linux-cifs@vger.kernel.org
 S:	Maintained
 T:	git git://git.samba.org/ksmbd.git
 F:	Documentation/filesystems/cifs/ksmbd.rst
-F:	fs/ksmbd/
-F:	fs/smbfs_common/
+F:	fs/smb/common/
+F:	fs/smb/server/
 
 KERNEL UNIT TESTING FRAMEWORK (KUnit)
 M:	Brendan Higgins <brendanhiggins@google.com>
@@ -11858,7 +11900,7 @@ M:	Eric Piel <eric.piel@tremplin-utc.net>
 S:	Maintained
 F:	Documentation/misc-devices/lis3lv02d.rst
 F:	drivers/misc/lis3lv02d/
-F:	drivers/platform/x86/hp_accel.c
+F:	drivers/platform/x86/hp/hp_accel.c
 
 LIST KUNIT TEST
 M:	David Gow <davidgow@google.com>

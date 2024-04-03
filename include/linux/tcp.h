@@ -16,6 +16,7 @@
 
 #include <linux/skbuff.h>
 #include <linux/win_minmax.h>
+#include <linux/android_kabi.h>
 #include <net/sock.h>
 #include <net/inet_connection_sock.h>
 #include <net/inet_timewait_sock.h>
@@ -449,6 +450,8 @@ struct tcp_sock {
 	 */
 	struct request_sock __rcu *fastopen_rsk;
 	struct saved_syn *saved_syn;
+
+	ANDROID_KABI_RESERVE(1);
 };
 
 enum tsq_enum {
@@ -510,7 +513,7 @@ static inline void fastopen_queue_tune(struct sock *sk, int backlog)
 	struct request_sock_queue *queue = &inet_csk(sk)->icsk_accept_queue;
 	int somaxconn = READ_ONCE(sock_net(sk)->core.sysctl_somaxconn);
 
-	queue->fastopenq.max_qlen = min_t(unsigned int, backlog, somaxconn);
+	WRITE_ONCE(queue->fastopenq.max_qlen, min_t(unsigned int, backlog, somaxconn));
 }
 
 static inline void tcp_move_syn(struct tcp_sock *tp,

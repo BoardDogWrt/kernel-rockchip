@@ -597,7 +597,7 @@
 	status = "okay";
 	assigned-clocks = <&cru SCLK_I2S0_8CH_RX>;
 	assigned-clock-parents = <&cru SCLK_I2S0_8CH_TX_MUX>;
-	rockchip,clk-trcm = <1>;
+	rockchip,trcm-sync-tx-only;
 	#sound-dai-cells = <0>;
 };
 
@@ -617,6 +617,12 @@
 	sdio-pwrseq {
 		wifi_enable_h: wifi-enable-h {
 			rockchip,pins = <0 RK_PA2 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+	};
+
+	wireless-bluetooth {
+		uart4_gpios: uart4-gpios {
+			rockchip,pins = <4 RK_PA7 RK_FUNC_GPIO &pcfg_pull_none>;
 		};
 	};
 

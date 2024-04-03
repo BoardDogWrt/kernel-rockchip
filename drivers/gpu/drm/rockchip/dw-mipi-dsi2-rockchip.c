@@ -245,6 +245,8 @@ struct dw_mipi_dsi2 {
 	struct phy *dcphy;
 	union phy_configure_opts phy_opts;
 
+	bool disable_hold_mode;
+	bool auto_calc_mode;
 	bool c_option;
 	bool scrambling_en;
 	unsigned int slice_width;
@@ -269,11 +271,16 @@ struct dw_mipi_dsi2 {
 	u32 lanes;
 	u32 format;
 	unsigned long mode_flags;
-
+	u64 mipi_pixel_rate;
 	const struct dw_mipi_dsi2_plat_data *pdata;
 	struct rockchip_drm_sub_dev sub_dev;
 
 	struct gpio_desc *te_gpio;
+
+	/* split with other display interface */
+	bool dual_connector_split;
+	bool left_display;
+	u32 split_area;
 };
 
 static inline struct dw_mipi_dsi2 *host_to_dsi2(struct mipi_dsi_host *host)
@@ -447,7 +454,8 @@ static void dw_mipi_dsi2_post_disable(struct dw_mipi_dsi2 *dsi2)
 		dw_mipi_dsi2_post_disable(dsi2->slave);
 }
 
-static void dw_mipi_dsi2_encoder_disable(struct drm_encoder *encoder)
+static void dw_mipi_dsi2_encoder_atomic_disable(struct drm_encoder *encoder,
+						struct drm_atomic_state *state)
 {
 	struct dw_mipi_dsi2 *dsi2 = encoder_to_dsi2(encoder);
 	struct drm_crtc *crtc = encoder->crtc;
@@ -602,9 +610,8 @@ static void dw_mipi_dsi2_phy_clk_mode_cfg(struct dw_mipi_dsi2 *dsi2)
 
 static void dw_mipi_dsi2_phy_ratio_cfg(struct dw_mipi_dsi2 *dsi2)
 {
-	struct drm_display_mode *mode = &dsi2->mode;
 	u64 sys_clk = clk_get_rate(dsi2->sys_clk);
-	u64 pixel_clk, ipi_clk, phy_hsclk;
+	u64 ipi_clk, phy_hsclk;
 	u64 tmp;
 
 	/*
@@ -618,8 +625,9 @@ static void dw_mipi_dsi2_phy_ratio_cfg(struct dw_mipi_dsi2 *dsi2)
 		phy_hsclk = DIV_ROUND_CLOSEST_ULL(dsi2->lane_hs_rate * MSEC_PER_SEC, 16);
 
 	/* IPI_RATIO_MAN_CFG = PHY_HSTX_CLK / IPI_CLK */
-	pixel_clk = mode->crtc_clock * MSEC_PER_SEC;
-	ipi_clk = pixel_clk / 4;
+	ipi_clk = dsi2->mipi_pixel_rate;
+	if (!sys_clk || !ipi_clk)
+		return;
 
 	tmp = DIV_ROUND_CLOSEST_ULL(phy_hsclk << 16, ipi_clk);
 	regmap_write(dsi2->regmap, DSI2_PHY_IPI_RATIO_MAN_CFG,
@@ -659,6 +667,10 @@ static void dw_mipi_dsi2_phy_init(struct dw_mipi_dsi2 *dsi2)
 {
 	dw_mipi_dsi2_phy_mode_cfg(dsi2);
 	dw_mipi_dsi2_phy_clk_mode_cfg(dsi2);
+
+	if (dsi2->auto_calc_mode)
+		return;
+
 	dw_mipi_dsi2_phy_ratio_cfg(dsi2);
 	dw_mipi_dsi2_lp2hs_or_hs2lp_cfg(dsi2);
 
@@ -726,6 +738,9 @@ static void dw_mipi_dsi2_ipi_set(struct dw_mipi_dsi2 *dsi2)
 	regmap_write(dsi2->regmap, DSI2_IPI_PIX_PKT_CFG, MAX_PIX_PKT(val));
 
 	dw_mipi_dsi2_ipi_color_coding_cfg(dsi2);
+
+	if (dsi2->auto_calc_mode)
+		return;
 
 	/*
 	 * if the controller is intended to operate in data stream mode,
@@ -800,7 +815,7 @@ static void dw_mipi_dsi2_pre_enable(struct dw_mipi_dsi2 *dsi2)
 
 	/* there may be some timeout registers may be configured if desired */
 
-	dw_mipi_dsi2_work_mode(dsi2, MANUAL_MODE_EN);
+	dw_mipi_dsi2_work_mode(dsi2, dsi2->auto_calc_mode ? 0 : MANUAL_MODE_EN);
 	dw_mipi_dsi2_phy_init(dsi2);
 	dw_mipi_dsi2_tx_option_set(dsi2);
 	dw_mipi_dsi2_irq_enable(dsi2, 1);
@@ -823,7 +838,19 @@ static void dw_mipi_dsi2_pre_enable(struct dw_mipi_dsi2 *dsi2)
 
 static void dw_mipi_dsi2_enable(struct dw_mipi_dsi2 *dsi2)
 {
+	u32 mode;
+	int ret;
+
 	dw_mipi_dsi2_ipi_set(dsi2);
+
+	if (dsi2->auto_calc_mode) {
+		regmap_write(dsi2->regmap, DSI2_MODE_CTRL, AUTOCALC_MODE);
+		ret = regmap_read_poll_timeout(dsi2->regmap, DSI2_MODE_STATUS,
+					       mode, mode == IDLE_MODE,
+					       1000, MODE_STATUS_TIMEOUT_US);
+		if (ret < 0)
+			dev_err(dsi2->dev, "auto calculation training failed\n");
+	}
 
 	if (dsi2->mode_flags & MIPI_DSI_MODE_VIDEO)
 		dw_mipi_dsi2_set_vid_mode(dsi2);
@@ -834,9 +861,82 @@ static void dw_mipi_dsi2_enable(struct dw_mipi_dsi2 *dsi2)
 		dw_mipi_dsi2_enable(dsi2->slave);
 }
 
-static void dw_mipi_dsi2_encoder_enable(struct drm_encoder *encoder)
+static void dw_mipi_dsi2_get_mipi_pixel_clk(struct dw_mipi_dsi2 *dsi2,
+					    struct rockchip_crtc_state *s)
+{
+	struct drm_display_mode *mode = &dsi2->mode;
+	u8 k = dsi2->slave ? 2 : 1;
+
+	/* 1.When MIPI works in uncompressed mode:
+	 * (Video Timing Pixel Rate)/(4)=(MIPI Pixel ClockxK)=(dclk_out×K)=dclk_core
+	 * 2.When MIPI works in compressed mode:
+	 * MIPI Pixel Clock = cds_clk / 2
+	 * MIPI is configured as double channel display mode, K=2, otherwise K=1.
+	 */
+	if (dsi2->dsc_enable) {
+		dsi2->mipi_pixel_rate = s->dsc_cds_clk_rate / 2;
+		if (dsi2->slave)
+			dsi2->slave->mipi_pixel_rate = dsi2->mipi_pixel_rate;
+
+		return;
+	}
+
+	dsi2->mipi_pixel_rate = (mode->crtc_clock * MSEC_PER_SEC) / (4 * k);
+	if (dsi2->slave)
+		dsi2->slave->mipi_pixel_rate = dsi2->mipi_pixel_rate;
+}
+
+static int dw_mipi_dsi2_encoder_mode_set(struct dw_mipi_dsi2 *dsi2,
+					 struct drm_atomic_state *state)
+{
+	struct drm_encoder *encoder = &dsi2->encoder;
+	struct drm_connector *connector;
+	struct drm_connector_state *conn_state;
+	struct drm_crtc_state *crtc_state;
+	struct rockchip_crtc_state *vcstate;
+	const struct drm_display_mode *adjusted_mode;
+	struct drm_display_mode *mode = &dsi2->mode;
+
+	connector = drm_atomic_get_new_connector_for_encoder(state, encoder);
+	if (!connector)
+		return -ENODEV;
+
+	conn_state = drm_atomic_get_new_connector_state(state, connector);
+	if (!conn_state)
+		return -ENODEV;
+
+	crtc_state = drm_atomic_get_new_crtc_state(state, conn_state->crtc);
+	if (!crtc_state) {
+		dev_err(dsi2->dev, "failed to get crtc state\n");
+		return -ENODEV;
+	}
+
+	vcstate = to_rockchip_crtc_state(crtc_state);
+	adjusted_mode = &crtc_state->adjusted_mode;
+	drm_mode_copy(mode, adjusted_mode);
+
+	if (dsi2->dual_connector_split)
+		drm_mode_convert_to_origin_mode(mode);
+
+	if (dsi2->slave)
+		drm_mode_copy(&dsi2->slave->mode, mode);
+
+	dw_mipi_dsi2_get_mipi_pixel_clk(dsi2, vcstate);
+
+	return 0;
+}
+
+static void dw_mipi_dsi2_encoder_atomic_enable(struct drm_encoder *encoder,
+					       struct drm_atomic_state *state)
 {
 	struct dw_mipi_dsi2 *dsi2 = encoder_to_dsi2(encoder);
+	int ret;
+
+	ret = dw_mipi_dsi2_encoder_mode_set(dsi2, state);
+	if (ret) {
+		dev_err(dsi2->dev, "failed to set dsi2 mode\n");
+		return;
+	}
 
 	dw_mipi_dsi2_get_lane_rate(dsi2);
 
@@ -864,8 +964,8 @@ static void dw_mipi_dsi2_encoder_enable(struct drm_encoder *encoder)
 
 static int
 dw_mipi_dsi2_encoder_atomic_check(struct drm_encoder *encoder,
-				 struct drm_crtc_state *crtc_state,
-				 struct drm_connector_state *conn_state)
+				  struct drm_crtc_state *crtc_state,
+				  struct drm_connector_state *conn_state)
 {
 
 	struct rockchip_crtc_state *s = to_rockchip_crtc_state(crtc_state);
@@ -903,7 +1003,7 @@ dw_mipi_dsi2_encoder_atomic_check(struct drm_encoder *encoder,
 	if (!(dsi2->mode_flags & MIPI_DSI_MODE_VIDEO)) {
 		s->output_flags |= ROCKCHIP_OUTPUT_MIPI_DS_MODE;
 		s->soft_te = dsi2->te_gpio ? true : false;
-		s->hold_mode = true;
+		s->hold_mode = dsi2->disable_hold_mode ? false : true;
 	}
 
 	if (dsi2->slave) {
@@ -912,6 +1012,15 @@ dw_mipi_dsi2_encoder_atomic_check(struct drm_encoder *encoder,
 			s->output_flags |= ROCKCHIP_OUTPUT_DATA_SWAP;
 
 		s->output_if |= VOP_OUTPUT_IF_MIPI1;
+	}
+
+	if (dsi2->dual_connector_split) {
+		s->output_flags |= ROCKCHIP_OUTPUT_DUAL_CONNECTOR_SPLIT_MODE;
+
+		if (dsi2->left_display)
+			s->output_if_left_panel |= dsi2->id ?
+						   VOP_OUTPUT_IF_MIPI1 :
+						   VOP_OUTPUT_IF_MIPI0;
 	}
 
 	if (dsi2->dsc_enable) {
@@ -928,18 +1037,6 @@ dw_mipi_dsi2_encoder_atomic_check(struct drm_encoder *encoder,
 	}
 
 	return 0;
-}
-
-static void
-dw_mipi_dsi2_encoder_atomic_mode_set(struct drm_encoder *encoder,
-				    struct drm_crtc_state *crtc_state,
-				    struct drm_connector_state *connector_state)
-{
-	struct dw_mipi_dsi2 *dsi2 = encoder_to_dsi2(encoder);
-
-	drm_mode_copy(&dsi2->mode, &crtc_state->adjusted_mode);
-	if (dsi2->slave)
-		drm_mode_copy(&dsi2->slave->mode, &crtc_state->adjusted_mode);
 }
 
 static void dw_mipi_dsi2_loader_protect(struct dw_mipi_dsi2 *dsi2, bool on)
@@ -979,10 +1076,9 @@ static int dw_mipi_dsi2_encoder_loader_protect(struct drm_encoder *encoder,
 
 static const struct drm_encoder_helper_funcs
 dw_mipi_dsi2_encoder_helper_funcs = {
-	.enable = dw_mipi_dsi2_encoder_enable,
-	.disable = dw_mipi_dsi2_encoder_disable,
+	.atomic_enable = dw_mipi_dsi2_encoder_atomic_enable,
+	.atomic_disable = dw_mipi_dsi2_encoder_atomic_disable,
 	.atomic_check = dw_mipi_dsi2_encoder_atomic_check,
-	.atomic_mode_set = dw_mipi_dsi2_encoder_atomic_mode_set,
 };
 
 static int dw_mipi_dsi2_connector_get_modes(struct drm_connector *connector)
@@ -1064,6 +1160,32 @@ static void dw_mipi_dsi2_drm_connector_destroy(struct drm_connector *connector)
 	drm_connector_cleanup(connector);
 }
 
+static int
+dw_mipi_dsi2_atomic_connector_get_property(struct drm_connector *connector,
+					   const struct drm_connector_state *state,
+					   struct drm_property *property,
+					   uint64_t *val)
+{
+	struct rockchip_drm_private *private = connector->dev->dev_private;
+	struct dw_mipi_dsi2 *dsi2 = con_to_dsi2(connector);
+
+	if (property == private->split_area_prop) {
+		switch (dsi2->split_area) {
+		case 1:
+			*val = ROCKCHIP_DRM_SPLIT_LEFT_SIDE;
+			break;
+		case 2:
+			*val = ROCKCHIP_DRM_SPLIT_RIGHT_SIDE;
+			break;
+		default:
+			*val = ROCKCHIP_DRM_SPLIT_UNSET;
+			break;
+		}
+	}
+
+	return 0;
+}
+
 static const struct drm_connector_funcs dw_mipi_dsi2_atomic_connector_funcs = {
 	.fill_modes = drm_helper_probe_single_connector_modes,
 	.detect = dw_mipi_dsi2_connector_detect,
@@ -1071,6 +1193,7 @@ static const struct drm_connector_funcs dw_mipi_dsi2_atomic_connector_funcs = {
 	.reset = drm_atomic_helper_connector_reset,
 	.atomic_duplicate_state = drm_atomic_helper_connector_duplicate_state,
 	.atomic_destroy_state = drm_atomic_helper_connector_destroy_state,
+	.atomic_get_property = dw_mipi_dsi2_atomic_connector_get_property,
 };
 
 static int dw_mipi_dsi2_dual_channel_probe(struct dw_mipi_dsi2 *dsi2)
@@ -1092,6 +1215,7 @@ static int dw_mipi_dsi2_dual_channel_probe(struct dw_mipi_dsi2 *dsi2)
 		dsi2->slave->master = dsi2;
 		dsi2->lanes /= 2;
 
+		dsi2->slave->auto_calc_mode = dsi2->auto_calc_mode;
 		dsi2->slave->lanes = dsi2->lanes;
 		dsi2->slave->channel = dsi2->channel;
 		dsi2->slave->format = dsi2->format;
@@ -1142,6 +1266,9 @@ static int dw_mipi_dsi2_get_dsc_params_from_sink(struct dw_mipi_dsi2 *dsi2,
 		dsi2->slave->dsc_enable = dsi2->dsc_enable;
 	}
 
+	if (!dsi2->dsc_enable)
+		return 0;
+
 	of_property_read_u32(np, "slice-width", &dsi2->slice_width);
 	of_property_read_u32(np, "slice-height", &dsi2->slice_height);
 	of_property_read_u8(np, "version-major", &dsi2->version_major);
@@ -1177,7 +1304,20 @@ static int dw_mipi_dsi2_get_dsc_params_from_sink(struct dw_mipi_dsi2 *dsi2,
 		len -= header->payload_length;
 	}
 
+	if (!pps) {
+		dev_err(dsi2->dev, "not found dsc pps definition\n");
+		return -EINVAL;
+	}
+
 	dsi2->pps = pps;
+
+	if (dsi2->slave) {
+		u16 pic_width = be16_to_cpu(pps->pic_width) / 2;
+
+		dsi2->pps->pic_width = cpu_to_be16(pic_width);
+		dev_info(dsi2->dev, "dsc pic_width change from %d to %d\n",
+			 pic_width * 2, pic_width);
+	}
 
 	return 0;
 }
@@ -1217,7 +1357,15 @@ connector_cleanup:
 static int dw_mipi_dsi2_register_sub_dev(struct dw_mipi_dsi2 *dsi2,
 					 struct drm_connector *connector)
 {
+	struct rockchip_drm_private *private;
 	struct device *dev = dsi2->dev;
+
+	private = connector->dev->dev_private;
+
+	if (dsi2->split_area)
+		drm_object_attach_property(&connector->base,
+					   private->split_area_prop,
+					   dsi2->split_area);
 
 	dsi2->sub_dev.connector = connector;
 	dsi2->sub_dev.of_node = dev->of_node;
@@ -1542,6 +1690,22 @@ static int dw_mipi_dsi2_probe(struct platform_device *pdev)
 	dsi2->id = id;
 	dsi2->pdata = of_device_get_match_data(dev);
 	platform_set_drvdata(pdev, dsi2);
+
+	if (device_property_read_bool(dev, "auto-calculation-mode"))
+		dsi2->auto_calc_mode = true;
+
+	if (device_property_read_bool(dev, "disable-hold-mode"))
+		dsi2->disable_hold_mode = true;
+
+	if (device_property_read_bool(dev, "dual-connector-split")) {
+		dsi2->dual_connector_split = true;
+
+		if (device_property_read_bool(dev, "left-display"))
+			dsi2->left_display = true;
+	}
+
+	if (device_property_read_u32(dev, "split-area", &dsi2->split_area))
+		dsi2->split_area = 0;
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	regs = devm_ioremap_resource(dev, res);

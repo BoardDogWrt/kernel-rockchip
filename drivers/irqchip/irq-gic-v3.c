@@ -18,6 +18,9 @@
 #include <linux/percpu.h>
 #include <linux/refcount.h>
 #include <linux/slab.h>
+#include <linux/syscore_ops.h>
+#include <trace/hooks/gic_v3.h>
+#include <trace/hooks/gic.h>
 
 #include <linux/irqchip.h>
 #include <linux/irqchip/arm-gic-common.h>
@@ -35,6 +38,7 @@
 
 #define FLAGS_WORKAROUND_GICR_WAKER_MSM8996	(1ULL << 0)
 #define FLAGS_WORKAROUND_CAVIUM_ERRATUM_38539	(1ULL << 1)
+#define FLAGS_WORKAROUND_MTK_GICR_SAVE		(1ULL << 2)
 
 #define GIC_IRQ_TYPE_PARTITION	(GIC_IRQ_TYPE_LPI + 1)
 
@@ -44,22 +48,10 @@ struct redist_region {
 	bool			single_redist;
 };
 
-struct gic_chip_data {
-	struct fwnode_handle	*fwnode;
-	void __iomem		*dist_base;
-	struct redist_region	*redist_regions;
-	struct rdists		rdists;
-	struct irq_domain	*domain;
-	u64			redist_stride;
-	u32			nr_redist_regions;
-	u64			flags;
-	bool			has_rss;
-	unsigned int		ppi_nr;
-	struct partition_desc	**ppi_descs;
-};
-
-static struct gic_chip_data gic_data __read_mostly;
+static struct gic_chip_data_v3 gic_data __read_mostly;
 static DEFINE_STATIC_KEY_TRUE(supports_deactivate_key);
+
+static DEFINE_STATIC_KEY_FALSE(gic_arm64_2941627_erratum);
 
 #define GIC_ID_NR	(1U << GICD_TYPER_ID_BITS(gic_data.rdists.gicd_typer))
 #define GIC_LINE_NR	min(GICD_TYPER_SPIS(gic_data.rdists.gicd_typer), 1020U)
@@ -222,10 +214,11 @@ static void gic_do_wait_for_rwp(void __iomem *base, u32 bit)
 }
 
 /* Wait for completion of a distributor change */
-static void gic_dist_wait_for_rwp(void)
+void gic_v3_dist_wait_for_rwp(void)
 {
 	gic_do_wait_for_rwp(gic_data.dist_base, GICD_CTLR_RWP);
 }
+EXPORT_SYMBOL_GPL(gic_v3_dist_wait_for_rwp);
 
 /* Wait for completion of a redistributor change */
 static void gic_redist_wait_for_rwp(void)
@@ -372,7 +365,7 @@ static void gic_mask_irq(struct irq_data *d)
 	if (gic_irq_in_rdist(d))
 		gic_redist_wait_for_rwp();
 	else
-		gic_dist_wait_for_rwp();
+		gic_v3_dist_wait_for_rwp();
 }
 
 static void gic_eoimode1_mask_irq(struct irq_data *d)
@@ -557,10 +550,39 @@ static void gic_irq_nmi_teardown(struct irq_data *d)
 	gic_irq_set_prio(d, GICD_INT_DEF_PRI);
 }
 
+static bool gic_arm64_erratum_2941627_needed(struct irq_data *d)
+{
+	enum gic_intid_range range;
+
+	if (!static_branch_unlikely(&gic_arm64_2941627_erratum))
+		return false;
+
+	range = get_intid_range(d);
+
+	/*
+	 * The workaround is needed if the IRQ is an SPI and
+	 * the target cpu is different from the one we are
+	 * executing on.
+	 */
+	return (range == SPI_RANGE || range == ESPI_RANGE) &&
+		!cpumask_test_cpu(raw_smp_processor_id(),
+				  irq_data_get_effective_affinity_mask(d));
+}
+
 static void gic_eoi_irq(struct irq_data *d)
 {
 	write_gicreg(gic_irq(d), ICC_EOIR1_EL1);
 	isb();
+
+	if (gic_arm64_erratum_2941627_needed(d)) {
+		/*
+		 * Make sure the GIC stream deactivate packet
+		 * issued by ICC_EOIR1_EL1 has completed before
+		 * deactivating through GICD_IACTIVER.
+		 */
+		dsb(sy);
+		gic_poke_irq(d, GICD_ICACTIVER);
+	}
 }
 
 static void gic_eoimode1_eoi_irq(struct irq_data *d)
@@ -571,7 +593,11 @@ static void gic_eoimode1_eoi_irq(struct irq_data *d)
 	 */
 	if (gic_irq(d) >= 8192 || irqd_is_forwarded_to_vcpu(d))
 		return;
-	gic_write_dir(gic_irq(d));
+
+	if (!gic_arm64_erratum_2941627_needed(d))
+		gic_write_dir(gic_irq(d));
+	else
+		gic_poke_irq(d, GICD_ICACTIVER);
 }
 
 static int gic_set_type(struct irq_data *d, unsigned int type)
@@ -828,7 +854,7 @@ static bool gic_has_group0(void)
 	return val != 0;
 }
 
-static void __init gic_dist_init(void)
+void gic_v3_dist_init(void)
 {
 	unsigned int i;
 	u64 affinity;
@@ -837,7 +863,7 @@ static void __init gic_dist_init(void)
 
 	/* Disable the distributor */
 	writel_relaxed(0, base + GICD_CTLR);
-	gic_dist_wait_for_rwp();
+	gic_v3_dist_wait_for_rwp();
 
 	/*
 	 * Configure SPIs as non-secure Group-1. This will only matter
@@ -874,19 +900,24 @@ static void __init gic_dist_init(void)
 
 	/* Enable distributor with ARE, Group1, and wait for it to drain */
 	writel_relaxed(val, base + GICD_CTLR);
-	gic_dist_wait_for_rwp();
+	gic_v3_dist_wait_for_rwp();
 
 	/*
 	 * Set all global interrupts to the boot CPU only. ARE must be
 	 * enabled.
 	 */
 	affinity = gic_mpidr_to_affinity(cpu_logical_map(smp_processor_id()));
-	for (i = 32; i < GIC_LINE_NR; i++)
+	for (i = 32; i < GIC_LINE_NR; i++) {
+		trace_android_vh_gic_v3_affinity_init(i, GICD_IROUTER, &affinity);
 		gic_write_irouter(affinity, base + GICD_IROUTER + i * 8);
+	}
 
-	for (i = 0; i < GIC_ESPI_NR; i++)
+	for (i = 0; i < GIC_ESPI_NR; i++) {
+		trace_android_vh_gic_v3_affinity_init(i, GICD_IROUTERnE, &affinity);
 		gic_write_irouter(affinity, base + GICD_IROUTERnE + i * 8);
+	}
 }
+EXPORT_SYMBOL_GPL(gic_v3_dist_init);
 
 static int gic_iterate_rdists(int (*fn)(struct redist_region *, void __iomem *))
 {
@@ -1182,7 +1213,7 @@ static int gic_dist_supports_lpis(void)
 		!gicv3_nolpi);
 }
 
-static void gic_cpu_init(void)
+void gic_v3_cpu_init(void)
 {
 	void __iomem *rbase;
 	int i;
@@ -1209,6 +1240,7 @@ static void gic_cpu_init(void)
 	/* initialise system registers */
 	gic_cpu_sys_reg_init();
 }
+EXPORT_SYMBOL_GPL(gic_v3_cpu_init);
 
 #ifdef CONFIG_SMP
 
@@ -1217,7 +1249,7 @@ static void gic_cpu_init(void)
 
 static int gic_starting_cpu(unsigned int cpu)
 {
-	gic_cpu_init();
+	gic_v3_cpu_init();
 
 	if (gic_dist_supports_lpis())
 		its_cpu_init();
@@ -1347,6 +1379,9 @@ static int gic_set_affinity(struct irq_data *d, const struct cpumask *mask_val,
 	reg = gic_dist_base(d) + offset + (index * 8);
 	val = gic_mpidr_to_affinity(cpu_logical_map(cpu));
 
+	trace_android_rvh_gic_v3_set_affinity(d, mask_val, &val, force, gic_dist_base(d),
+					gic_data.redist_regions[0].redist_base,
+					gic_data.redist_stride);
 	gic_write_irouter(val, reg);
 
 	/*
@@ -1398,6 +1433,36 @@ static void gic_cpu_pm_init(void)
 #else
 static inline void gic_cpu_pm_init(void) { }
 #endif /* CONFIG_CPU_PM */
+
+#ifdef CONFIG_PM
+void gic_v3_resume(void)
+{
+	trace_android_vh_gic_resume(&gic_data);
+}
+EXPORT_SYMBOL_GPL(gic_v3_resume);
+
+static int gic_v3_suspend(void)
+{
+	trace_android_vh_gic_v3_suspend(&gic_data);
+	return 0;
+}
+
+static struct syscore_ops gic_syscore_ops = {
+	.resume = gic_v3_resume,
+	.suspend = gic_v3_suspend,
+};
+
+static void gic_syscore_init(void)
+{
+	register_syscore_ops(&gic_syscore_ops);
+}
+
+#else
+static inline void gic_syscore_init(void) { }
+void gic_v3_resume(void) { }
+static int gic_v3_suspend(void) { return 0; }
+#endif
+
 
 static struct irq_chip gic_chip = {
 	.name			= "GICv3",
@@ -1682,16 +1747,25 @@ static const struct irq_domain_ops partition_domain_ops = {
 
 static bool gic_enable_quirk_msm8996(void *data)
 {
-	struct gic_chip_data *d = data;
+	struct gic_chip_data_v3 *d = data;
 
 	d->flags |= FLAGS_WORKAROUND_GICR_WAKER_MSM8996;
 
 	return true;
 }
 
+static bool gic_enable_quirk_mtk_gicr(void *data)
+{
+	struct gic_chip_data_v3 *d = data;
+
+	d->flags |= FLAGS_WORKAROUND_MTK_GICR_SAVE;
+
+	return true;
+}
+
 static bool gic_enable_quirk_cavium_38539(void *data)
 {
-	struct gic_chip_data *d = data;
+	struct gic_chip_data_v3 *d = data;
 
 	d->flags |= FLAGS_WORKAROUND_CAVIUM_ERRATUM_38539;
 
@@ -1700,7 +1774,7 @@ static bool gic_enable_quirk_cavium_38539(void *data)
 
 static bool gic_enable_quirk_hip06_07(void *data)
 {
-	struct gic_chip_data *d = data;
+	struct gic_chip_data_v3 *d = data;
 
 	/*
 	 * HIP06 GICD_IIDR clashes with GIC-600 product number (despite
@@ -1718,11 +1792,22 @@ static bool gic_enable_quirk_hip06_07(void *data)
 	return false;
 }
 
+static bool gic_enable_quirk_arm64_2941627(void *data)
+{
+	static_branch_enable(&gic_arm64_2941627_erratum);
+	return true;
+}
+
 static const struct gic_quirk gic_quirks[] = {
 	{
 		.desc	= "GICv3: Qualcomm MSM8996 broken firmware",
 		.compatible = "qcom,msm8996-gic-v3",
 		.init	= gic_enable_quirk_msm8996,
+	},
+	{
+		.desc	= "GICv3: Mediatek Chromebook GICR save problem",
+		.property = "mediatek,broken-save-restore-fw",
+		.init	= gic_enable_quirk_mtk_gicr,
 	},
 	{
 		.desc	= "GICv3: HIP06 erratum 161010803",
@@ -1750,6 +1835,25 @@ static const struct gic_quirk gic_quirks[] = {
 		.init	= gic_enable_quirk_cavium_38539,
 	},
 	{
+		/*
+		 * GIC-700: 2941627 workaround - IP variant [0,1]
+		 *
+		 */
+		.desc	= "GICv3: ARM64 erratum 2941627",
+		.iidr	= 0x0400043b,
+		.mask	= 0xff0e0fff,
+		.init	= gic_enable_quirk_arm64_2941627,
+	},
+	{
+		/*
+		 * GIC-700: 2941627 workaround - IP variant [2]
+		 */
+		.desc	= "GICv3: ARM64 erratum 2941627",
+		.iidr	= 0x0402043b,
+		.mask	= 0xff0f0fff,
+		.init	= gic_enable_quirk_arm64_2941627,
+	},
+	{
 	}
 };
 
@@ -1759,6 +1863,11 @@ static void gic_enable_nmi_support(void)
 
 	if (!gic_prio_masking_enabled())
 		return;
+
+	if (gic_data.flags & FLAGS_WORKAROUND_MTK_GICR_SAVE) {
+		pr_warn("Skipping NMI enable due to firmware issues\n");
+		return;
+	}
 
 	ppi_nmi_refs = kcalloc(gic_data.ppi_nr, sizeof(*ppi_nmi_refs), GFP_KERNEL);
 	if (!ppi_nmi_refs)
@@ -1883,10 +1992,11 @@ static int __init gic_init_bases(void __iomem *dist_base,
 
 	gic_update_rdist_properties();
 
-	gic_dist_init();
-	gic_cpu_init();
+	gic_v3_dist_init();
+	gic_v3_cpu_init();
 	gic_smp_init();
 	gic_cpu_pm_init();
+	gic_syscore_init();
 
 	if (gic_dist_supports_lpis()) {
 		its_init(handle, &gic_data.rdists, gic_data.domain);
