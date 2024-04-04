@@ -8503,6 +8503,12 @@ void cfg80211_ch_switch_started_notify(struct net_device *dev,
 				       unsigned int link_id, u8 count,
 				       bool quiet, u16 punct_bitmap);
 
+/*
+ * let out-of-tree drivers know about the change of commit 541c3b73ddf0a
+ * ("UPSTREAM: wifi: cfg80211: include puncturing bitmap in channel switch events")
+ */
+#define CFG80211_HAS_PUNCT_BITMAP	1
+
 /**
  * ieee80211_operating_class_to_band - convert operating class to band
  *
