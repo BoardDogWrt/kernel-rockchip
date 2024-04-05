@@ -1115,10 +1115,16 @@ static struct platform_driver iep_driver = {
 static int proc_iep_show(struct seq_file *s, void *v)
 {
 	struct iep_status sts;
+
 	//mutex_lock(&iep_service.mutex);
-	iep_power_on();
-	seq_printf(s, "\nIEP Modules Status:\n");
+	//iep_power_on();
+	if (!iep_service.enable) {
+		seq_printf(s, "IEP Modules Status: off\n");
+		return 0;
+	}
+
 	sts = iep_get_status(iep_drvdata1->iep_base);
+	seq_printf(s, "\nIEP Modules Status:\n");
 	seq_printf(s, "scl_sts: %u, dil_sts %u, wyuv_sts %u, "
 		      "ryuv_sts %u, wrgb_sts %u, rrgb_sts %u, voi_sts %u\n",
 		sts.scl_sts, sts.dil_sts, sts.wyuv_sts, sts.ryuv_sts,
