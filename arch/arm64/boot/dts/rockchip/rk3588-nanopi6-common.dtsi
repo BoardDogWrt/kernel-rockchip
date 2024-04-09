@@ -547,6 +547,10 @@
 	status = "okay";
 };
 
+&rkvtunnel {
+	status = "okay";
+};
+
 &avcc_1v8_s0 {
 	regulator-state-mem {
 		regulator-on-in-suspend;
@@ -688,6 +692,7 @@
 &vop {
 	assigned-clocks = <&cru ACLK_VOP>;
 	assigned-clock-rates = <800000000>;
+	vop-supply = <&vdd_log_s0>;
 	support-multi-area;
 	status = "okay";
 };
