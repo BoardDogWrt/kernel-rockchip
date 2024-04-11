@@ -29,6 +29,7 @@
 };
 
 &pcie2x1l2 {
+	rockchip,skip-hw-retry;
 	/delete-node/ pcie@40;
 };
 
