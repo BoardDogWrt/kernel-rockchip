@@ -141,6 +141,7 @@ struct rk_pcie {
 	bool				is_signal_test;
 	bool				bifurcation;
 	bool				supports_clkreq;
+	bool				skip_hw_retry;
 	struct regulator		*vpcie3v3;
 	struct irq_domain		*irq_domain;
 	raw_spinlock_t			intx_lock;
@@ -666,7 +667,7 @@ static int rk_pcie_establish_link(struct dw_pcie *pci)
 	int retries, power;
 	struct rk_pcie *rk_pcie = to_rk_pcie(pci);
 	bool std_rc = rk_pcie->mode == DW_PCIE_RC_TYPE && !rk_pcie->dma_obj;
-	int hw_retries = 0;
+	int hw_retries;
 	u32 ltssm;
 
 	/*
@@ -725,7 +726,7 @@ static int rk_pcie_establish_link(struct dw_pcie *pci)
 		 */
 		usleep_range(1000, 1100);
 
-		for (retries = 0; retries < 100; retries++) {
+		for (retries = 0; retries < 50; retries++) {
 			if (dw_pcie_link_up(pci)) {
 				/*
 				 * We may be here in case of L0 in Gen1. But if EP is capable
@@ -744,10 +745,13 @@ static int rk_pcie_establish_link(struct dw_pcie *pci)
 				}
 			}
 
-			dev_info_ratelimited(pci->dev, "PCIe Linking... LTSSM is 0x%x\n",
+			if (retries < 5) {
+				dev_info(pci->dev, "PCIe Linking... LTSSM is 0x%x\n",
 					rk_pcie_readl_apb(rk_pcie, PCIE_CLIENT_LTSSM_STATUS));
+			}
+
 			rk_pcie_debug_dump(rk_pcie);
-			msleep(20);
+			usleep_range(20000, 21000);
 		}
 
 		/*
@@ -757,10 +761,12 @@ static int rk_pcie_establish_link(struct dw_pcie *pci)
 		 */
 		ltssm = rk_pcie_readl_apb(rk_pcie, PCIE_CLIENT_LTSSM_STATUS);
 		dev_err(pci->dev, "PCIe Link Fail, LTSSM is 0x%x, hw_retries=%d\n", ltssm, hw_retries);
-		if (ltssm >= 3 && !rk_pcie->is_signal_test) {
-			rk_pcie_disable_power(rk_pcie);
-			msleep(1000);
-			rk_pcie_enable_power(rk_pcie);
+		if (ltssm >= 3 && !rk_pcie->is_signal_test && !rk_pcie->skip_hw_retry) {
+			if (hw_retries < (RK_PCIE_ENUM_HW_RETRYIES - 1)) {
+				rk_pcie_disable_power(rk_pcie);
+				msleep(1000);
+				rk_pcie_enable_power(rk_pcie);
+			}
 		} else {
 			break;
 		}
@@ -1813,6 +1819,8 @@ static int rk_pcie_really_probe(void *p)
 		dev_err(dev, "resource init failed\n");
 		goto release_driver;
 	}
+
+	rk_pcie->skip_hw_retry = device_property_read_bool(dev, "rockchip,skip-hw-retry");
 
 	/* To ensure the ordering of pci device */
 	if (!device_property_read_u32(dev, "rockchip,init-delay-ms", &val)) {
