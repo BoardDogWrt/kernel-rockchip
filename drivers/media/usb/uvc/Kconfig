@@ -19,3 +19,14 @@ config USB_VIDEO_CLASS_INPUT_EVDEV
 	  to report button events.
 
 	  If you are in doubt, say Y.
+
+config USB_VIDEO_CLASS_REALSENSE
+	bool "Workaround for Intel RealSense depth camera"
+	default n
+	depends on USB_VIDEO_CLASS
+	help
+	  This option increases the UVC_URBS and UVC_MAX_STATUS_SIZE like
+	  librealsense patches does.
+
+	  Link: https://github.com/IntelRealSense/librealsense
+	  If you are in doubt, say N.

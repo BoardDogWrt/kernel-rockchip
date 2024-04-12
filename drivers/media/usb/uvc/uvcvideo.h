@@ -48,11 +48,19 @@
 #define DRIVER_VERSION		"1.1.1"
 
 /* Number of isochronous URBs. */
+#ifdef CONFIG_USB_VIDEO_CLASS_REALSENSE
+#define UVC_URBS		16
+#else
 #define UVC_URBS		5
+#endif
 /* Maximum number of packets per URB. */
 #define UVC_MAX_PACKETS		32
 /* Maximum status buffer size in bytes of interrupt URB. */
+#ifdef CONFIG_USB_VIDEO_CLASS_REALSENSE
+#define UVC_MAX_STATUS_SIZE	32
+#else
 #define UVC_MAX_STATUS_SIZE	16
+#endif
 
 #define UVC_CTRL_CONTROL_TIMEOUT	5000
 #define UVC_CTRL_STREAMING_TIMEOUT	5000
