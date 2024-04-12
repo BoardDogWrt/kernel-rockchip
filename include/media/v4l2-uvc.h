@@ -118,6 +118,9 @@
 #define UVC_GUID_FORMAT_Y12I \
 	{ 'Y',  '1',  '2',  'I', 0x00, 0x00, 0x10, 0x00, \
 	 0x80, 0x00, 0x00, 0xaa, 0x00, 0x38, 0x9b, 0x71}
+#define UVC_GUID_FORMAT_Y16I \
+	{ 'Y',  '1',  '6',  'I', 0x00, 0x00, 0x10, 0x00, \
+	 0x80, 0x00, 0x00, 0xaa, 0x00, 0x38, 0x9b, 0x71}
 #define UVC_GUID_FORMAT_Z16 \
 	{ 'Z',  '1',  '6',  ' ', 0x00, 0x00, 0x10, 0x00, \
 	 0x80, 0x00, 0x00, 0xaa, 0x00, 0x38, 0x9b, 0x71}
@@ -147,6 +150,38 @@
 #define UVC_GUID_FORMAT_HEVC \
 	{ 'H',  'E',  'V',  'C', 0x00, 0x00, 0x10, 0x00, \
 	 0x80, 0x00, 0x00, 0xaa, 0x00, 0x38, 0x9b, 0x71}
+
+#define UVC_GUID_FORMAT_D16 \
+	{ 'P', 0x00,  0x00,  0x00, 0x00, 0x00, 0x10, 0x00, \
+	 0x80, 0x00, 0x00, 0xaa, 0x00, 0x38, 0x9b, 0x71}
+#define UVC_GUID_FORMAT_W10 \
+	{ 'W',  '1',  '0',  ' ', 0x00, 0x00, 0x10, 0x00, \
+	 0x80, 0x00, 0x00, 0xaa, 0x00, 0x38, 0x9b, 0x71}
+#define UVC_GUID_FORMAT_RAW8 \
+	{ 'R',  'A',  'W',  '8', 0x66, 0x1a, 0x42, 0xa2, \
+	 0x90, 0x65, 0xd0, 0x18, 0x14, 0xa8, 0xef, 0x8a}
+#define UVC_GUID_FORMAT_CONFIDENCE_MAP \
+	{ 'C',  ' ',  ' ',  ' ', 0x00, 0x00, 0x10, 0x00, \
+	 0x80, 0x00, 0x00, 0xaa, 0x00, 0x38, 0x9b, 0x71}
+/* Legacy formats */
+#define UVC_GUID_FORMAT_RW16 \
+	{ 'R',  'W',  '1',  '6', 0x00, 0x00, 0x10, 0x00, \
+	 0x80, 0x00, 0x00, 0xaa, 0x00, 0x38, 0x9b, 0x71}
+#define UVC_GUID_FORMAT_BAYER16 \
+	{ 'R',  'W',  '1',  '6', 0x66, 0x1a, 0x42, 0xa2, \
+	 0x90, 0x65, 0xd0, 0x18, 0x14, 0xa8, 0xef, 0x8a}
+#define UVC_GUID_FORMAT_Z16H \
+	{ 'Z',  '1',  '6',  'H', 0x00, 0x00, 0x10, 0x00, \
+	 0x80, 0x00, 0x00, 0xaa, 0x00, 0x38, 0x9b, 0x71}
+#define UVC_GUID_FORMAT_FG \
+	{ 'F',  'G',  ' ',  ' ', 0x00, 0x00, 0x10, 0x00, \
+	 0x80, 0x00, 0x00, 0xaa, 0x00, 0x38, 0x9b, 0x71}
+#define UVC_GUID_FORMAT_INZC \
+	{ 'I',  'N',  'Z',  'C', 0x02, 0xb6, 0x0f, 0x48, \
+	 0x97, 0x8c, 0xe4, 0xe8, 0x8a, 0xe8, 0x9b, 0x89}
+#define UVC_GUID_FORMAT_PAIR \
+	{ 'P',  'A',  'I',  'R', 0x36, 0x85, 0x41, 0x48, \
+	 0xb6, 0xbf, 0x8f, 0xc6, 0xff, 0xb0, 0x83, 0xa8}
 
 /* ------------------------------------------------------------------------
  * Video formats
@@ -295,6 +330,11 @@ static struct uvc_format_desc uvc_fmts[] = {
 		.fcc		= V4L2_PIX_FMT_Y12I,
 	},
 	{
+		.name		= "Greyscale 16 L/R (Y16I)",
+		.guid		= UVC_GUID_FORMAT_Y16I,
+		.fcc		= V4L2_PIX_FMT_Y16I,
+	},
+	{
 		.name		= "Depth data 16-bit (Z16)",
 		.guid		= UVC_GUID_FORMAT_Z16,
 		.fcc		= V4L2_PIX_FMT_Z16,
@@ -348,6 +388,58 @@ static struct uvc_format_desc uvc_fmts[] = {
 		.name		= "HEVC",
 		.guid		= UVC_GUID_FORMAT_HEVC,
 		.fcc		= V4L2_PIX_FMT_HEVC,
+	},
+	{
+		.name		= "Depth data 16-bit (D16)",
+		.guid		= UVC_GUID_FORMAT_D16,
+		.fcc		= V4L2_PIX_FMT_Z16,
+	},
+	{
+		.name		= "Packed raw data 10-bit",
+		.guid		= UVC_GUID_FORMAT_W10,
+		.fcc		= V4L2_PIX_FMT_W10,
+	},
+	{
+		.name		= "Confidence data (C   )",
+		.guid		= UVC_GUID_FORMAT_CONFIDENCE_MAP,
+		.fcc		= V4L2_PIX_FMT_CONFIDENCE_MAP,
+	},
+	/* FishEye 8-bit monochrome */
+	{
+		.name		= "Raw data 8-bit (RAW8)",
+		.guid		= UVC_GUID_FORMAT_RAW8,
+		.fcc		= V4L2_PIX_FMT_GREY,
+	},
+	/* Legacy formats for backward-compatibility*/
+	{
+		.name		= "Raw data 16-bit (RW16)",
+		.guid		= UVC_GUID_FORMAT_RW16,
+		.fcc		= V4L2_PIX_FMT_RW16,
+	},
+	{
+		.name		= "16-bit Bayer BGBG/GRGR",
+		.guid		= UVC_GUID_FORMAT_BAYER16,
+		.fcc		= V4L2_PIX_FMT_SBGGR16,
+	},
+	{
+		.name		= "Z16 Huffman Compression",
+		.guid		= UVC_GUID_FORMAT_Z16H,
+		.fcc		= V4L2_PIX_FMT_Z16H,
+	},
+	{
+		.name		= "Frame Grabber (FG  )",
+		.guid		= UVC_GUID_FORMAT_FG,
+		.fcc		= V4L2_PIX_FMT_FG,
+	},
+	{
+		.name		= "SR300 Depth/Confidence (INZC)",
+		.guid		= UVC_GUID_FORMAT_INZC,
+		.fcc		= V4L2_PIX_FMT_INZC,
+	},
+	{
+		.name		= "Relative IR (PAIR)",
+		.guid		= UVC_GUID_FORMAT_PAIR,
+		.fcc		= V4L2_PIX_FMT_PAIR,
 	},
 };
 
