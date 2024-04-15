@@ -65,6 +65,8 @@ struct pwm_fan_ctx {
 	struct notifier_block thermal_nb;
 	struct thermal_trips *thermal_trips;
 	bool thermal_notifier_is_ok;
+	unsigned int delay_ms;
+	ktime_t time_in_state;
 
 	struct hwmon_chip_info info;
 	struct hwmon_channel_info fan_channel;
@@ -410,6 +412,10 @@ pwm_fan_set_cur_state(struct thermal_cooling_device *cdev, unsigned long state)
 	if (!ctx || (state > ctx->pwm_fan_max_state))
 		return -EINVAL;
 
+	/* keep running after user request */
+	if (ctx->delay_ms > 0)
+		ctx->time_in_state = ktime_add_ms(ktime_get(), ctx->delay_ms);
+
 	if (state == ctx->pwm_fan_state)
 		return 0;
 
@@ -547,6 +553,11 @@ static int pwm_fan_thermal_notifier_call(struct notifier_block *nb,
 		return NOTIFY_BAD;
 	if (state == ctx->pwm_fan_state)
 		return NOTIFY_OK;
+
+	if (ktime_before(ktime_get(), ctx->time_in_state) &&
+	    state < ctx->pwm_fan_max_state) {
+		return NOTIFY_DONE;
+	}
 
 	ret = set_pwm(ctx, ctx->pwm_fan_cooling_levels[state]);
 	if (ret)
@@ -721,9 +732,12 @@ static int pwm_fan_probe(struct platform_device *pdev)
 		ret = pwm_fan_register_thermal_notifier(dev, ctx);
 		if (ret)
 			dev_err(dev, "Failed to register thermal notifier: %d\n", ret);
-		else
+		else {
+			device_property_read_u32(dev, "rockchip,hold-time-ms", &ctx->delay_ms);
+			/* keep running at 1000ms on startup */
+			ctx->time_in_state = ktime_add_ms(ktime_get(), ctx->delay_ms + 1000);
 			ctx->thermal_notifier_is_ok = true;
-		return 0;
+		}
 	}
 	if (IS_ENABLED(CONFIG_THERMAL)) {
 		cdev = devm_thermal_of_cooling_device_register(dev,
