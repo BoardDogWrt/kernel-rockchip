@@ -755,6 +755,20 @@ static int pwm_fan_probe(struct platform_device *pdev)
 	return 0;
 }
 
+static int pwm_fan_remove(struct platform_device *pdev)
+{
+	struct pwm_fan_ctx *ctx = platform_get_drvdata(pdev);
+
+	if (ctx->thermal_notifier_is_ok) {
+		ctx->thermal_notifier_is_ok = false;
+		rockchip_system_monitor_unregister_notifier(&ctx->thermal_nb);
+	}
+
+	pwm_fan_switch_power(ctx, false);
+
+	return 0;
+}
+
 static void pwm_fan_shutdown(struct platform_device *pdev)
 {
 	struct pwm_fan_ctx *ctx = platform_get_drvdata(pdev);
@@ -786,6 +800,7 @@ MODULE_DEVICE_TABLE(of, of_pwm_fan_match);
 
 static struct platform_driver pwm_fan_driver = {
 	.probe		= pwm_fan_probe,
+	.remove		= pwm_fan_remove,
 	.shutdown	= pwm_fan_shutdown,
 	.driver	= {
 		.name		= "pwm-fan",
