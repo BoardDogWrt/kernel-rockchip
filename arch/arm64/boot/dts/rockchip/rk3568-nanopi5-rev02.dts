@@ -214,3 +214,8 @@
 &sfc {
 	status = "disabled";
 };
+
+&simple_bat {
+	voltage-max-design-microvolt = <5400000>;
+	voltage-min-design-microvolt = <4200000>;
+};
