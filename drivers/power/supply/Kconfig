@@ -1005,4 +1005,12 @@ config BATTERY_UG3105
 	  device is off or suspended, the functionality of this driver is
 	  limited to reporting capacity only.
 
+config SIMPLE_ADC_POWER
+	tristate "Simple ADC power supply driver"
+	depends on IIO
+	default y if VENDOR_FRIENDLYELEC
+	help
+	  Say Y here to enable support for the simple power supply driver
+	  which uses IIO framework to read adc.
+
 endif # POWER_SUPPLY
