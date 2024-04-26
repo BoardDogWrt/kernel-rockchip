@@ -422,6 +422,7 @@
 };
 
 &i2c8 {
+	status = "okay";
 	pinctrl-0 = <&i2c8m2_xfer>;
 	/* connected with Header_2.54MM */
 };
