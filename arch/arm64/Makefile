@@ -242,12 +242,14 @@ kernel.img: Image
 ifeq ($(CONFIG_VENDOR_FRIENDLYELEC),y)
 DTBS := rk3*-nanopi*-rev*.dtb
 
-nanopi4-images: dtbs kernel.img $(LOGO) $(LOGO_KERNEL)
+resource.img: dtbs $(LOGO) $(LOGO_KERNEL)
 	$(Q)$(srctree)/scripts/mkimg --dtb $(DTBS) --keep-dtb-name
+
+nanopi4-images: kernel.img resource.img
 
 nanopi5-images: nanopi4-images
 nanopi6-images: nanopi4-images
-PHONY += nanopi4-images nanopi5-images nanopi6-images
+PHONY += resource.img nanopi4-images nanopi5-images nanopi6-images
 endif
 
 %.img: kernel.img

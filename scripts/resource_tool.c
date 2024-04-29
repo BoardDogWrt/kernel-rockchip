@@ -1481,7 +1481,7 @@ static bool write_index_tbl(const int file_num, const char **files)
 	bool foundFdt = false;
 	int offset =
 	        header.header_size + header.tbl_entry_size * header.tbl_entry_num;
-	index_tbl_entry entry;
+	index_tbl_entry entry = { 0 };
 	char hash[20];	/* sha1 */
 	int i;
 

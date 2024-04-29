@@ -81,6 +81,7 @@ make_boot_img()
 	RAMDISK_IMG_PATH=${objtree}/ramdisk.img
 	[ -f ${RAMDISK_IMG_PATH} ] && RAMDISK_IMG=ramdisk.img && RAMDISK_ARG="--ramdisk ${RAMDISK_IMG_PATH}"
 
+	[ -f "${KERNEL_IMAGE_PATH}" ] && \
 	${srctree}/scripts/mkbootimg \
 		${KERNEL_IMAGE_ARG} \
 		${RAMDISK_ARG} \
