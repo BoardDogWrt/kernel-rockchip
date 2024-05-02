@@ -319,15 +319,23 @@ static struct phy *rockchip_combphy_xlate(struct device *dev,
 					  struct of_phandle_args *args)
 {
 	struct rockchip_combphy_priv *priv = dev_get_drvdata(dev);
+	bool no_overwrite = false;
 
-	if (args->args_count != 1) {
+	if (args->args_count < 1) {
 		dev_err(dev, "invalid number of arguments\n");
 		return ERR_PTR(-EINVAL);
 	}
 
-	if (priv->mode != PHY_NONE && priv->mode != args->args[0])
-		dev_warn(dev, "phy type select %d overwriting type %d\n",
-			 args->args[0], priv->mode);
+	if (args->args_count == 2 && args->args[1] == 1)
+		no_overwrite = true;
+
+	if (priv->mode != PHY_NONE && priv->mode != args->args[0]) {
+		dev_warn(dev, "phy type select %d %soverwriting type %d\n",
+			 args->args[0], no_overwrite ? "no-" : "", priv->mode);
+
+		if (no_overwrite)
+			return ERR_PTR(-EBUSY);
+	}
 
 	priv->mode = args->args[0];
 
