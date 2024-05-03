@@ -1073,7 +1073,7 @@ static int usb_serial_probe(struct usb_interface *interface,
 	for (i = 0; i < num_ports; ++i) {
 		port = serial->port[i];
 		
-		/* EOF:HACK: Huawei/Quectel LTE Modules bekome its own name
+		/* EOF:HACK: Huawei/Quectel LTE Modules become its own name
 		 * to be sure it does not change during cold/warm boot time */
 
 		/* QUECTEL QUECTEL_VENDOR_ID */
@@ -1124,8 +1124,9 @@ probe_error:
 
 static void usb_serial_disconnect(struct usb_interface *interface)
 {
-	int i;
+	int i, module_minor;
 	struct usb_serial *serial = usb_get_intfdata(interface);
+	struct usb_device *usbdev = interface_to_usbdev(interface);
 	struct device *dev = &interface->dev;
 	struct usb_serial_port *port;
 	struct tty_struct *tty;
@@ -1144,6 +1145,29 @@ static void usb_serial_disconnect(struct usb_interface *interface)
 			tty_vhangup(tty);
 			tty_kref_put(tty);
 		}
+
+		/* EOF:HACK: Huawei/Quectel LTE Modules become its own name
+		 * to be sure it does not change during cold/warm boot time.
+		 * On deregister, revert minor id's here. */
+
+		/* QUECTEL QUECTEL_VENDOR_ID */
+		if (usbdev->descriptor.idVendor == cpu_to_le16(0x2c7c)) 
+		{
+			module_minor = gsm_module_minors[0];
+			if (module_minor > 0) {
+				module_minor--;
+				gsm_module_minors[0] = module_minor;
+			}
+		} 
+		/* HUAWEI HUAWEI_VENDOR_ID */
+		else if (usbdev->descriptor.idVendor == cpu_to_le16(0x12d1)) 
+		{
+			module_minor = gsm_module_minors[1];
+			if (module_minor > 0) {
+				module_minor--;
+				gsm_module_minors[1] = module_minor;
+			}
+		} 
 		usb_serial_port_poison_urbs(port);
 		wake_up_interruptible(&port->port.delta_msr_wait);
 		cancel_work_sync(&port->work);
