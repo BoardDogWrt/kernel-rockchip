@@ -1,0 +1,75 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/*
+ * Copyright (c) 2024 FriendlyElec Computer Tech. Co., Ltd.
+ * (http://www.friendlyelec.com)
+ */
+
+#if (ENABLE_MIPI_DSI0)
+
+&mipi_dcphy0 {
+	status = "okay";
+};
+
+&dsi0 {
+	status = "okay";
+};
+
+&dsi0_i2c {
+	status = "okay";
+};
+
+#if (HAS_PWM_BACKLIGHT)
+&dsi0_pwm {
+	status = "okay";
+};
+
+&pwm_backlight {
+	status = "okay";
+	pwms = <&dsi0_pwm 0 25000 0>;
+};
+#endif
+
+&dsi0_in_vp2 {
+	status = "okay";
+};
+
+&route_dsi0 {
+	status = "okay";
+	connect = <&vp2_out_dsi0>;
+};
+
+#elif (ENABLE_MIPI_DSI1)
+
+&mipi_dcphy1 {
+	status = "okay";
+};
+
+&dsi1 {
+	status = "okay";
+};
+
+&dsi1_i2c {
+	status = "okay";
+};
+
+#if (HAS_PWM_BACKLIGHT)
+&dsi1_pwm {
+	status = "okay";
+};
+
+&pwm_backlight {
+	status = "okay";
+	pwms = <&dsi1_pwm 0 25000 0>;
+};
+#endif
+
+&dsi1_in_vp2 {
+	status = "okay";
+};
+
+&route_dsi1 {
+	status = "okay";
+	connect = <&vp2_out_dsi1>;
+};
+
+#endif
