@@ -285,14 +285,12 @@
 	/* connected with MIPI-CSI0 */
 };
 
-&i2c4 {
+dsi1_i2c: &i2c4 {
 	pinctrl-0 = <&i2c4m3_xfer>;
-	/* connected with MIPI-DSI1 */
 };
 
-&i2c5 {
+dsi0_i2c: &i2c5 {
 	pinctrl-0 = <&i2c5m0_xfer>;
-	/* connected with MIPI-DSI0 */
 };
 
 &i2c6 {
@@ -566,14 +564,12 @@
 	status = "okay";
 };
 
-&pwm2 {
+dsi0_pwm: &pwm2 {
 	pinctrl-0 = <&pwm2m1_pins>;
-	/* connected with MIPI-DSI0 */
 };
 
-&pwm11 {
+dsi1_pwm: &pwm11 {
 	pinctrl-0 = <&pwm11m3_pins>;
-	/* connected with MIPI-DSI1 */
 };
 
 &spdif_tx2 {

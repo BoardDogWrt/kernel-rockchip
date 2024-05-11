@@ -316,9 +316,8 @@
 	status = "okay";
 };
 
-&i2c5 {
+dsi0_i2c: &i2c5 {
 	pinctrl-0 = <&i2c5m0_xfer>;
-	/* connected with MIPI-DSI0 */
 };
 
 &i2c6 {
@@ -637,9 +636,8 @@
 	status = "okay";
 };
 
-&pwm2 {
+dsi0_pwm: &pwm2 {
 	pinctrl-0 = <&pwm2m1_pins>;
-	/* connected with MIPI-DSI0 */
 };
 
 &pwm8 {
