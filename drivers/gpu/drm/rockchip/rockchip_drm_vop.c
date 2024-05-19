@@ -12,9 +12,6 @@
  * GNU General Public License for more details.
  */
 
-//EOF:DEBUG
-//#define DEBUG 1
-
 #include <drm/drm.h>
 #include <drm/drmP.h>
 #include <drm/drm_atomic.h>

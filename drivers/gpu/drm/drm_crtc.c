@@ -5688,8 +5688,10 @@ int drm_mode_page_flip_ioctl(struct drm_device *dev,
 		goto out;
 	}
 
-	if (crtc->funcs->page_flip == NULL)
+	if (crtc->funcs->page_flip == NULL) {
+		ret = -ENOENT;
 		goto out;
+	}
 
 	fb = drm_framebuffer_lookup(dev, page_flip->fb_id);
 	if (!fb) {
