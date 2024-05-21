@@ -1109,16 +1109,16 @@ int rga_request_submit(struct rga_request *request)
 		spin_unlock_irqrestore(&request->lock, flags);
 
 		pr_err("can not re-config when request is running\n");
-		ret = -EFAULT;
-		goto err_put_current_mm;
+		rga_request_put_current_mm(current_mm);
+		return -EFAULT;
 	}
 
 	if (request->task_list == NULL) {
 		spin_unlock_irqrestore(&request->lock, flags);
 
 		pr_err("can not find task list from id[%d]\n", request->id);
-		ret = -EINVAL;
-		goto err_put_current_mm;
+		rga_request_put_current_mm(current_mm);
+		return -EINVAL;
 	}
 
 	/* Reset */
@@ -1192,9 +1192,6 @@ err_reset_request:
 	request->is_running = false;
 
 	spin_unlock_irqrestore(&request->lock, flags);
-
-err_put_current_mm:
-	rga_request_put_current_mm(current_mm);
 
 	return ret;
 }
