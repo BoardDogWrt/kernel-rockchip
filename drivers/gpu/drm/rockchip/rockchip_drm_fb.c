@@ -165,55 +165,11 @@ static int rockchip_drm_bandwidth_atomic_check(struct drm_device *dev,
 	struct drm_crtc *crtc;
 	int i;
 
-	vop_bw_info->line_bw_mbyte = 0;
-	vop_bw_info->frame_bw_mbyte = 0;
-	vop_bw_info->plane_num = 0;
-	vop_bw_info->plane_num_4k = 0;
-
 	for_each_old_crtc_in_state(state, crtc, old_crtc_state, i) {
 		funcs = priv->crtc_funcs[drm_crtc_index(crtc)];
 
 		if (funcs && funcs->bandwidth)
 			funcs->bandwidth(crtc, old_crtc_state, vop_bw_info);
-	}
-
-	return 0;
-}
-
-static int rockchip_drm_aclk_adjust(struct drm_device *dev,
-				    struct drm_atomic_state *state,
-				    struct dmcfreq_vop_info *vop_bw_info)
-{
-	struct rockchip_drm_private *priv = dev->dev_private;
-	const struct rockchip_crtc_funcs *funcs;
-	struct drm_crtc *crtc;
-	int crtc_num = 0;
-
-	drm_for_each_crtc(crtc, dev) {
-		if (!crtc->state->active)
-			continue;
-		crtc_num++;
-	}
-
-	drm_for_each_crtc(crtc, dev) {
-		if (!crtc->state->active)
-			continue;
-
-		funcs = priv->crtc_funcs[drm_crtc_index(crtc)];
-		if (funcs && funcs->set_aclk) {
-			if (vop_bw_info->plane_num_4k || crtc_num > 1 ||
-			    crtc->state->adjusted_mode.crtc_hdisplay > 4096) {
-				funcs->set_aclk(crtc, ROCKCHIP_VOP_ACLK_ADVANCED_MODE);
-				priv->aclk_adjust_frame_num = 2;
-			} else {
-				if (priv->aclk_adjust_frame_num >= 1) {
-					funcs->set_aclk(crtc, ROCKCHIP_VOP_ACLK_ADVANCED_MODE);
-					priv->aclk_adjust_frame_num--;
-				} else {
-					funcs->set_aclk(crtc, ROCKCHIP_VOP_ACLK_NORMAL_MODE);
-				}
-			}
-		}
 	}
 
 	return 0;
@@ -251,7 +207,7 @@ static void rockchip_drm_atomic_helper_commit_tail_rpm(struct drm_atomic_state *
 {
 	struct drm_device *dev = old_state->dev;
 	struct rockchip_drm_private *prv = dev->dev_private;
-	struct dmcfreq_vop_info vop_bw_info;
+	struct dmcfreq_vop_info vop_bw_info = { 0 };
 
 	drm_atomic_helper_commit_modeset_disables(dev, old_state);
 
@@ -261,8 +217,6 @@ static void rockchip_drm_atomic_helper_commit_tail_rpm(struct drm_atomic_state *
 		rockchip_drm_bandwidth_atomic_check(dev, old_state, &vop_bw_info);
 		rockchip_dmcfreq_vop_bandwidth_update(&vop_bw_info);
 	}
-
-	rockchip_drm_aclk_adjust(dev, old_state, &vop_bw_info);
 
 	mutex_lock(&prv->ovl_lock);
 	drm_atomic_helper_commit_planes(dev, old_state, DRM_PLANE_COMMIT_ACTIVE_ONLY);

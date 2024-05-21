@@ -904,6 +904,7 @@ struct vop2 {
 	struct devfreq *devfreq;
 	struct monitor_dev_info *mdev_info;
 	struct opp_table *opp_table;
+	struct delayed_work aclk_work;
 	unsigned long aclk_target_freq;
 	u32 aclk_mode_rate[ROCKCHIP_VOP_ACLK_MAX_MODE];
 #endif
@@ -4387,6 +4388,7 @@ static void vop2_crtc_atomic_disable(struct drm_crtc *crtc,
 	struct vop2 *vop2 = vp->vop2;
 	const struct vop2_video_port_data *vp_data = &vop2->data->vp[vp->id];
 	struct vop2_video_port *splice_vp = &vop2->vps[vp_data->splice_vp_id];
+	struct drm_display_mode *disabled_mode = &old_cstate->adjusted_mode;
 	bool dual_channel = !!(vcstate->output_flags & ROCKCHIP_OUTPUT_DUAL_CHANNEL_LEFT_RIGHT_MODE);
 	int ret;
 
@@ -4512,6 +4514,14 @@ static void vop2_crtc_atomic_disable(struct drm_crtc *crtc,
 	vop2_unlock(vop2);
 
 	vop2_set_system_status(vop2);
+
+	if (hweight8(vop2->active_vp_mask) == 0) {
+		vop2_devfreq_set_aclk(crtc, ROCKCHIP_VOP_ACLK_NORMAL_MODE);
+	} else if (hweight8(vop2->active_vp_mask) == 1) {
+		if (disabled_mode && disabled_mode->crtc_clock > 1000000) {
+			vop2_devfreq_set_aclk(crtc, ROCKCHIP_VOP_ACLK_NORMAL_MODE);
+		}
+	}
 
 out:
 	if (crtc->state->event && !crtc->state->active) {
@@ -6712,9 +6722,14 @@ static size_t vop2_crtc_bandwidth(struct drm_crtc *crtc,
 #endif
 
 	for_each_new_plane_in_state(state, plane, pstate, i) {
+		if (plane->type == DRM_PLANE_TYPE_CURSOR)
+			continue;
 		if (pstate->crtc == crtc)
 			plane_num++;
 	}
+
+	if (!plane_num)
+		return 0;
 
 	vop_bw_info->plane_num += plane_num;
 	pbandwidth = kmalloc_array(plane_num, sizeof(*pbandwidth),
@@ -6723,10 +6738,11 @@ static size_t vop2_crtc_bandwidth(struct drm_crtc *crtc,
 		return -ENOMEM;
 
 	for_each_new_plane_in_state(state, plane, pstate, i) {
-		int act_w, act_h, bpp, afbc_fac;
-		int fps = drm_mode_vrefresh(adjusted_mode);
+		int act_w, act_h, bpp, afbc_fac, fps;
 
 		if (!pstate || pstate->crtc != crtc || !pstate->fb)
+			continue;
+		if (plane->type == DRM_PLANE_TYPE_CURSOR)
 			continue;
 
 		/* This is an empirical value, if it's afbc format, the frame buffer size div 2 */
@@ -6744,6 +6760,7 @@ static size_t vop2_crtc_bandwidth(struct drm_crtc *crtc,
 
 		bpp = rockchip_drm_get_bpp(pstate->fb->format);
 
+		fps = drm_mode_vrefresh(adjusted_mode);
 		vop_bw_info->frame_bw_mbyte += act_w * act_h / 1000 * bpp / 8 * fps / 1000 / afbc_fac;
 	}
 
@@ -7805,6 +7822,12 @@ static void vop2_crtc_atomic_enable(struct drm_crtc *crtc, struct drm_atomic_sta
 
 	vop2->active_vp_mask |= BIT(vp->id);
 	vop2_set_system_status(vop2);
+
+	if (adjusted_mode->crtc_clock > 1000000 || hweight8(vop2->active_vp_mask) > 1) {
+		vop2_devfreq_set_aclk(crtc, ROCKCHIP_VOP_ACLK_ADVANCED_MODE);
+	} else {
+		vop2_devfreq_set_aclk(crtc, ROCKCHIP_VOP_ACLK_NORMAL_MODE);
+	}
 
 	vop2_lock(vop2);
 	DRM_DEV_INFO(vop2->dev, "Update mode to %dx%d%s%d, type: %d(if:%x, flag:0x%x) for vp%d dclk: %llu\n",
@@ -11939,34 +11962,34 @@ static struct devfreq_governor devfreq_vop2_ondemand = {
 	.event_handler = devfreq_vop2_ondemand_handler,
 };
 
-static int vop2_devfreq_set_aclk(struct drm_crtc *crtc, enum rockchip_drm_vop_aclk_mode aclk_mode)
+static void vop2_devfreq_update_work(struct work_struct *work)
 {
-	struct vop2_video_port *vp = to_vop2_video_port(crtc);
-	struct vop2 *vop2 = vp->vop2;
-	struct drm_crtc *first_active_crtc = NULL;
-	int i = 0, ret = 0;
-
-	if (!vop2->devfreq)
-		return 0;
-
-	/* all vp/crtc share one vop aclk, so only need to set once */
-	for (i = 0; i < vop2->data->nr_vps; i++) {
-		if (vop2->vps[i].rockchip_crtc.crtc.state &&
-		    vop2->vps[i].rockchip_crtc.crtc.state->active) {
-			first_active_crtc = &vop2->vps[i].rockchip_crtc.crtc;
-			break;
-		}
-	}
-	if (first_active_crtc != crtc)
-		return 0;
-
-	vop2->aclk_target_freq = vop2->aclk_mode_rate[aclk_mode];
+	struct vop2 *vop2 = container_of(to_delayed_work(work), struct vop2, aclk_work);
+	int ret;
 
 	mutex_lock(&vop2->devfreq->lock);
 	ret = update_devfreq(vop2->devfreq);
 	mutex_unlock(&vop2->devfreq->lock);
 	if (ret)
 		dev_err(vop2->dev, "failed to set rate %lu\n", vop2->aclk_target_freq);
+}
+
+static int vop2_devfreq_set_aclk(struct drm_crtc *crtc, enum rockchip_drm_vop_aclk_mode aclk_mode)
+{
+	struct vop2_video_port *vp = to_vop2_video_port(crtc);
+	struct vop2 *vop2 = vp->vop2;
+
+	if (!vop2->devfreq)
+		return 0;
+
+	vop2->aclk_target_freq = vop2->aclk_mode_rate[aclk_mode];
+
+	cancel_delayed_work(&vop2->aclk_work);
+	if (vop2->aclk_target_freq < vop2->aclk_current_freq) {
+		schedule_delayed_work(&vop2->aclk_work, msecs_to_jiffies(1000));
+	} else {
+		vop2_devfreq_update_work(&vop2->aclk_work.work);
+	}
 
 	return 0;
 }
@@ -12061,6 +12084,8 @@ static int rockchip_vop2_devfreq_init(struct vop2 *vop2)
 		ret = PTR_ERR(vop2->devfreq);
 		goto err_remove_governor;
 	}
+
+	INIT_DELAYED_WORK(&vop2->aclk_work, vop2_devfreq_update_work);
 
 	vop2_mdevp.data = vop2->devfreq;
 	vop2_mdevp.opp_info = &vop2->opp_info;
