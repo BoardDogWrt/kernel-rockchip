@@ -56,6 +56,24 @@ static int roam_band = WLC_BAND_AUTO;
 static roam_channel_cache roam_cache[MAX_ROAM_CACHE];
 static uint band2G, band5G, band_bw;
 
+#define	WLDEV_ERROR_MSG(x, args...)						\
+	do {												\
+		printk(KERN_ERR DHD_LOG_PREFIXS "WL-ROAM: " x, ## args);	\
+	} while (0)
+#define WLDEV_ERROR(x) WLDEV_ERROR_MSG x
+
+#define	WLDEV_INFO_MSG(x, args...)						\
+	do {												\
+		printk(KERN_INFO DHD_LOG_PREFIXS "WL-ROAM: " x, ## args);	\
+	} while (0)
+#define WLDEV_INFO(x) WLDEV_INFO_MSG x
+
+#define	WLDEV_DBG_MSG(x, args...)						\
+	do {												\
+		printk(KERN_DEBUG DHD_LOG_PREFIXS "WL-ROAM: " x, ## args);	\
+	} while (0)
+#define WLDEV_DBG(x) WLDEV_DBG_MSG x
+
 #ifdef ROAM_CHANNEL_CACHE
 int init_roam_cache(struct bcm_cfg80211 *cfg, int ioctl_ver)
 {
@@ -67,7 +85,7 @@ int init_roam_cache(struct bcm_cfg80211 *cfg, int ioctl_ver)
 	err = wldev_iovar_getint(dev, "roamscan_mode", &mode);
 	if (err && (err == BCME_UNSUPPORTED)) {
 		/* If firmware doesn't support, return error. Else proceed */
-		WL_ERR(("roamscan_mode iovar failed. %d\n", err));
+		WLDEV_ERROR(("roamscan_mode iovar failed. %d\n", err));
 		return err;
 	}
 
@@ -134,7 +152,7 @@ void add_roam_cache(struct bcm_cfg80211 *cfg, wl_bss_info_t *bi)
 
 	roam_cache[n_roam_cache].ssid_len = bi->SSID_len;
 	channel = wf_chspec_ctlchan(bi->chanspec);
-	WL_DBG(("CHSPEC  = %s, CTL %d\n", wf_chspec_ntoa_ex(bi->chanspec, chanbuf), channel));
+	WLDEV_DBG(("CHSPEC  = %s, CTL %d\n", wf_chspec_ntoa_ex(bi->chanspec, chanbuf), channel));
 	roam_cache[n_roam_cache].chanspec =
 		(channel <= CH_MAX_2G_CHANNEL ? band2G : band5G) | band_bw | channel;
 	(void)memcpy_s(roam_cache[n_roam_cache].ssid, bi->SSID_len, bi->SSID, bi->SSID_len);
@@ -169,7 +187,7 @@ int get_roam_channel_list(int target_chan,
 		n = 0;
 	}
 
-	WL_DBG((" %s: %03d 0x%04X\n", __FUNCTION__, target_chan, channels[0]));
+	WLDEV_DBG((" %s: %03d 0x%04X\n", __func__, target_chan, channels[0]));
 
 	for (i = 0; i < n_roam_cache; i++) {
 		chanspec_t ch = roam_cache[i].chanspec;
@@ -184,11 +202,11 @@ int get_roam_channel_list(int target_chan,
 			band_match && !is_duplicated_channel(channels, n, ch) &&
 			(memcmp(roam_cache[i].ssid, ssid->SSID, ssid->SSID_len) == 0)) {
 			/* match found, add it */
-			WL_DBG(("%s: Chanspec = %s\n", __FUNCTION__,
+			WLDEV_DBG(("%s: Chanspec = %s\n", __func__,
 				wf_chspec_ntoa_ex(ch, chanbuf)));
 			channels[n++] = ch;
 			if (n >= n_channels) {
-				WL_ERR(("Too many roam scan channels\n"));
+				WLDEV_ERROR(("Too many roam scan channels\n"));
 				return n;
 			}
 		}
@@ -207,11 +225,11 @@ void print_roam_cache(struct bcm_cfg80211 *cfg)
 		return;
 	}
 
-	WL_DBG((" %d cache\n", n_roam_cache));
+	WLDEV_DBG((" %d cache\n", n_roam_cache));
 
 	for (i = 0; i < n_roam_cache; i++) {
 		roam_cache[i].ssid[roam_cache[i].ssid_len] = 0;
-		WL_DBG(("0x%02X %02d %s\n", roam_cache[i].chanspec,
+		WLDEV_DBG(("0x%02X %02d %s\n", roam_cache[i].chanspec,
 			roam_cache[i].ssid_len, roam_cache[i].ssid));
 	}
 }
@@ -231,7 +249,7 @@ static void add_roamcache_channel(wl_roam_channel_list_t *channels, chanspec_t c
 	channels->channels[i] = ch;
 	channels->n++;
 
-	WL_DBG((" RCC: %02d 0x%04X\n",
+	WLDEV_DBG((" RCC: %02d 0x%04X\n",
 		ch & WL_CHANSPEC_CHAN_MASK, ch));
 }
 
@@ -248,7 +266,7 @@ void update_roam_cache(struct bcm_cfg80211 *cfg, int ioctl_ver)
 	}
 
 	if (!wl_get_drv_status(cfg, CONNECTED, dev)) {
-		WL_DBG(("Not associated\n"));
+		WLDEV_DBG(("Not associated\n"));
 		return;
 	}
 
@@ -258,13 +276,13 @@ void update_roam_cache(struct bcm_cfg80211 *cfg, int ioctl_ver)
 	error = wldev_iovar_getbuf(dev, "roamscan_channels", 0, 0,
 		(void *)&channel_list, sizeof(channel_list), NULL);
 	if (error) {
-		WL_ERR(("Failed to get roamscan channels, error = %d\n", error));
+		WLDEV_ERROR(("Failed to get roamscan channels, error = %d\n", error));
 		return;
 	}
 
 	error = wldev_get_ssid(dev, &ssid);
 	if (error) {
-		WL_ERR(("Failed to get SSID, err=%d\n", error));
+		WLDEV_ERROR(("Failed to get SSID, err=%d\n", error));
 		return;
 	}
 
@@ -289,11 +307,11 @@ void update_roam_cache(struct bcm_cfg80211 *cfg, int ioctl_ver)
 		error = wldev_iovar_setbuf(dev, "roamscan_channels", &channel_list,
 			sizeof(channel_list), iobuf, sizeof(iobuf), NULL);
 		if (error) {
-			WL_ERR(("Failed to update roamscan channels, error = %d\n", error));
+			WLDEV_ERROR(("Failed to update roamscan channels, error = %d\n", error));
 		}
 	}
 
-	WL_DBG(("%d AP, %d cache item(s), err=%d\n", n_roam_cache, channel_list.n, error));
+	WLDEV_DBG(("%d AP, %d cache item(s), err=%d\n", n_roam_cache, channel_list.n, error));
 }
 
 void wl_update_roamscan_cache_by_band(struct net_device *dev, int band)
@@ -306,7 +324,7 @@ void wl_update_roamscan_cache_by_band(struct net_device *dev, int band)
 
 	error = wldev_iovar_getint(dev, "roamscan_mode", &wes_mode);
 	if (error) {
-		WL_ERR(("Failed to get roamscan mode, error = %d\n", error));
+		WLDEV_ERROR(("Failed to get roamscan mode, error = %d\n", error));
 		return;
 	}
 
@@ -329,7 +347,7 @@ void wl_update_roamscan_cache_by_band(struct net_device *dev, int band)
 		error = wldev_iovar_getbuf(dev, "roamscan_channels", 0, 0,
 				(void *)&chanlist_before, sizeof(wl_roam_channel_list_t), NULL);
 		if (error) {
-			WL_ERR(("Failed to get roamscan channels, error = %d\n", error));
+			WLDEV_ERROR(("Failed to get roamscan channels, error = %d\n", error));
 			return;
 		}
 	}
@@ -356,7 +374,7 @@ void wl_update_roamscan_cache_by_band(struct net_device *dev, int band)
 		error = wldev_iovar_setbuf(dev, "roamscan_channels", &chanlist_after,
 				sizeof(wl_roam_channel_list_t), iobuf, sizeof(iobuf), NULL);
 		if (error) {
-			WL_ERR(("Failed to update roamscan channels, error = %d\n", error));
+			WLDEV_ERROR(("Failed to update roamscan channels, error = %d\n", error));
 		}
 		wldev_iovar_setint(dev, "roamscan_mode", ROAMSCAN_MODE_WES);
 	} else {
@@ -366,7 +384,7 @@ void wl_update_roamscan_cache_by_band(struct net_device *dev, int band)
 		error = wldev_iovar_setbuf(dev, "roamscan_channels", &chanlist_after,
 				sizeof(wl_roam_channel_list_t), iobuf, sizeof(iobuf), NULL);
 		if (error) {
-			WL_ERR(("Failed to update roamscan channels, error = %d\n", error));
+			WLDEV_ERROR(("Failed to update roamscan channels, error = %d\n", error));
 		}
 	}
 }

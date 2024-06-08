@@ -6,20 +6,20 @@
 
 #define EVENT_ERROR(name, arg1, args...) \
 	do { \
-		if (android_msg_level & ANDROID_ERROR_LEVEL) { \
-			printk(KERN_ERR DHD_LOG_PREFIX "[%s] EVENT-ERROR) %s : " arg1, name, __func__, ## args); \
+		if (android_msg_level & ANDROID_EVENT_ERROR_LEVEL) { \
+			printk(KERN_ERR DHD_LOG_PREFIX "[%s] ANDROID-WL-EVENT[E]: %s : " arg1, name, __func__, ## args); \
 		} \
 	} while (0)
 #define EVENT_TRACE(name, arg1, args...) \
 	do { \
-		if (android_msg_level & ANDROID_TRACE_LEVEL) { \
-			printk(KERN_INFO DHD_LOG_PREFIX "[%s] EVENT-TRACE) %s : " arg1, name, __func__, ## args); \
+		if (android_msg_level & ANDROID_EVENT_INFO_LEVEL) { \
+			printk(KERN_DEBUG DHD_LOG_PREFIX "[%s] ANDROID-WL-EVENT[T]: %s : " arg1, name, __func__, ## args); \
 		} \
 	} while (0)
 #define EVENT_DBG(name, arg1, args...) \
 	do { \
-		if (android_msg_level & ANDROID_DBG_LEVEL) { \
-			printk(KERN_INFO DHD_LOG_PREFIX "[%s] EVENT-DBG) %s : " arg1, name, __func__, ## args); \
+		if (android_msg_level & ANDROID_EVENT_DBG_LEVEL) { \
+			printk(KERN_INFO DHD_LOG_PREFIX "[%s] ANDROID-WL-EVENT[D]: %s : " arg1, name, __func__, ## args); \
 		} \
 	} while (0)
 
@@ -216,7 +216,7 @@ wl_ext_event_handler(struct work_struct *work_data)
 		}
 		dhd = dhd_get_pub(dev);
 		if (e->etype > WLC_E_LAST) {
-			EVENT_TRACE(dev->name, "Unknown Event (%d): ignoring\n", e->etype);
+			EVENT_ERROR(dev->name, "Unknown Event (%d): ignoring\n", e->etype);
 			goto fail;
 		}
 		DHD_GENERAL_LOCK(dhd, flags);
@@ -226,7 +226,7 @@ wl_ext_event_handler(struct work_struct *work_data)
 			goto fail;
 		}
 		DHD_GENERAL_UNLOCK(dhd, flags);
-		EVENT_DBG(dev->name, "event type (%d)\n", e->etype);
+		EVENT_TRACE(dev->name, "event type (%d)\n", e->etype);
 		mutex_lock(&event_params->event_sync);
 		evt_node = event_params->evt_head.evt_head;
 		for (;evt_node;) {

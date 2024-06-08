@@ -109,7 +109,7 @@ enum dhd_bus_state {
 	DHD_BUS_DATA,		/* Ready for frame transfers */
 	DHD_BUS_SUSPEND,	/* Bus has been suspended */
 	DHD_BUS_DOWN_IN_PROGRESS,	/* Bus going Down */
-	DHD_BUS_REMOVE,	/* Bus has been removed */
+	DHD_BUS_REMOVE,	    /* Bus has been removed */
 };
 
 /*

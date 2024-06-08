@@ -38,11 +38,23 @@ static int usb_serial_device_match(struct device *dev,
 	return 0;
 }
 
+/*EOF:HACK:*/
+static int is_digit(const char c) {
+	const char* digits = "0123456789";
+	int i;
+	for (i=0; i < 10; i++) {
+		if (digits[i] == c)
+			return 1;
+	}
+	return 0;
+}
+
 static int usb_serial_device_probe(struct device *dev)
 {
 	struct usb_serial_driver *driver;
 	struct usb_serial_port *port;
 	struct device *tty_dev;
+	const char *name;
 	int retval = 0;
 	int minor;
 
@@ -63,6 +75,17 @@ static int usb_serial_device_probe(struct device *dev)
 	}
 
 	minor = port->minor;
+
+	/*EOF:HACK: Set allocated device name ttyUSBn ttyQCTn ttyHUAn etc. */
+	name = dev_name(&port->dev);
+	if (is_digit(name[strlen(name)-1])) {
+		usb_serial_tty_driver->flags |= TTY_DRIVER_UNNUMBERED_NODE;
+		usb_serial_tty_driver->name = name;
+	}
+	else {
+		usb_serial_tty_driver->flags &= TTY_DRIVER_UNNUMBERED_NODE;
+	}	
+
 	tty_dev = tty_register_device(usb_serial_tty_driver, minor, dev);
 	if (IS_ERR(tty_dev)) {
 		retval = PTR_ERR(tty_dev);
@@ -72,8 +95,8 @@ static int usb_serial_device_probe(struct device *dev)
 	usb_autopm_put_interface(port->serial->interface);
 
 	dev_info(&port->serial->dev->dev,
-		 "%s converter now attached to ttyUSB%d\n",
-		 driver->description, minor);
+		 "%s converter now attached to %s (minor: %d)\n",
+		 driver->description, dev_name(&port->dev), minor);
 
 	return 0;
 
@@ -93,6 +116,7 @@ static int usb_serial_device_remove(struct device *dev)
 	int retval = 0;
 	int minor;
 	int autopm_err;
+	const char* name;
 
 	port = to_usb_serial_port(dev);
 	if (!port)
@@ -107,14 +131,25 @@ static int usb_serial_device_remove(struct device *dev)
 	autopm_err = usb_autopm_get_interface(port->serial->interface);
 
 	minor = port->minor;
+
+	/*EOF:HACK: Set allocated device name ttyUSBn ttyQCTn ttyHUAn etc. */
+	name = dev_name(&port->dev);
+	if (is_digit(name[strlen(name)-1])) {
+		usb_serial_tty_driver->flags |= TTY_DRIVER_UNNUMBERED_NODE;
+		usb_serial_tty_driver->name = name;
+	}
+	else {
+		usb_serial_tty_driver->flags &= TTY_DRIVER_UNNUMBERED_NODE;
+	}	
+
 	tty_unregister_device(usb_serial_tty_driver, minor);
 
 	driver = port->serial->type;
 	if (driver->port_remove)
 		retval = driver->port_remove(port);
 
-	dev_info(dev, "%s converter now disconnected from ttyUSB%d\n",
-		 driver->description, minor);
+	dev_info(dev, "%s converter now disconnected from %s (minor: %d)\n",
+		 driver->description, dev_name(&port->dev), minor);
 
 	if (!autopm_err)
 		usb_autopm_put_interface(port->serial->interface);

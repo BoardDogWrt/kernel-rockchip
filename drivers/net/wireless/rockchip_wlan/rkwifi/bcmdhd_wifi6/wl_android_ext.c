@@ -32,31 +32,6 @@
 #include <wl_escan.h>
 #endif /* WL_ESCAN */
 
-#define AEXT_ERROR(name, arg1, args...) \
-	do { \
-		if (android_msg_level & ANDROID_ERROR_LEVEL) { \
-			printk(KERN_ERR DHD_LOG_PREFIX "[%s] AEXT-ERROR) %s : " arg1, name, __func__, ## args); \
-		} \
-	} while (0)
-#define AEXT_TRACE(name, arg1, args...) \
-	do { \
-		if (android_msg_level & ANDROID_TRACE_LEVEL) { \
-			printk(KERN_INFO DHD_LOG_PREFIX "[%s] AEXT-TRACE) %s : " arg1, name, __func__, ## args); \
-		} \
-	} while (0)
-#define AEXT_INFO(name, arg1, args...) \
-	do { \
-		if (android_msg_level & ANDROID_INFO_LEVEL) { \
-			printk(KERN_INFO DHD_LOG_PREFIX "[%s] AEXT-INFO) %s : " arg1, name, __func__, ## args); \
-		} \
-	} while (0)
-#define AEXT_DBG(name, arg1, args...) \
-	do { \
-		if (android_msg_level & ANDROID_DBG_LEVEL) { \
-			printk(KERN_INFO DHD_LOG_PREFIX "[%s] AEXT-DBG) %s : " arg1, name, __func__, ## args); \
-		} \
-	} while (0)
-
 #ifndef WL_CFG80211
 #define htod32(i) i
 #define htod16(i) i
@@ -1916,11 +1891,11 @@ wl_ext_add_del_bss(struct net_device *ndev, s32 bsscfg_idx,
 		val = WLC_AP_IOV_OP_DELETE;
 	} else if (iftype == WL_INTERFACE_TYPE_AP) {
 		/* Add/role change to AP Interface */
-		AEXT_TRACE(ndev->name, "Adding AP Interface\n");
+		AEXT_INFO(ndev->name, "Adding AP Interface\n");
 		val = WLC_AP_IOV_OP_MANUAL_AP_BSSCFG_CREATE;
 	} else if (iftype == WL_INTERFACE_TYPE_STA) {
 		/* Add/role change to STA Interface */
-		AEXT_TRACE(ndev->name, "Adding STA Interface\n");
+		AEXT_INFO(ndev->name, "Adding STA Interface\n");
 		val = WLC_AP_IOV_OP_MANUAL_STA_BSSCFG_CREATE;
 	} else {
 		AEXT_ERROR(ndev->name, "add_del_bss NOT supported for IFACE type:0x%x", iftype);
@@ -1938,7 +1913,7 @@ wl_ext_add_del_bss(struct net_device *ndev, s32 bsscfg_idx,
 		memcpy(&bss_setbuf.ea.octet, addr, ETH_ALEN);
 	}
 
-	AEXT_INFO(ndev->name, "wl bss %d bssidx:%d\n", val, bsscfg_idx);
+	AEXT_TRACE(ndev->name, "wl bss %d bssidx:%d\n", val, bsscfg_idx);
 	ret = wl_ext_iovar_setbuf(ndev, "bss", &bss_setbuf, sizeof(bss_setbuf),
 		ioctl_buf, WLC_IOCTL_SMLEN, NULL);
 	if (ret != 0)
@@ -2014,7 +1989,7 @@ wl_ext_interface_ops(struct net_device *dev,
 		}
 	}
 
-	AEXT_INFO(dev->name, "wl interface create success!! bssidx:%d \n", ret);
+	AEXT_TRACE(dev->name, "wl interface create success!! bssidx:%d \n", ret);
 	return ret;
 }
 
@@ -2178,7 +2153,7 @@ wl_ext_iapsta_preinit(struct net_device *dev, struct wl_apsta_params *apsta_para
 				apstamode == IMESHAPAP_MODE) {
 			wl_config_t rsdb_mode_cfg = {0, 0};
 			rsdb_mode_cfg.config = apsta_params->rsdb;
-			AEXT_INFO(dev->name, "set rsdb_mode %d\n", rsdb_mode_cfg.config);
+			AEXT_TRACE(dev->name, "set rsdb_mode %d\n", rsdb_mode_cfg.config);
 			wl_ext_ioctl(dev, WLC_DOWN, NULL, 0, 1);
 			wl_ext_iovar_setbuf(dev, "rsdb_mode", &rsdb_mode_cfg,
 				sizeof(rsdb_mode_cfg), iovar_buf, sizeof(iovar_buf), NULL);
@@ -2998,7 +2973,7 @@ wl_mesh_update_vndr_ie(struct wl_apsta_params *apsta_params,
 	ret = wl_ext_add_del_ie(mesh_if->dev, VNDR_IE_BEACON_FLAG|VNDR_IE_PRBRSP_FLAG,
 		vndr_ie, "add");
 	if (!ret) {
-		AEXT_INFO(mesh_if->dev->name, "mbssid=%pM, mchannel=%d, hop=%d, pbssid=%pM\n",
+		AEXT_TRACE(mesh_if->dev->name, "mbssid=%pM, mchannel=%d, hop=%d, pbssid=%pM\n",
 			&mesh_info->master_bssid, mesh_info->master_channel, mesh_info->hop_cnt,
 			mesh_info->peer_bssid); 
 	}
@@ -3294,7 +3269,7 @@ wl_ext_isam_peer_path(struct net_device *dev, char *command, int total_len)
 				}
 			}
 		}
-		AEXT_INFO(dev->name, "%s\n", dump_buf);
+		AEXT_TRACE(dev->name, "%s\n", dump_buf);
 	}
 
 	if (!command && dump_buf)
@@ -3321,7 +3296,7 @@ wl_ext_isam_status(struct net_device *dev, char *command, int total_len)
 	int dump_len = WLC_IOCTL_MEDLEN;
 	int dump_written = 0;
 
-	if (command || android_msg_level & ANDROID_INFO_LEVEL) {
+	if (command || android_msg_level & ANDROID_TRACE_LEVEL) {
 		if (command) {
 			dump_buf = command;
 			dump_len = total_len;
@@ -3375,7 +3350,7 @@ wl_ext_isam_status(struct net_device *dev, char *command, int total_len)
 				}
 			}
 		}
-		AEXT_INFO(dev->name, "%s\n", dump_buf);
+		AEXT_TRACE(dev->name, "%s\n", dump_buf);
 	}
 
 	if (!command && dump_buf)
@@ -3669,7 +3644,7 @@ wl_ext_get_vsdb_chan(struct wl_apsta_params *apsta_params,
 
 	target_chan = wl_ext_get_chan(apsta_params, target_if->dev);
 	if (target_chan) {
-		AEXT_INFO(cur_if->ifname, "cur_chan=%d, target_chan=%d\n",
+		AEXT_TRACE(cur_if->ifname, "cur_chan=%d, target_chan=%d\n",
 			cur_chan, target_chan);
 		if (wl_ext_diff_band(cur_chan, target_chan)) {
 			if (!apsta_params->rsdb)
@@ -3758,7 +3733,10 @@ static void
 wl_ext_move_cur_dfs_channel(struct wl_apsta_params *apsta_params,
 	struct wl_if_info *cur_if)
 {
-	uint16 other_chan = 0, cur_chan = cur_if->channel;
+	uint16 other_chan = 0;
+#ifdef DHD_DEBUG
+	uint16 cur_chan = cur_if->channel;
+#endif
 	uint16 chan_2g = 0, chan_5g = 0;
 	uint32 auto_band = WLC_BAND_2G;
 
@@ -3831,7 +3809,10 @@ static void
 wl_ext_move_other_dfs_channel(struct wl_apsta_params *apsta_params,
 	struct wl_if_info *cur_if)
 {
-	uint16 other_chan = 0, cur_chan = cur_if->channel;
+	uint16 other_chan = 0;
+#ifdef DHD_DEBUG
+	uint16 cur_chan = cur_if->channel;
+#endif
 	uint16 chan_2g = 0, chan_5g = 0;
 	uint32 auto_band = WLC_BAND_2G;
 
@@ -4322,9 +4303,9 @@ wl_ext_get_wlfc_maxcount(struct dhd_pub *dhd, int ifidx)
 	}
 
 	if (cur_if)
-		AEXT_INFO(cur_if->ifname, "update maxcount %d\n", maxcount);
+		AEXT_TRACE(cur_if->ifname, "update maxcount %d\n", maxcount);
 	else
-		AEXT_INFO("wlan", "update maxcount %d for ifidx %d\n", maxcount, ifidx);
+		AEXT_TRACE("wlan?", "update maxcount %d for ifidx %d\n", maxcount, ifidx);
 	return maxcount;
 }
 
@@ -4349,7 +4330,7 @@ wl_ext_update_wlfc_maxcount(struct dhd_pub *dhd)
 				ret = dhd_wlfc_update_maxcount(dhd, tmp_if->ifidx,
 					tmp_if->transit_maxcount);
 				if (ret == 0)
-					AEXT_INFO(tmp_if->ifname, "updated maxcount %d\n",
+					AEXT_TRACE(tmp_if->ifname, "updated maxcount %d\n",
 						tmp_if->transit_maxcount);
 				band_5g = TRUE;
 			}
@@ -4371,7 +4352,7 @@ wl_ext_update_wlfc_maxcount(struct dhd_pub *dhd)
 				ret = dhd_wlfc_update_maxcount(dhd, tmp_if->ifidx,
 					tmp_if->transit_maxcount);
 				if (ret == 0)
-					AEXT_INFO(tmp_if->ifname, "updated maxcount %d\n",
+					AEXT_TRACE(tmp_if->ifname, "updated maxcount %d\n",
 						tmp_if->transit_maxcount);
 			}
 		}
@@ -4842,7 +4823,8 @@ wl_ext_in4way_sync_sta(dhd_pub_t *dhd, struct wl_if_info *cur_if,
 
 	action = action & dhd->conf->in4way;
 	cur_eapol_status = cur_if->eapol_status;
-	AEXT_TRACE(dev->name, "status=%d, action=0x%x, in4way=0x%x\n",
+	
+	AEXT_DBG(dev->name, "status=%d, action=0x%x, in4way=0x%x\n",
 		status, action, dhd->conf->in4way);
 
 	switch (status) {
@@ -4876,7 +4858,7 @@ wl_ext_in4way_sync_sta(dhd_pub_t *dhd, struct wl_if_info *cur_if,
 			if (action & (STA_NO_SCAN_IN4WAY|STA_NO_BTC_IN4WAY)) {
 				if (apsta_params->sta_handshaking) {
 					if ((action & STA_NO_BTC_IN4WAY) && apsta_params->sta_btc_mode) {
-						AEXT_INFO(dev->name, "status=%d, restore sta_btc_mode %d\n",
+						AEXT_DBG(dev->name, "status=%d, restore sta_btc_mode %d\n",
 							status, apsta_params->sta_btc_mode);
 						wldev_iovar_setint(dev, "sta_btc_mode", apsta_params->sta_btc_mode);
 					}
@@ -4891,7 +4873,7 @@ wl_ext_in4way_sync_sta(dhd_pub_t *dhd, struct wl_if_info *cur_if,
 				osl_do_gettimeofday(&cur_ts);
 				diff_ms = osl_do_gettimediff(&cur_ts, sta_disc_ts)/1000;
 				while (diff_ms < max_wait_time && max_wait_cnt) {
-					AEXT_INFO(dev->name, "status=%d, max_wait_cnt=%d waiting...\n",
+					AEXT_DBG(dev->name, "status=%d, max_wait_cnt=%d waiting...\n",
 						status, max_wait_cnt);
 					mutex_unlock(&apsta_params->in4way_sync);
 					OSL_SLEEP(50);
@@ -4915,7 +4897,7 @@ wl_ext_in4way_sync_sta(dhd_pub_t *dhd, struct wl_if_info *cur_if,
 					if (action & STA_NO_BTC_IN4WAY) {
 						err = wldev_iovar_getint(dev, "sta_btc_mode", &apsta_params->sta_btc_mode);
 						if (!err && apsta_params->sta_btc_mode) {
-							AEXT_INFO(dev->name, "status=%d, disable current sta_btc_mode %d\n",
+							AEXT_DBG(dev->name, "status=%d, disable current sta_btc_mode %d\n",
 								status, apsta_params->sta_btc_mode);
 							wldev_iovar_setint(dev, "sta_btc_mode", 0);
 						}
@@ -4929,7 +4911,7 @@ wl_ext_in4way_sync_sta(dhd_pub_t *dhd, struct wl_if_info *cur_if,
 				osl_do_gettimeofday(&cur_ts);
 				diff_ms = osl_do_gettimediff(&cur_ts, sta_disc_ts)/1000;
 				while (diff_ms < max_wait_time && max_wait_cnt) {
-					AEXT_INFO(dev->name, "status=%d, max_wait_cnt=%d waiting...\n",
+					AEXT_DBG(dev->name, "status=%d, max_wait_cnt=%d waiting...\n",
 						status, max_wait_cnt);
 					mutex_unlock(&apsta_params->in4way_sync);
 					OSL_SLEEP(50);
@@ -4963,7 +4945,7 @@ wl_ext_in4way_sync_sta(dhd_pub_t *dhd, struct wl_if_info *cur_if,
 			if (action & (STA_NO_SCAN_IN4WAY|STA_NO_BTC_IN4WAY)) {
 				if (apsta_params->sta_handshaking) {
 					if ((action & STA_NO_BTC_IN4WAY) && apsta_params->sta_btc_mode) {
-						AEXT_INFO(dev->name, "status=%d, restore sta_btc_mode %d\n",
+						AEXT_DBG(dev->name, "status=%d, restore sta_btc_mode %d\n",
 							status, apsta_params->sta_btc_mode);
 						wldev_iovar_setint(dev, "sta_btc_mode", apsta_params->sta_btc_mode);
 					}
@@ -4980,7 +4962,7 @@ wl_ext_in4way_sync_sta(dhd_pub_t *dhd, struct wl_if_info *cur_if,
 			if (action & (STA_NO_SCAN_IN4WAY|STA_NO_BTC_IN4WAY)) {
 				if (apsta_params->sta_handshaking) {
 					if ((action & STA_NO_BTC_IN4WAY) && apsta_params->sta_btc_mode) {
-						AEXT_INFO(dev->name, "status=%d, restore sta_btc_mode %d\n",
+						AEXT_DBG(dev->name, "status=%d, restore sta_btc_mode %d\n",
 							status, apsta_params->sta_btc_mode);
 						wldev_iovar_setint(dev, "sta_btc_mode", apsta_params->sta_btc_mode);
 					}
@@ -4990,7 +4972,7 @@ wl_ext_in4way_sync_sta(dhd_pub_t *dhd, struct wl_if_info *cur_if,
 			wake_up_interruptible(&dhd->conf->event_complete);
 			break;
 		default:
-			AEXT_INFO(dev->name, "Unknown action=0x%x, status=%d\n", action, status);
+			AEXT_ERROR(dev->name, "Unknown status=%d for action=0x%x\n", status, action);
 	}
 
 	return ret;
@@ -5003,15 +4985,25 @@ wl_ext_in4way_sync_ap(dhd_pub_t *dhd, struct wl_if_info *cur_if,
 	struct wl_apsta_params *apsta_params = dhd->iapsta_params;
 	struct net_device *dev = cur_if->dev;
 	struct osl_timespec cur_ts, *ap_disc_sta_ts = &apsta_params->ap_disc_sta_ts;
-	u8 *ap_disc_sta_bssid = (u8*)&apsta_params->ap_disc_sta_bssid;
+	u8 *ap_sta_bssid = (u8*)&apsta_params->ap_disc_sta_bssid;
 	uint32 diff_ms, timeout, max_wait_time = 300;
 	int ret = 0, suppressed = 0;
-	u8* mac_addr = context;
+	struct ether_addr null_addr;
+	u8* mac_addr = context; /* can be NULL !! */
 	bool wait = FALSE;
 
 	action = action & dhd->conf->in4way;
-	AEXT_TRACE(dev->name, "status=%d, action=0x%x, in4way=0x%x\n",
-		status, action, dhd->conf->in4way);
+
+	/* EOF:FIX should never be, but is possible due bcmdhd crude code.
+	 * The question is to copy the sta_bssis to mac_addr or leave
+	 * it invalid by empty zero mac */
+	if (mac_addr == NULL) { 
+		bzero(&null_addr, sizeof(null_addr));
+		mac_addr = (u8*) &null_addr;
+	}
+
+	AEXT_DBG(dev->name, "STA bssid=%pM mac=%pM status=%d, action=0x%x, in4way=0x%x\n",
+		ap_sta_bssid, mac_addr, status, action, dhd->conf->in4way);
 
 	switch (status) {
 		case WL_EXT_STATUS_SCAN:
@@ -5034,7 +5026,7 @@ wl_ext_in4way_sync_ap(dhd_pub_t *dhd, struct wl_if_info *cur_if,
 				diff_ms = osl_do_gettimediff(&cur_ts, ap_disc_sta_ts)/1000;
 				if (mac_addr && diff_ms < max_wait_time) {
 					if (cur_if->ifmode == IAP_MODE &&
-							!memcmp(ap_disc_sta_bssid, mac_addr, ETHER_ADDR_LEN)) {
+							!memcmp(ap_sta_bssid, mac_addr, ETHER_ADDR_LEN)) {
 						wait = TRUE;
 					} else if (cur_if->ifmode == IGO_MODE &&
 							cur_if->eapol_status == EAPOL_STATUS_WSC_DONE &&
@@ -5043,54 +5035,76 @@ wl_ext_in4way_sync_ap(dhd_pub_t *dhd, struct wl_if_info *cur_if,
 					}
 				}
 				if (wait) {
-					AEXT_INFO(dev->name, "status=%d, ap_recon_sta=%d, waiting %dms ...\n",
-						status, apsta_params->ap_recon_sta, max_wait_time);
+					AEXT_INFO(dev->name, 
+						"Reconnect wait STA status=%d, ap_recon_sta=%s, waiting %dms ...\n",
+						status, (apsta_params->ap_recon_sta ? "YES" : "NO"), max_wait_time);
 					mutex_unlock(&apsta_params->in4way_sync);
 					timeout = wait_event_interruptible_timeout(apsta_params->ap_recon_sta_event,
 						apsta_params->ap_recon_sta, msecs_to_jiffies(max_wait_time));
 					mutex_lock(&apsta_params->in4way_sync);
-					AEXT_INFO(dev->name, "status=%d, ap_recon_sta=%d, timeout=%d\n",
-						status, apsta_params->ap_recon_sta, timeout);
+					AEXT_INFO(dev->name, 
+						"Reconnect wait STA status=%d, ap_recon_sta=%s, timeout=%d\n",
+						status, (apsta_params->ap_recon_sta ? "YES" : "NO"), timeout);
 					if (timeout > 0) {
-						AEXT_INFO(dev->name, "skip delete STA %pM\n", mac_addr);
+						AEXT_INFO(dev->name, "Skip delete STA %pM\n", mac_addr);
 						ret = -1;
 						break;
 					}
 				} else {
-					AEXT_INFO(dev->name, "status=%d, ap_recon_sta=%d => 0\n",
-						status, apsta_params->ap_recon_sta);
+					AEXT_INFO(dev->name, 
+						"Reconnect not waiting for STA status=%d, ap_recon_sta=%s => 0\n",
+						status, (apsta_params->ap_recon_sta ? "YES" : "NO"));
 					apsta_params->ap_recon_sta = FALSE;
 					if (cur_if->ifmode == IGO_MODE)
 						cur_if->eapol_status = EAPOL_STATUS_NONE;
 				}
 			}
 			break;
+		case WL_EXT_STATUS_DISCONNECTED:
 		case WL_EXT_STATUS_STA_DISCONNECTED:
 			if (action & AP_WAIT_STA_RECONNECT) {
-				AEXT_INFO(dev->name, "latest disc STA %pM ap_recon_sta=%d\n",
-					ap_disc_sta_bssid, apsta_params->ap_recon_sta);
-				osl_do_gettimeofday(ap_disc_sta_ts);
-				memcpy(ap_disc_sta_bssid, mac_addr, ETHER_ADDR_LEN);
+				AEXT_INFO(dev->name, 
+					"Latest disconnect STA %pM ap_recon_sta=%d\n",
+					ap_sta_bssid, apsta_params->ap_recon_sta);
 				apsta_params->ap_recon_sta = FALSE;
+				osl_do_gettimeofday(ap_disc_sta_ts);
+				if (mac_addr && memcmp(
+						ap_sta_bssid, mac_addr, ETHER_ADDR_LEN) != 0) {
+					memcpy(ap_sta_bssid, mac_addr, ETHER_ADDR_LEN);
+				}
 			}
 			break;
+		case WL_EXT_STATUS_CONNECTED:
 		case WL_EXT_STATUS_STA_CONNECTED:
 			if (action & AP_WAIT_STA_RECONNECT) {
 				osl_do_gettimeofday(&cur_ts);
 				diff_ms = osl_do_gettimediff(&cur_ts, ap_disc_sta_ts)/1000;
+				/* reconnect when context (mac_addr) same as bssid */
 				if (diff_ms < max_wait_time &&
-						!memcmp(ap_disc_sta_bssid, mac_addr, ETHER_ADDR_LEN)) {
-					AEXT_INFO(dev->name, "status=%d, ap_recon_sta=%d => 1\n",
-						status, apsta_params->ap_recon_sta);
+						!memcmp(ap_sta_bssid, mac_addr, ETHER_ADDR_LEN)) {
 					apsta_params->ap_recon_sta = TRUE;
-					wake_up_interruptible(&apsta_params->ap_recon_sta_event);
 				} else {
 					apsta_params->ap_recon_sta = FALSE;
 				}
+
+				AEXT_INFO(dev->name, 
+					"Connected STA %pM status=%d, ap_recon_sta=%s\n",
+					mac_addr, status, (apsta_params->ap_recon_sta ? "YES" : "NO"));
+
+				if (apsta_params->ap_recon_sta) {
+					wake_up_interruptible(&apsta_params->ap_recon_sta_event);
+				}
+			}
+			break;
+		case WL_EXT_STATUS_ADD_KEY:
+			if (action & STA_NO_SCAN_IN4WAY) { 
+				AEXT_DBG(dev->name, 
+					"Status 'add key' for %pM (do nothing here! Just info.)\n", 
+					ap_sta_bssid);
 			}
 			break;
 		default:
-			AEXT_INFO(dev->name, "Unknown action=0x%x, status=%d\n", action, status);
+			AEXT_ERROR(dev->name, "Unknown status=%d for action=0x%x\n", status, action);
 	}
 
 	return ret;
@@ -5114,7 +5128,7 @@ wl_ext_in4way_sync(struct net_device *dev, uint action,
 		else if (cur_if->ifmode == IAP_MODE || cur_if->ifmode == IGO_MODE)
 			ret = wl_ext_in4way_sync_ap(dhd, cur_if, action, status, context);
 		else
-			AEXT_INFO(dev->name, "Unknown mode %d\n", cur_if->ifmode);
+			AEXT_ERROR(dev->name, "Unknown mode %d\n", cur_if->ifmode);
 	}
 	mutex_unlock(&apsta_params->in4way_sync);
 
@@ -5150,6 +5164,10 @@ wl_ext_in4way_sync_wext(struct net_device *dev, uint action,
 		ret = wl_ext_in4way_sync_sta(dhd, cur_if, 0, status, NULL);
 	}
 	mutex_unlock(&apsta_params->in4way_sync);
+#else
+	WL_ERR(( 
+		"++ THIS MAKES NO SENSE due defined WL_CFG80211 "
+		"-> use wl_ext_in4way_sync() instead ++\n"));
 #endif
 	return ret;
 }
@@ -5266,13 +5284,13 @@ wl_ext_iapsta_get_rsdb(struct net_device *net, struct dhd_pub *dhd)
 					rsdb = rsdb_p->status;
 				else
 					rsdb = rsdb_p->config;
-				AEXT_INFO(net->name, "config=%d, status=%d\n",
+				AEXT_TRACE(net->name, "config=%d, status=%d\n",
 					rsdb_p->config, rsdb_p->status);
 			}
 		}
 	}
 
-	AEXT_INFO(net->name, "rsdb_mode=%d\n", rsdb);
+	AEXT_TRACE(net->name, "rsdb_mode=%d\n", rsdb);
 
 	return rsdb;
 }
@@ -5727,7 +5745,7 @@ wl_ext_tcpka_conn_add(struct net_device *dev, char *data, char *command,
 		}
 		tcpka->ka_payload_len = ka_payload_len;
 
-		AEXT_INFO(dev->name,
+		AEXT_TRACE(dev->name,
 			"tcpka_conn_add %d %pM %pM %pM %d %d %d %u %u %d %u %u %u %u \"%s\"\n",
 			tcpka->sess_id, &tcpka->dst_mac, &tcpka->src_ip, &tcpka->dst_ip,
 			tcpka->ipid, tcpka->srcport, tcpka->dstport, tcpka->seq,
@@ -5769,7 +5787,7 @@ wl_ext_tcpka_conn_enable(struct net_device *dev, char *data, char *command,
 			tcpka_conn.tcpka_timers.retry_count = 0;
 		}
 
-		AEXT_INFO(dev->name, "tcpka_conn_enable %d %d %d %d %d\n",
+		AEXT_TRACE(dev->name, "tcpka_conn_enable %d %d %d %d %d\n",
 			tcpka_conn.sess_id, tcpka_conn.flag,
 			tcpka_conn.tcpka_timers.interval,
 			tcpka_conn.tcpka_timers.retry_interval,
@@ -5793,7 +5811,7 @@ wl_ext_tcpka_conn_info(struct net_device *dev, char *data, char *command,
 
 	if (data) {
 		sscanf(data, "%d", &sess_id);
-		AEXT_INFO(dev->name, "tcpka_conn_sess_info %d\n", sess_id);
+		AEXT_TRACE(dev->name, "tcpka_conn_sess_info %d\n", sess_id);
 		ret = wl_ext_iovar_getbuf(dev, "tcpka_conn_sess_info", (char *)&sess_id,
 			sizeof(uint32), iovar_buf, sizeof(iovar_buf), NULL);
 		if (!ret) {
@@ -5804,7 +5822,7 @@ wl_ext_tcpka_conn_info(struct net_device *dev, char *data, char *command,
 				"seq  :%u\n"
 				"ack  :%u",
 				sess_id, info->ipid, info->seq, info->ack);
-			AEXT_INFO(dev->name, "%s\n", command);
+			AEXT_TRACE(dev->name, "%s\n", command);
 			ret = bytes_written;
 		}
 	}
@@ -5825,7 +5843,7 @@ wl_ext_rsdb_mode(struct net_device *dev, char *data, char *command,
 		rsdb_mode_cfg.config = (int)simple_strtol(data, NULL, 0);
 		ret = wl_ext_iovar_setbuf(dev, "rsdb_mode", (char *)&rsdb_mode_cfg,
 			sizeof(rsdb_mode_cfg), iovar_buf, WLC_IOCTL_SMLEN, NULL);
-		AEXT_INFO(dev->name, "rsdb_mode %d\n", rsdb_mode_cfg.config);
+		AEXT_TRACE(dev->name, "rsdb_mode %d\n", rsdb_mode_cfg.config);
 	} else {
 		ret = wl_ext_iovar_getbuf(dev, "rsdb_mode", NULL, 0,
 			iovar_buf, WLC_IOCTL_SMLEN, NULL);
@@ -5891,7 +5909,7 @@ wl_ext_recal(struct net_device *dev, char *data, char *command,
 		                             (nchan & WL_SCAN_PARAMS_COUNT_MASK));
 		params_size = p - (char*)params + nssid * sizeof(wlc_ssid_t);
 
-		AEXT_INFO(dev->name, "recal\n");
+		AEXT_TRACE(dev->name, "recal\n");
 		ret = wl_ext_ioctl(dev, WLC_SCAN, params, params_size, 1);
 	}
 
@@ -5963,7 +5981,7 @@ wl_ext_event_msg(struct net_device *dev, char *data,
 				bytes_written += snprintf(command+bytes_written, total_len, "1");
 			else
 				bytes_written += snprintf(command+bytes_written, total_len, "0");
-			AEXT_INFO(dev->name, "%s\n", command);
+			AEXT_TRACE(dev->name, "%s\n", command);
 			goto eventmsg_out;
 		}
 		bytes_written = wl_ext_add_remove_eventmsg(dev, event, add);
@@ -5986,7 +6004,7 @@ wl_ext_event_msg(struct net_device *dev, char *data,
 			bytes_written += snprintf(command+bytes_written, total_len,
 				"%02x", vbuf[i] & 0xff);
 		}
-		AEXT_INFO(dev->name, "%s\n", command);
+		AEXT_TRACE(dev->name, "%s\n", command);
 	}
 
 eventmsg_out:
@@ -6046,7 +6064,7 @@ wl_ext_pkt_filter_add(struct net_device *dev, char *data, char *command,
 		dhd->pktfilter_count++;
 
 		dhd_pktfilter_offload_set(dhd, data);
-		AEXT_INFO(dev->name, "filter id %d added\n", new_id);
+		AEXT_TRACE(dev->name, "filter id %d added\n", new_id);
 	}
 
 	return err;
@@ -6096,7 +6114,7 @@ wl_ext_pkt_filter_delete(struct net_device *dev, char *data, char *command,
 
 		if (in_filter) {
 			dhd_pktfilter_offload_delete(dhd, id);
-			AEXT_INFO(dev->name, "filter id %d deleted\n", id);
+			AEXT_TRACE(dev->name, "filter id %d deleted\n", id);
 		} else {
 			AEXT_ERROR(dev->name, "filter id %d not in list\n", id);
 			err = -1;
@@ -6135,7 +6153,7 @@ wl_ext_pkt_filter_enable(struct net_device *dev, char *data, char *command,
 		if (in_filter) {
 			dhd_pktfilter_offload_enable(dhd, dhd->pktfilter[i],
 				enable, dhd_master_mode);
-			AEXT_INFO(dev->name, "filter id %d %s\n", id, enable?"enabled":"disabled");
+			AEXT_TRACE(dev->name, "filter id %d %s\n", id, enable?"enabled":"disabled");
 		} else {
 			AEXT_ERROR(dev->name, "filter id %d not in list\n", id);
 			err = -1;
@@ -6383,7 +6401,7 @@ wl_ext_wowl_pattern(struct net_device *dev, char *data, char *command,
 			goto exit;
 		}
 		if (!strcmp(add, "clr")) {
-			AEXT_INFO(dev->name, "wowl_pattern clr\n");
+			AEXT_TRACE(dev->name, "wowl_pattern clr\n");
 			ret = wl_ext_iovar_setbuf(dev, "wowl_pattern", add,
 				sizeof(add), iovar_buf, sizeof(iovar_buf), NULL);
 			goto exit;
@@ -6476,7 +6494,7 @@ wl_ext_wowl_pattern(struct net_device *dev, char *data, char *command,
 			goto exit;
 		}
 
-		AEXT_INFO(dev->name, "%s %d %s %s\n", add, offset, mask, pattern);
+		AEXT_TRACE(dev->name, "%s %d %s %s\n", add, offset, mask, pattern);
 
 		ret = wl_ext_iovar_setbuf(dev, "wowl_pattern", (char *)wowl_pattern2,
 			buf_len, iovar_buf, sizeof(iovar_buf), NULL);
@@ -6517,7 +6535,7 @@ wl_ext_wowl_pattern(struct net_device *dev, char *data, char *command,
 				        sizeof(wl_wowl_pattern_t));
 			}
 
-			AEXT_INFO(dev->name, "%s\n", command);
+			AEXT_TRACE(dev->name, "%s\n", command);
 		}
 	}
 
@@ -6539,7 +6557,7 @@ wl_ext_wowl_wakeind(struct net_device *dev, char *data, char *command,
 	if (data) {
 		sscanf(data, "%s", clr);
 		if (!strcmp(clr, "clear")) {
-			AEXT_INFO(dev->name, "wowl_wakeind clear\n");
+			AEXT_TRACE(dev->name, "wowl_wakeind clear\n");
 			ret = wl_ext_iovar_setbuf(dev, "wowl_wakeind", clr, sizeof(clr),
 				iovar_buf, sizeof(iovar_buf), NULL);
 		} else {
@@ -6603,13 +6621,13 @@ wl_ext_gpio_notify(struct net_device *dev, char *data, char *command,
 				AEXT_ERROR(dev->name, "rejecting pattern=%s\n", frame_str);
 				goto exit;
 			}
-			AEXT_INFO(dev->name, "index=%d, len=%d\n", notify.index, notify.len);
+			AEXT_TRACE(dev->name, "index=%d, len=%d\n", notify.index, notify.len);
 			if (android_msg_level & ANDROID_INFO_LEVEL)
 				prhex("payload", (uchar *)notify.payload, notify.len);
 			ret = wl_ext_iovar_setbuf(dev, "bcol_gpio_noti", (char *)&notify,
 				sizeof(notify), iovar_buf, WLC_IOCTL_SMLEN, NULL);
 		} else {
-			AEXT_INFO(dev->name, "index=%d\n", notify.index);
+			AEXT_TRACE(dev->name, "index=%d\n", notify.index);
 			ret = wl_ext_iovar_getbuf(dev, "bcol_gpio_noti", &notify.index,
 				sizeof(notify.index), iovar_buf, sizeof(iovar_buf), NULL);
 			if (!ret) {
@@ -6848,26 +6866,26 @@ wl_ext_wl_iovar(struct net_device *dev, char *command, int total_len)
 	} else {
 		if (cmd == WLC_SET_VAR) {
 			val = (int)simple_strtol(data, NULL, 0);
-			AEXT_INFO(dev->name, "set %s %d\n", name, val);
+			AEXT_DBG(dev->name, "set %s %d\n", name, val);
 			ret = wl_ext_iovar_setint(dev, name, val);
 		} else if (cmd == WLC_GET_VAR) {
-			AEXT_INFO(dev->name, "get %s\n", name);
+			AEXT_DBG(dev->name, "get %s\n", name);
 			ret = wl_ext_iovar_getint(dev, name, &val);
 			if (!ret) {
 				bytes_written = snprintf(command, total_len, "%d", val);
-				AEXT_INFO(dev->name, "command result is %s\n", command);
+				AEXT_DBG(dev->name, "command result is %s\n", command);
 				ret = bytes_written;
 			}
 		} else if (data) {
 			val = (int)simple_strtol(data, NULL, 0);
-			AEXT_INFO(dev->name, "set %d %d\n", cmd, val);
+			AEXT_DBG(dev->name, "set %d %d\n", cmd, val);
 			ret = wl_ext_ioctl(dev, cmd, &val, sizeof(val), TRUE);
 		} else {
-			AEXT_INFO(dev->name, "get %d\n", cmd);
+			AEXT_DBG(dev->name, "get %d\n", cmd);
 			ret = wl_ext_ioctl(dev, cmd, &val, sizeof(val), FALSE);
 			if (!ret) {
 				bytes_written = snprintf(command, total_len, "%d", val);
-				AEXT_INFO(dev->name, "command result is %s\n", command);
+				AEXT_DBG(dev->name, "command result is %s\n", command);
 				ret = bytes_written;
 			}
 		}
@@ -7002,7 +7020,7 @@ wl_ext_get_distance(struct net_device *net, u32 band)
 		distance = 8;
 	else
 		distance = 16;
-	AEXT_INFO(net->name, "bw=0x%x, distance=%d\n", bw, distance);
+	AEXT_TRACE(net->name, "bw=0x%x, distance=%d\n", bw, distance);
 
 	return distance;
 }
@@ -7131,7 +7149,7 @@ wl_ext_get_best_channel(struct net_device *net,
 		}
 	}
 
-	if (android_msg_level & ANDROID_INFO_LEVEL) {
+	if (android_msg_level & ANDROID_TRACE_LEVEL) {
 		struct bcmstrbuf strbuf;
 		char *tmp_buf = NULL;
 		tmp_buf = kmalloc(WLC_IOCTL_SMLEN, GFP_KERNEL);
@@ -7151,7 +7169,7 @@ wl_ext_get_best_channel(struct net_device *net,
 		bcm_bprintf(&strbuf, "\n");
 		bcm_bprintf(&strbuf, "best_2g_ch=%d, best_5g_ch=%d\n",
 			*best_2g_ch, *best_5g_ch);
-		AEXT_INFO(net->name, "\n%s", strbuf.origbuf);
+		AEXT_TRACE(net->name, "\n%s", strbuf.origbuf);
 		if (tmp_buf) {
 			kfree(tmp_buf);
 		}
@@ -7265,7 +7283,7 @@ wl_ext_fw_apcs(struct net_device *dev, uint32 band)
 				break;
 			}
 		}
-		AEXT_INFO(dev->name, "%d tried, ret = %d, chosen = 0x%x\n",
+		AEXT_TRACE(dev->name, "%d tried, ret = %d, chosen = 0x%x\n",
 			(APCS_MAX_RETRY - retry), ret, chosen);
 		OSL_SLEEP(250);
 	}
@@ -7334,7 +7352,7 @@ wl_ext_drv_apcs(struct net_device *dev, uint32 band)
 				WL_MSG(dev->name, "selected channel = %d\n", channel);
 				goto done;
 			}
-			AEXT_INFO(dev->name, "escan_state=%d, %d tried, ret = %d\n",
+			AEXT_TRACE(dev->name, "escan_state=%d, %d tried, ret = %d\n",
 				escan->escan_state, (retry_max - retry), ret);
 			OSL_SLEEP(retry_interval);
 		}
@@ -7356,7 +7374,7 @@ wl_ext_autochannel(struct net_device *dev, uint acs, uint32 band)
 	int channel = 0;
 	uint16 chan_2g, chan_5g;
 
-	AEXT_INFO(dev->name, "acs=0x%x, band=%d \n", acs, band);
+	AEXT_TRACE(dev->name, "acs=0x%x, band=%d \n", acs, band);
 
 #ifdef WL_CFG80211
 	if (acs & ACS_FW_BIT) {
@@ -7430,7 +7448,7 @@ wl_delete_dirty_rssi_cache(wl_rssi_cache_ctrl_t *rssi_cache_ctrl)
 				tmp = 0;
 				prev->next = node->next;
 			}
-			AEXT_INFO("wlan", "Del %d with BSSID %pM\n", i, &node->BSSID);
+			AEXT_INFO("wlan?", "Delete %d with BSSID %pM\n", i, &node->BSSID);
 			kfree(node);
 			if (tmp == 1) {
 				node = *rssi_head;
@@ -7465,7 +7483,7 @@ wl_delete_disconnected_rssi_cache(wl_rssi_cache_ctrl_t *rssi_cache_ctrl,
 				tmp = 0;
 				prev->next = node->next;
 			}
-			AEXT_INFO("wlan", "Del %d with BSSID %pM\n", i, &node->BSSID);
+			AEXT_INFO("wlan?", "Delete %d with BSSID %pM\n", i, &node->BSSID);
 			kfree(node);
 			if (tmp == 1) {
 				node = *rssi_head;
@@ -7511,7 +7529,7 @@ wl_update_connected_rssi_cache(struct net_device *net,
 
 	error = wldev_ioctl(net, WLC_GET_BSSID, &bssid, sizeof(bssid), 0);
 	if (error == BCME_NOTASSOCIATED) {
-		AEXT_INFO("wlan", "Not Associated! res:%d\n", error);
+		AEXT_ERROR("wlan", "Not Associated! res:%d\n", error);
 		return 0;
 	}
 	if (error) {

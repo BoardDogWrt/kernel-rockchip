@@ -24,6 +24,8 @@
  * Rob Clark <robdclark@gmail.com>
  * Daniel Vetter <daniel.vetter@ffwll.ch>
  */
+//EOF:DEBUG
+#define DEBUG 1
 
 #include <drm/drmP.h>
 #include <drm/drm_atomic.h>
@@ -233,7 +235,7 @@ update_connector_routing(struct drm_atomic_state *state, int conn_idx)
 	if (encoder_crtc) {
 		ret = steal_encoder(state, new_encoder, encoder_crtc);
 		if (ret) {
-			DRM_DEBUG_ATOMIC("Encoder stealing failed for [CONNECTOR:%d:%s]\n",
+			DRM_ERROR("Encoder stealing failed for [CONNECTOR:%d:%s]\n",
 					 connector->base.id,
 					 connector->name);
 			return ret;
@@ -301,7 +303,7 @@ mode_fixup(struct drm_atomic_state *state)
 		ret = drm_bridge_mode_fixup(encoder->bridge, &crtc_state->mode,
 				&crtc_state->adjusted_mode);
 		if (!ret) {
-			DRM_DEBUG_ATOMIC("Bridge fixup failed\n");
+			DRM_ERROR("Bridge fixup failed\n");
 			return -EINVAL;
 		}
 
@@ -309,7 +311,7 @@ mode_fixup(struct drm_atomic_state *state)
 			ret = funcs->atomic_check(encoder, crtc_state,
 						  conn_state);
 			if (ret) {
-				DRM_DEBUG_ATOMIC("[ENCODER:%d:%s] check failed\n",
+				DRM_ERROR("[ENCODER:%d:%s] check failed\n",
 						 encoder->base.id, encoder->name);
 				return ret;
 			}
@@ -317,7 +319,7 @@ mode_fixup(struct drm_atomic_state *state)
 			ret = funcs->mode_fixup(encoder, &crtc_state->mode,
 						&crtc_state->adjusted_mode);
 			if (!ret) {
-				DRM_DEBUG_ATOMIC("[ENCODER:%d:%s] fixup failed\n",
+				DRM_ERROR("[ENCODER:%d:%s] fixup failed\n",
 						 encoder->base.id, encoder->name);
 				return -EINVAL;
 			}
@@ -338,7 +340,7 @@ mode_fixup(struct drm_atomic_state *state)
 		ret = funcs->mode_fixup(crtc, &crtc_state->mode,
 					&crtc_state->adjusted_mode);
 		if (!ret) {
-			DRM_DEBUG_ATOMIC("[CRTC:%d] fixup failed\n",
+			DRM_ERROR("[CRTC:%d] fixup failed\n",
 					 crtc->base.id);
 			return -EINVAL;
 		}
@@ -459,7 +461,7 @@ drm_atomic_helper_check_modeset(struct drm_device *dev,
 								crtc);
 
 		if (crtc_state->enable != !!num_connectors) {
-			DRM_DEBUG_ATOMIC("[CRTC:%d] enabled/connectors mismatch\n",
+			DRM_ERROR("[CRTC:%d] enabled/connectors mismatch\n",
 					 crtc->base.id);
 
 			return -EINVAL;
@@ -507,7 +509,7 @@ drm_atomic_helper_check_planes(struct drm_device *dev,
 
 		ret = funcs->atomic_check(plane, plane_state);
 		if (ret) {
-			DRM_DEBUG_ATOMIC("[PLANE:%d] atomic driver check failed\n",
+			DRM_ERROR("[PLANE:%d] atomic driver check failed\n",
 					 plane->base.id);
 			return ret;
 		}
@@ -523,7 +525,7 @@ drm_atomic_helper_check_planes(struct drm_device *dev,
 
 		ret = funcs->atomic_check(crtc, crtc_state);
 		if (ret) {
-			DRM_DEBUG_ATOMIC("[CRTC:%d] atomic driver check failed\n",
+			DRM_ERROR("[CRTC:%d] atomic driver check failed\n",
 					 crtc->base.id);
 			return ret;
 		}

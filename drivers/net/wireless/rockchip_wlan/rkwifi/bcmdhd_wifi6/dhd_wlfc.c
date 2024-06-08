@@ -482,7 +482,7 @@ _dhd_wlfc_deque_afq(athost_wl_status_info_t* ctx, uint16 hslot, uint8 hcnt, uint
 		}
 	} else {
 		/* middle packet is matched */
-		DHD_INFO(("%s: out of order, seq(%d), head_seq(%d)\n", __FUNCTION__, hcnt,
+		DHD_TRACE(("%s: out of order, seq(%d), head_seq(%d)\n", __FUNCTION__, hcnt,
 			WL_TXSTATUS_GET_FREERUNCTR(DHD_PKTTAG_H2DTAG(PKTTAG(q->head)))));
 		ctx->stats.ooo_pkts[prec]++;
 		PKTSETLINK(b, PKTLINK(p));
@@ -1863,7 +1863,7 @@ _dhd_wlfc_mac_entry_update(athost_wl_status_info_t* ctx, wlfc_mac_descriptor_t* 
 				}
 				ctx->active_entry_count++;
 			} else {
-				DHD_ERROR(("%s():%d, entry(%d)\n", __FUNCTION__, __LINE__,
+				DHD_TRACE(("%s():%d, entry(%d)\n", __FUNCTION__, __LINE__,
 					(int)(entry - &ctx->destination_entries.nodes[0])));
 			}
 		}
@@ -2576,7 +2576,7 @@ _dhd_wlfc_dbg_senum_check(dhd_pub_t *dhd, uint8 *value)
 
 	bcopy(&value[2], &timestamp, sizeof(uint32));
 	timestamp = ltoh32(timestamp);
-	DHD_INFO(("RXPKT: SEQ: %d, timestamp %d\n", value[1], timestamp));
+	DHD_TRACE(("RXPKT: SEQ: %d, timestamp %d\n", value[1], timestamp));
 	return BCME_OK;
 }
 
@@ -3044,7 +3044,7 @@ dhd_wlfc_parse_header_info(dhd_pub_t *dhd, void* pktbuf, int tlv_hdr_len, uchar 
 			processed += 2 + len;
 			entry = NULL;
 
-			DHD_INFO(("%s():%d type %d remainder %d processed %d\n",
+			DHD_TRACE(("%s():%d type %d remainder %d processed %d\n",
 				__FUNCTION__, __LINE__, type, remainder, processed));
 
 			if (type == WLFC_CTL_TYPE_HOST_REORDER_RXPKTS)
@@ -3056,7 +3056,7 @@ dhd_wlfc_parse_header_info(dhd_pub_t *dhd, void* pktbuf, int tlv_hdr_len, uchar 
 
 				if (type != WLFC_CTL_TYPE_HOST_REORDER_RXPKTS &&
 					type != WLFC_CTL_TYPE_TRANS_ID)
-					DHD_INFO(("%s():%d dhd->wlfc_state is NULL yet!"
+					DHD_TRACE(("%s():%d dhd->wlfc_state is NULL yet!"
 					" type %d remainder %d processed %d\n",
 					__FUNCTION__, __LINE__, type, remainder, processed));
 				continue;
@@ -3611,7 +3611,7 @@ dhd_wlfc_init(dhd_pub_t *dhd)
 		Leaving the message for now, it should be removed after a while; once
 		the tlv situation is stable.
 		*/
-		DHD_INFO(("dhd_wlfc_init(): successfully %s bdcv2 tlv signaling, %d\n",
+		DHD_TRACE(("dhd_wlfc_init(): successfully %s bdcv2 tlv signaling, %d\n",
 			dhd->wlfc_enabled?"enabled":"disabled", tlv));
 	}
 
@@ -3621,7 +3621,7 @@ dhd_wlfc_init(dhd_pub_t *dhd)
 	ret = dhd_wl_ioctl_get_intiovar(dhd, "wlfc_mode", &fw_caps, WLC_GET_VAR, FALSE, 0);
 
 	if (!ret) {
-		DHD_INFO(("%s: query wlfc_mode succeed, fw_caps=0x%x\n", __FUNCTION__, fw_caps));
+		DHD_TRACE(("%s: query wlfc_mode succeed, fw_caps=0x%x\n", __FUNCTION__, fw_caps));
 
 		if (WLFC_IS_OLD_DEF(fw_caps)) {
 #ifdef BCMDBUS
@@ -3652,7 +3652,7 @@ dhd_wlfc_init(dhd_pub_t *dhd)
 		}
 	}
 
-	DHD_INFO(("dhd_wlfc_init(): wlfc_mode=0x%x, ret=%d\n", dhd->wlfc_mode, ret));
+	DHD_TRACE(("dhd_wlfc_init(): wlfc_mode=0x%x, ret=%d\n", dhd->wlfc_mode, ret));
 #ifdef LIMIT_BORROW
 	dhd->wlfc_borrow_allowed = TRUE;
 #endif // endif

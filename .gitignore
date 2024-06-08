@@ -38,6 +38,7 @@ modules.builtin
 Module.symvers
 *.dwo
 *.su
+.config_done
 
 #
 # Top-level generic files
@@ -120,3 +121,4 @@ all.config
 
 # fetched Android config fragments
 android/configs/android-*.cfg
+nohup.out

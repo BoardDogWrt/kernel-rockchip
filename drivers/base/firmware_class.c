@@ -6,6 +6,7 @@
  * Please see Documentation/firmware_class/ for more information.
  *
  */
+#include <generated/autoconf.h>
 
 #include <linux/capability.h>
 #include <linux/device.h>
@@ -25,6 +26,7 @@
 #include <linux/list.h>
 #include <linux/async.h>
 #include <linux/pm.h>
+#include <linux/fs.h>
 #include <linux/suspend.h>
 #include <linux/syscore_ops.h>
 #include <linux/reboot.h>
@@ -281,6 +283,16 @@ static const char * const fw_path[] = {
 	"/lib/firmware/updates",
 	"/lib/firmware/" UTS_RELEASE,
 	"/lib/firmware"
+#ifdef CONFIG_FW_PATH_ANDROID
+	,
+	/* Android layout specific */
+	"/etc/firmware/" UTS_RELEASE,
+	"/etc/firmware",
+	"/system/etc/firmware/" UTS_RELEASE,
+	"/system/etc/firmware",
+	"/system/vendor/firmware/" UTS_RELEASE,
+	"/system/vendor/firmware"
+#endif
 };
 
 /*
@@ -333,6 +345,7 @@ static int fw_get_filesystem_firmware(struct device *device,
 	if (!path)
 		return -ENOMEM;
 
+	/* iterate predefined firmware path locations */
 	for (i = 0; i < ARRAY_SIZE(fw_path); i++) {
 		struct file *file;
 
@@ -341,19 +354,25 @@ static int fw_get_filesystem_firmware(struct device *device,
 			continue;
 
 		len = snprintf(path, PATH_MAX, "%s/%s",
-			       fw_path[i], buf->fw_id);
+				fw_path[i], buf->fw_id);
+
 		if (len >= PATH_MAX) {
 			rc = -ENAMETOOLONG;
 			break;
 		}
 
+		dev_info(device, "[base:firmware] Try to open firmware file: %s\n", path);
+		
 		file = filp_open(path, O_RDONLY, 0);
-		if (IS_ERR(file))
+		if (IS_ERR(file)) {
+			//dev_warn(device, "[base:firmware] Can't open firmware file: %s\n", path);
 			continue;
+		}
+
 		rc = fw_read_file_contents(file, buf);
 		fput(file);
 		if (rc)
-			dev_warn(device, "firmware, attempted to load %s, but failed with error %d\n",
+			dev_warn(device, "[base:firmware] Attempted to load '%s', but failed with error %d\n",
 				path, rc);
 		else
 			break;
@@ -361,7 +380,7 @@ static int fw_get_filesystem_firmware(struct device *device,
 	__putname(path);
 
 	if (!rc) {
-		dev_dbg(device, "firmware: direct-loading firmware %s\n",
+		dev_dbg(device, "[base:firmware] Direct loading firmware: %s\n",
 			buf->fw_id);
 		mutex_lock(&fw_lock);
 		set_bit(FW_STATUS_DONE, &buf->status);
@@ -936,7 +955,7 @@ static int _request_firmware_load(struct firmware_priv *fw_priv,
 	if (opt_flags & FW_OPT_UEVENT) {
 		buf->need_uevent = true;
 		dev_set_uevent_suppress(f_dev, false);
-		dev_dbg(f_dev, "firmware: requesting %s\n", buf->fw_id);
+		dev_dbg(f_dev, "[base:firmware] requesting %s\n", buf->fw_id);
 		kobject_uevent(&fw_priv->dev.kobj, KOBJ_ADD);
 	} else {
 		timeout = MAX_JIFFY_OFFSET;
@@ -1052,7 +1071,7 @@ _request_firmware_prepare(struct firmware **firmware_p, const char *name,
 	}
 
 	if (fw_get_builtin_firmware(firmware, name)) {
-		dev_dbg(device, "firmware: using built-in firmware %s\n", name);
+		dev_info(device, "[base:firmware] Using kernel built-in firmware %s\n", name);
 		return 0; /* assigned */
 	}
 
@@ -1129,6 +1148,9 @@ _request_firmware(const struct firmware **firmware_p, const char *name,
 	if (!name || name[0] == '\0')
 		return -EINVAL;
 
+	dev_info(device, "[base:firmware] Request to load firmware: %s\n",
+				name);
+
 	ret = _request_firmware_prepare(&fw, name, device);
 	if (ret <= 0) /* error or already assigned */
 		goto out;
@@ -1138,7 +1160,7 @@ _request_firmware(const struct firmware **firmware_p, const char *name,
 	if (opt_flags & FW_OPT_NOWAIT) {
 		timeout = usermodehelper_read_lock_wait(timeout);
 		if (!timeout) {
-			dev_dbg(device, "firmware: %s loading timed out\n",
+			dev_dbg(device, "[base:firmware] %s loading timed out\n",
 				name);
 			ret = -EBUSY;
 			goto out;
@@ -1146,7 +1168,7 @@ _request_firmware(const struct firmware **firmware_p, const char *name,
 	} else {
 		ret = usermodehelper_read_trylock();
 		if (WARN_ON(ret)) {
-			dev_err(device, "firmware: %s will not be loaded\n",
+			dev_err(device, "[base:firmware] %s will not be loaded\n",
 				name);
 			goto out;
 		}
@@ -1156,10 +1178,10 @@ _request_firmware(const struct firmware **firmware_p, const char *name,
 	if (ret) {
 		if (!(opt_flags & FW_OPT_NO_WARN))
 			dev_warn(device,
-				 "Direct firmware load for %s failed with error %d\n",
+				 "[base:firmware] Direct firmware load for %s failed with error %d\n",
 				 name, ret);
 		if (opt_flags & FW_OPT_USERHELPER) {
-			dev_warn(device, "Falling back to user helper\n");
+			dev_warn(device, "[base:firmware] Falling back to user helper\n");
 			ret = fw_load_from_user_helper(fw, name, device,
 						       opt_flags, timeout);
 		}

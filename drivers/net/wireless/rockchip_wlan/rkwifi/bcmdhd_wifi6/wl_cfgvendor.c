@@ -86,6 +86,10 @@
 #endif // endif
 #include <brcm_nl80211.h>
 
+#ifndef DHD_DEBUG
+#undef DHD_LOG_DUMP
+#endif
+
 char*
 wl_get_kernel_timestamp(void)
 {
@@ -1655,10 +1659,11 @@ wl_cfgvendor_rtt_set_config(struct wiphy *wiphy, struct wireless_dev *wdev,
 	rtt_config_params_t rtt_param;
 	rtt_target_info_t* rtt_target = NULL;
 	const struct nlattr *iter, *iter1, *iter2;
-	int8 eabuf[ETHER_ADDR_STR_LEN];
-	int8 chanbuf[CHANSPEC_STR_LEN];
 	struct bcm_cfg80211 *cfg = wiphy_priv(wiphy);
 	rtt_capabilities_t capability;
+#ifdef DHD_DEBUG
+	int8 chanbuf[CHANSPEC_STR_LEN];
+#endif
 
 	bzero(&rtt_param, sizeof(rtt_param));
 
@@ -1831,16 +1836,18 @@ wl_cfgvendor_rtt_set_config(struct wiphy *wiphy, struct wireless_dev *wdev,
 					err = -EINVAL;
 					goto exit;
 				}
-				WL_INFORM_MEM(("Target addr %s, Channel : %s for RTT \n",
-					bcm_ether_ntoa((const struct ether_addr *)&rtt_target->addr,
-					eabuf),
-					wf_chspec_ntoa(rtt_target->chanspec, chanbuf)));
+#ifdef DHD_DEBUG
+				WL_INFORM_MEM(("Target addr %pM, Channel : %s for RTT \n",
+					&rtt_target->addr, wf_chspec_ntoa(rtt_target->chanspec, chanbuf)));
+#endif
 				rtt_target++;
 			}
 			break;
 		}
 	}
+
 	WL_DBG(("leave :target_cnt : %d\n", rtt_param.rtt_target_cnt));
+	
 	if (dhd_dev_rtt_set_cfg(bcmcfg_to_prmry_ndev(cfg), &rtt_param) < 0) {
 		WL_ERR(("Could not set RTT configuration\n"));
 		err = -EINVAL;

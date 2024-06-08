@@ -44,6 +44,7 @@
 #include <osl.h>
 #include <dngl_stats.h>
 #include <dhd.h>
+#include <wl_dbg.h>
 
 #define WL_CFG_DRV_LOCK(lock, flags)	(flags) = osl_spin_lock(lock)
 #define WL_CFG_DRV_UNLOCK(lock, flags)	osl_spin_unlock((lock), (flags))
@@ -120,14 +121,6 @@ struct wl_ibss;
 #define htodchanspec(i) (i)
 #define dtohchanspec(i) (i)
 
-#define WL_DBG_NONE	0
-#define WL_DBG_P2P_ACTION	(1 << 5)
-#define WL_DBG_TRACE	(1 << 4)
-#define WL_DBG_SCAN	(1 << 3)
-#define WL_DBG_DBG	(1 << 2)
-#define WL_DBG_INFO	(1 << 1)
-#define WL_DBG_ERR	(1 << 0)
-
 #ifndef WAIT_FOR_DISCONNECT_MAX
 #define WAIT_FOR_DISCONNECT_MAX 10
 #endif /* WAIT_FOR_DISCONNECT_MAX */
@@ -162,159 +155,6 @@ extern char *dhd_log_dump_get_timestamp(void);
 	BCM_REFERENCE(loc_gen); \
 	cfg80211_disconnected(dev, reason, ie, len, gfp);
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 2, 0)) */
-
-/* 0 invalidates all debug messages.  default is 1 */
-#define WL_DBG_LEVEL 0xFF
-
-#define CFG80211_INFO_TEXT		DHD_LOG_PREFIXS "CFG80211-INFO) "
-#define CFG80211_ERROR_TEXT		DHD_LOG_PREFIXS "CFG80211-ERROR) "
-
-#if defined(DHD_DEBUG)
-#ifdef DHD_LOG_DUMP
-#define	WL_ERR_MSG(x, args...)	\
-do {	\
-	if (wl_dbg_level & WL_DBG_ERR) {	\
-		printk(KERN_INFO CFG80211_ERROR_TEXT "%s : " x, __func__, ## args);	\
-		DHD_LOG_DUMP_WRITE("[%s] %s: ", dhd_log_dump_get_timestamp(), __func__);	\
-		DHD_LOG_DUMP_WRITE(x, ## args);	\
-	}	\
-} while (0)
-#define WL_ERR(x) WL_ERR_MSG x
-#define WL_ERR_KERN_MSG(x, args...)	\
-do {	\
-	if (wl_dbg_level & WL_DBG_ERR) {	\
-		printk(KERN_INFO CFG80211_ERROR_TEXT "%s : " x, __func__, ## args);	\
-	}	\
-} while (0)
-#define WL_ERR_KERN(x) WL_ERR_KERN_MSG x
-#define	WL_ERR_MEM_MSG(x, args...)	\
-do {	\
-	if (wl_dbg_level & WL_DBG_ERR) {	\
-		DHD_LOG_DUMP_WRITE("[%s] %s: ", dhd_log_dump_get_timestamp(), __func__);	\
-		DHD_LOG_DUMP_WRITE(x, ## args);	\
-	}	\
-} while (0)
-#define WL_ERR_MEM(x) WL_ERR_MEM_MSG x
-#define	WL_INFORM_MEM_MSG(x, args...)	\
-do {	\
-	if (wl_dbg_level & WL_DBG_INFO) {	\
-		printk(KERN_INFO CFG80211_INFO_TEXT "%s : " x, __func__, ## args);	\
-		DHD_LOG_DUMP_WRITE("[%s] %s: ", dhd_log_dump_get_timestamp(), __func__);	\
-		DHD_LOG_DUMP_WRITE(x, ## args);	\
-	}	\
-} while (0)
-#define WL_INFORM_MEM(x) WL_INFORM_MEM_MSG x
-#define	WL_ERR_EX(args)	\
-do {	\
-	if (wl_dbg_level & WL_DBG_ERR) {	\
-		printk(KERN_INFO CFG80211_ERROR_TEXT "%s : " x, __func__, ## args);	\
-		DHD_LOG_DUMP_WRITE_EX("[%s] %s: ", dhd_log_dump_get_timestamp(), __func__);	\
-		DHD_LOG_DUMP_WRITE_EX args;	\
-	}	\
-} while (0)
-#define	WL_MEM(args)	\
-do {	\
-	DHD_LOG_DUMP_WRITE("[%s] %s: ", dhd_log_dump_get_timestamp(), __func__);	\
-	DHD_LOG_DUMP_WRITE args;	\
-} while (0)
-#else
-#define	WL_ERR_MSG(x, args...)									\
-do {										\
-	if (wl_dbg_level & WL_DBG_ERR) {				\
-		printk(KERN_INFO CFG80211_ERROR_TEXT "%s : " x, __func__, ## args);	\
-	}								\
-} while (0)
-#define WL_ERR(x) WL_ERR_MSG x
-#define WL_ERR_KERN(args) WL_ERR(args)
-#define WL_ERR_MEM(args) WL_ERR(args)
-#define WL_INFORM_MEM(args) WL_INFORM(args)
-#define WL_ERR_EX(args) WL_ERR(args)
-#define WL_MEM(args) WL_DBG(args)
-#endif /* DHD_LOG_DUMP */
-#else /* defined(DHD_DEBUG) */
-#define	WL_ERR_MSG(x, args...)									\
-do {										\
-	if ((wl_dbg_level & WL_DBG_ERR) && net_ratelimit()) {				\
-		printk(KERN_INFO CFG80211_ERROR_TEXT "%s : " x, __func__, ## args);	\
-	}								\
-} while (0)
-#define WL_ERR(x) WL_ERR_MSG x
-#define WL_ERR_KERN(args) WL_ERR(args)
-#define WL_ERR_MEM(args) WL_ERR(args)
-#define WL_INFORM_MEM(args) WL_INFORM(args)
-#define WL_ERR_EX(args) WL_ERR(args)
-#define WL_MEM(args) WL_DBG(args)
-#endif /* defined(DHD_DEBUG) */
-
-#define WL_PRINT_RATE_LIMIT_PERIOD 4000000000u /* 4s in units of ns */
-#define WL_ERR_RLMT(args) \
-do {	\
-	if (wl_dbg_level & WL_DBG_ERR) {	\
-		static uint64 __err_ts = 0; \
-		static uint32 __err_cnt = 0; \
-		uint64 __cur_ts = 0; \
-		__cur_ts = local_clock(); \
-		if (__err_ts == 0 || (__cur_ts > __err_ts && \
-		(__cur_ts - __err_ts > WL_PRINT_RATE_LIMIT_PERIOD))) { \
-			__err_ts = __cur_ts; \
-			WL_ERR(args);	\
-			WL_ERR(("[Repeats %u times]\n", __err_cnt)); \
-			__err_cnt = 0; \
-		} else { \
-			++__err_cnt; \
-		} \
-	}	\
-} while (0)
-
-#ifdef WL_INFORM
-#undef WL_INFORM
-#endif // endif
-
-#define	WL_INFORM_MSG(x, args...)									\
-do {										\
-	if (wl_dbg_level & WL_DBG_INFO) {				\
-		printk(KERN_INFO DHD_LOG_PREFIXS "CFG80211-INFO) %s : " x, __func__, ## args);	\
-	}								\
-} while (0)
-#define WL_INFORM(x) WL_INFORM_MSG x
-
-#ifdef WL_SCAN
-#undef WL_SCAN
-#endif // endif
-#define	WL_SCAN_MSG(x, args...)								\
-do {									\
-	if (wl_dbg_level & WL_DBG_SCAN) {			\
-		printk(KERN_INFO DHD_LOG_PREFIXS "CFG80211-SCAN) %s :" x, __func__, ## args);	\
-	}									\
-} while (0)
-#define WL_SCAN(x) WL_SCAN_MSG x
-#ifdef WL_TRACE
-#undef WL_TRACE
-#endif // endif
-#define	WL_TRACE_MSG(x, args...)								\
-do {									\
-	if (wl_dbg_level & WL_DBG_TRACE) {			\
-		printk(KERN_INFO DHD_LOG_PREFIXS "CFG80211-TRACE) %s :" x, __func__, ## args); \
-	}									\
-} while (0)
-#define WL_TRACE(x) WL_TRACE_MSG x
-#ifdef WL_TRACE_HW4
-#undef WL_TRACE_HW4
-#endif // endif
-#define	WL_TRACE_HW4			WL_TRACE
-#if (WL_DBG_LEVEL > 0)
-#define	WL_DBG_MSG(x, args...)								\
-do {									\
-	if (wl_dbg_level & WL_DBG_DBG) {			\
-		printk(KERN_INFO DHD_LOG_PREFIXS "CFG80211-DEBUG) %s :" x, __func__, ## args); \
-	}									\
-} while (0)
-#define WL_DBG(x) WL_DBG_MSG x
-#else				/* !(WL_DBG_LEVEL > 0) */
-#define	WL_DBG(args)
-#endif				/* (WL_DBG_LEVEL > 0) */
-#define WL_PNO(x)
-#define WL_SD(x)
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 7, 0))
 #define ieee80211_band nl80211_band
@@ -813,6 +653,17 @@ typedef enum wl_bcnrecv_attr_type {
 #define CU_ATTR_HDR_LEN 30
 #endif /* WL_CHAN_UTIL */
 
+/* EOF:FIX */
+/* Flags will be used in field 'struct wl_connect_info.flags_sta'
+ * to manage WLC_E_DEAUTH / WLC_E_DEAUTH_IND events in station
+ * change op function in file wl_cfg80211.c */
+typedef enum station_auth_flags {
+	__WLC_STA_FLAG_INVALID__ = 0,
+	WLC_STA_FLAG_AUTHORIZED = 1,  /* STA has been authorized */
+	WLC_STA_FLAG_DEAUTHORIZED = 2, /* STA has been deauthorized */
+	WLC_STA_FLAG_PENDING_AUTH = 3, /* STA has been connected */
+} station_auth_flags_t;
+
 /* association inform */
 #define MAX_REQ_LINE 1024u
 struct wl_connect_info {
@@ -820,9 +671,13 @@ struct wl_connect_info {
 	u32 req_ie_len;
 	u8 resp_ie[MAX_REQ_LINE];
 	u32 resp_ie_len;
+	/* EOF:FIX */
+	/* used to manage auth/deauth state
+	 * during station_change op event */
+	u32 flags_sta;
 };
-#define WL_MAX_FILS_KEY_LEN 64
 
+#define WL_MAX_FILS_KEY_LEN 64
 struct wl_fils_info {
 	u8 fils_kek[WL_MAX_FILS_KEY_LEN];
 	u32 fils_kek_len;
@@ -1387,6 +1242,7 @@ struct bcm_cfg80211 {
 	int best_2g_ch;
 	int best_5g_ch;
 };
+
 #define WL_STATIC_IFIDX	(DHD_MAX_IFS + DHD_MAX_STATIC_IFS - 1)
 enum static_ndev_states {
 	NDEV_STATE_NONE,
@@ -1446,14 +1302,18 @@ wl_probe_wdev_all(struct bcm_cfg80211 *cfg)
 {
 	struct net_info *_net_info, *next;
 	unsigned long int flags;
+#ifdef DHD_DEBUG /* stupid honks remove this ifdef ;)*/
 	int idx = 0;
+#endif
 	WL_CFG_NET_LIST_SYNC_LOCK(&cfg->net_list_sync, flags);
 	GCC_DIAGNOSTIC_PUSH_SUPPRESS_CAST();
 	BCM_LIST_FOR_EACH_ENTRY_SAFE(_net_info, next,
 		&cfg->net_list, list) {
 		GCC_DIAGNOSTIC_POP();
+#ifdef DHD_DEBUG /* stupid honks remove this ifdef ;)*/
 		WL_INFORM_MEM(("wl_probe_wdev_all: net_list[%d] bssidx: %d\n",
 			idx++, _net_info->bssidx));
+#endif
 	}
 	WL_CFG_NET_LIST_SYNC_UNLOCK(&cfg->net_list_sync, flags);
 	return;

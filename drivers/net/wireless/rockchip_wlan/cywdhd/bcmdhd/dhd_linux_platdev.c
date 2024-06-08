@@ -750,7 +750,7 @@ static int dhd_wifi_platform_load_sdio(void)
 
 		adapter = &dhd_wifi_platdata->adapters[i];
 
-		DHD_ERROR(("Power-up adapter '%s'\n", adapter->name));
+		DHD_INFO(("Power-up adapter '%s'\n", adapter->name));
 		DHD_INFO((" - irq %d [flags %d], firmware: %s, nvram: %s\n",
 			adapter->irq_num, adapter->intr_flags, adapter->fw_path, adapter->nv_path));
 		DHD_INFO((" - bus type %d, bus num %d, slot num %d\n\n",

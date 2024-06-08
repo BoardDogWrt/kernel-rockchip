@@ -48,19 +48,19 @@ uint dump_msg_level = 0;
 #define CONFIG_MSG(x, args...) \
 	do { \
 		if (config_msg_level & CONFIG_MSG_LEVEL) { \
-			printk(KERN_ERR DHD_LOG_PREFIXS "%s : " x, __func__, ## args); \
+			printk(KERN_INFO DHD_LOG_PREFIXS "%s : " x, __func__, ## args); \
 		} \
 	} while (0)
 #define CONFIG_ERROR(x, args...) \
 	do { \
 		if (config_msg_level & CONFIG_ERROR_LEVEL) { \
-			printk(KERN_ERR DHD_LOG_PREFIXS "CONFIG-ERROR) %s : " x, __func__, ## args); \
+			printk(KERN_ERR DHD_LOG_PREFIXS "CONFIG: %s : " x, __func__, ## args); \
 		} \
 	} while (0)
 #define CONFIG_TRACE(x, args...) \
 	do { \
 		if (config_msg_level & CONFIG_TRACE_LEVEL) { \
-			printk(KERN_INFO DHD_LOG_PREFIXS "CONFIG-TRACE) %s : " x, __func__, ## args); \
+			printk(KERN_DEBUG DHD_LOG_PREFIXS "CONFIG: %s : " x, __func__, ## args); \
 		} \
 	} while (0)
 
@@ -355,10 +355,12 @@ dhd_conf_free_mac_list(wl_mac_list_ctrl_t *mac_list)
 			if (mac_list->m_mac_list_head[i].mac) {
 				CONFIG_TRACE("Free mac %p\n", mac_list->m_mac_list_head[i].mac);
 				kfree(mac_list->m_mac_list_head[i].mac);
+				mac_list->m_mac_list_head[i].mac = NULL;
 			}
 		}
 		CONFIG_TRACE("Free m_mac_list_head %p\n", mac_list->m_mac_list_head);
 		kfree(mac_list->m_mac_list_head);
+		mac_list->m_mac_list_head = NULL;
 	}
 	mac_list->count = 0;
 }
@@ -649,6 +651,7 @@ dhd_conf_free_country_list(struct dhd_conf *conf)
 		country = conf->country_head;
 		count++;
 	}
+	
 	CONFIG_TRACE("%d country released\n", count);
 }
 
@@ -666,6 +669,7 @@ dhd_conf_free_mchan_list(struct dhd_conf *conf)
 		mchan = conf->mchan;
 		count++;
 	}
+
 	CONFIG_TRACE("%d mchan released\n", count);
 }
 

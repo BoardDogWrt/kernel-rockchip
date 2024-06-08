@@ -30,16 +30,10 @@
 #ifndef __DHD_CFG80211__
 #define __DHD_CFG80211__
 
+#include <wl_dbg.h>
 #include <wl_cfg80211.h>
 #include <wl_cfgp2p.h>
 #include <brcm_nl80211.h>
-
-#ifndef WL_ERR
-#define WL_ERR CFG80211_ERR
-#endif // endif
-#ifndef WL_TRACE
-#define WL_TRACE CFG80211_TRACE
-#endif // endif
 
 s32 dhd_cfg80211_init(struct bcm_cfg80211 *cfg);
 s32 dhd_cfg80211_deinit(struct bcm_cfg80211 *cfg);

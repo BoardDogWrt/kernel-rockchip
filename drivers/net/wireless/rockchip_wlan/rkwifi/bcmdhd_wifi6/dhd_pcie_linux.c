@@ -1917,7 +1917,7 @@ int dhdpcie_init(struct pci_dev *pdev)
 		/* Attach to the OS network interface */
 		DHD_TRACE(("%s(): Calling dhd_register_if() \n", __FUNCTION__));
 		if (dhd_attach_net(bus->dhd, TRUE)) {
-			DHD_ERROR(("%s(): ERROR.. dhd_register_if() failed\n", __FUNCTION__));
+			DHD_ERROR(("%s(): dhd_register_if() failed\n", __FUNCTION__));
 			break;
 		}
 

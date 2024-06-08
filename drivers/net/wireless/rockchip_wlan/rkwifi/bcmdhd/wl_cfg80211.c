@@ -9886,13 +9886,18 @@ wl_cfg80211_change_station(
 				"sta_flags_set:0x%x iface:%s \n", MAC2STRDBG(mac),
 				params->sta_flags_mask, params->sta_flags_set, ndev->name));
 
-	/* Processing only authorize/de-authorize flag for now */
+	/* Processing only authorize/de-authorize flag for now 
+	 * Flag is set only if authentication server (radius server)
+	 * authorize the station
+	 */
 	if (!(params->sta_flags_mask & BIT(NL80211_STA_FLAG_AUTHORIZED))) {
-		WL_ERR(("WLC_SCB_AUTHORIZE sta_flags_mask not set \n"));
-		return -ENOTSUPP;
+		WL_DBG(("WLC_SCB_AUTHORIZE Not authorised by IEEE 802.1X authenticator (radius server)\n"));
+		/*return -ENOTSUPP; DO NOT STOP, CANNOT KNOW IF SUCH AUTHENTICATOR IS REQUIRED HERE*/
+		/*go ahead*/
 	}
 
 	if (!(params->sta_flags_set & BIT(NL80211_STA_FLAG_AUTHORIZED))) {
+		WL_DBG(("WLC_SCB_AUTHORIZE Station is authorized, try to deauthorize station first.\n"));
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 16, 0))
 		err = wldev_ioctl_set(ndev, WLC_SCB_DEAUTHORIZE, (u8 *)mac, ETH_ALEN);
 #else

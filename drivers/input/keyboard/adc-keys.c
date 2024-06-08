@@ -122,24 +122,30 @@ static int adc_keys_probe(struct platform_device *pdev)
 		return -ENOMEM;
 
 	st->channel = devm_iio_channel_get(dev, "buttons");
-	if (IS_ERR(st->channel))
+	if (IS_ERR(st->channel)) {
+		dev_err(dev, "%s: Can't find adc channel 'buttons'.\n", __func__);
 		return PTR_ERR(st->channel);
+	}		
 
-	if (!st->channel->indio_dev)
+	if (!st->channel->indio_dev) {
+		dev_err(dev, "%s: channels 'indio_dev' not set.\n", __func__);
 		return -ENXIO;
+	}
 
 	error = iio_get_channel_type(st->channel, &type);
-	if (error < 0)
+	if (error < 0) {
+		dev_err(dev, "%s: failed to get channel type.\n", __func__);
 		return error;
+	}
 
 	if (type != IIO_VOLTAGE) {
-		dev_err(dev, "Incompatible channel type %d\n", type);
+		dev_err(dev, "%s: Incompatible channel type %d\n", __func__, type);
 		return -EINVAL;
 	}
 
 	if (device_property_read_u32(dev, "keyup-threshold-microvolt",
 				     &st->keyup_voltage)) {
-		dev_err(dev, "Invalid or missing keyup voltage\n");
+		dev_err(dev, "%s: Invalid or missing keyup voltage\n", __func__);
 		return -EINVAL;
 	}
 	st->keyup_voltage /= 1000;
@@ -152,7 +158,7 @@ static int adc_keys_probe(struct platform_device *pdev)
 
 	poll_dev = devm_input_allocate_polled_device(dev);
 	if (!poll_dev) {
-		dev_err(dev, "failed to allocate input device\n");
+		dev_err(dev, "%s: failed to allocate input device\n", __func__);
 		return -ENOMEM;
 	}
 
@@ -181,7 +187,7 @@ static int adc_keys_probe(struct platform_device *pdev)
 
 	error = input_register_polled_device(poll_dev);
 	if (error) {
-		dev_err(dev, "Unable to register input device: %d\n", error);
+		dev_err(dev, "%s: Unable to register input device: %d\n", __func__, error);
 		return error;
 	}
 

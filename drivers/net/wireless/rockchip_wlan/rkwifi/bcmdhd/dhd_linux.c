@@ -4542,7 +4542,7 @@ dhd_set_mcast_list_handler(void *handle, void *event_info, u8 event)
 
 
 	_dhd_set_multicast_list(dhd, ifidx);
-	DHD_INFO(("%s: set multicast list for if %d\n", __FUNCTION__, ifidx));
+	DHD_TRACE(("%s: set multicast list for if %d\n", __FUNCTION__, ifidx));
 
 done:
 	DHD_PERIM_UNLOCK(&dhd->pub);

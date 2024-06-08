@@ -709,6 +709,11 @@ static const struct tty_port_operations serial_port_ops = {
 	.shutdown		= serial_port_shutdown,
 };
 
+
+/*EOF:HACK*/
+/* 0=Quectel | 1=Huawei */
+static int gsm_module_minors[2] = {0, 0};
+
 static int usb_serial_probe(struct usb_interface *interface,
 			       const struct usb_device_id *id)
 {
@@ -733,6 +738,7 @@ static int usb_serial_probe(struct usb_interface *interface,
 	int num_bulk_out = 0;
 	int num_ports = 0;
 	int max_endpoints;
+	int module_minor;
 
 	mutex_lock(&table_lock);
 	type = search_serial_device(interface);
@@ -833,7 +839,7 @@ static int usb_serial_probe(struct usb_interface *interface,
 				endpoint = &iface_desc->endpoint[i].desc;
 				if (usb_endpoint_is_int_in(endpoint)) {
 					/* we found a interrupt in endpoint */
-					dev_dbg(ddev, "found interrupt in for Prolific device on separate interface\n");
+					dev_info(ddev, "found interrupt in for Prolific device on separate interface\n");
 					if (num_interrupt_in < MAX_NUM_PORTS) {
 						interrupt_in_endpoint[num_interrupt_in] = endpoint;
 						++num_interrupt_in;
@@ -1005,7 +1011,7 @@ static int usb_serial_probe(struct usb_interface *interface,
 				endpoint->bInterval);
 		}
 	} else if (num_interrupt_in) {
-		dev_dbg(ddev, "The device claims to support interrupt in transfers, but read_int_callback is not defined\n");
+		dev_err(ddev, "The device claims to support interrupt in transfers, but read_int_callback is not defined\n");
 	}
 
 	if (serial->type->write_int_callback) {
@@ -1031,7 +1037,7 @@ static int usb_serial_probe(struct usb_interface *interface,
 				endpoint->bInterval);
 		}
 	} else if (num_interrupt_out) {
-		dev_dbg(ddev, "The device claims to support interrupt out transfers, but write_int_callback is not defined\n");
+		dev_err(ddev, "The device claims to support interrupt out transfers, but write_int_callback is not defined\n");
 	}
 
 	usb_set_intfdata(interface, serial);
@@ -1066,8 +1072,34 @@ static int usb_serial_probe(struct usb_interface *interface,
 	/* register all of the individual ports with the driver core */
 	for (i = 0; i < num_ports; ++i) {
 		port = serial->port[i];
-		dev_set_name(&port->dev, "ttyUSB%d", port->minor);
-		dev_dbg(ddev, "registering %s\n", dev_name(&port->dev));
+		
+		/* EOF:HACK: Huawei/Quectel LTE Modules become its own name
+		 * to be sure it does not change during cold/warm boot time */
+
+		/* QUECTEL QUECTEL_VENDOR_ID */
+		if (dev->descriptor.idVendor == cpu_to_le16(0x2c7c)) 
+		{
+			module_minor = gsm_module_minors[0];
+			dev_set_name(&port->dev, "ttyQCT%d", module_minor);
+			
+			module_minor++;
+			gsm_module_minors[0] = module_minor;
+		} 
+		/* HUAWEI HUAWEI_VENDOR_ID */
+		else if (dev->descriptor.idVendor == cpu_to_le16(0x12d1)) 
+		{
+			module_minor = gsm_module_minors[1];
+			dev_set_name(&port->dev, "ttyHUA%d", module_minor);
+			
+			module_minor++;
+			gsm_module_minors[1] = module_minor;
+		} 
+		/* DEFAULT */
+		else {
+			dev_set_name(&port->dev, "ttyUSB%d", port->minor);
+		}
+		
+		dev_info(ddev, "registering %s\n", dev_name(&port->dev));
 		device_enable_async_suspend(&port->dev);
 
 		retval = device_add(&port->dev);
@@ -1079,6 +1111,7 @@ static int usb_serial_probe(struct usb_interface *interface,
 
 	if (num_ports > 0)
 		usb_serial_console_init(serial->port[0]->minor);
+
 exit:
 	module_put(type->driver.owner);
 	return 0;
@@ -1091,8 +1124,9 @@ probe_error:
 
 static void usb_serial_disconnect(struct usb_interface *interface)
 {
-	int i;
+	int i, module_minor;
 	struct usb_serial *serial = usb_get_intfdata(interface);
+	struct usb_device *usbdev = interface_to_usbdev(interface);
 	struct device *dev = &interface->dev;
 	struct usb_serial_port *port;
 	struct tty_struct *tty;
@@ -1111,6 +1145,29 @@ static void usb_serial_disconnect(struct usb_interface *interface)
 			tty_vhangup(tty);
 			tty_kref_put(tty);
 		}
+
+		/* EOF:HACK: Huawei/Quectel LTE Modules become its own name
+		 * to be sure it does not change during cold/warm boot time.
+		 * On deregister, revert minor id's here. */
+
+		/* QUECTEL QUECTEL_VENDOR_ID */
+		if (usbdev->descriptor.idVendor == cpu_to_le16(0x2c7c)) 
+		{
+			module_minor = gsm_module_minors[0];
+			if (module_minor > 0) {
+				module_minor--;
+				gsm_module_minors[0] = module_minor;
+			}
+		} 
+		/* HUAWEI HUAWEI_VENDOR_ID */
+		else if (usbdev->descriptor.idVendor == cpu_to_le16(0x12d1)) 
+		{
+			module_minor = gsm_module_minors[1];
+			if (module_minor > 0) {
+				module_minor--;
+				gsm_module_minors[1] = module_minor;
+			}
+		} 
 		usb_serial_port_poison_urbs(port);
 		wake_up_interruptible(&port->port.delta_msr_wait);
 		cancel_work_sync(&port->work);
