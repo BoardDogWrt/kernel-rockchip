@@ -783,3 +783,7 @@
 	pinctrl-0 = <&uart8m1_xfer>;
 	status = "disabled";
 };
+
+&can1 {
+	status = "okay";
+};
