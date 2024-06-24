@@ -851,6 +851,9 @@ static int setup_initial_state(struct drm_device *drm_dev,
 		if (set->fb->height >= vdisplay) {
 			primary_state->crtc_y = 0;
 			primary_state->crtc_h = vdisplay;
+		} else if (set->fb->width > hdisplay) {
+			primary_state->crtc_h = (set->fb->height * hdisplay) / set->fb->width;
+			primary_state->crtc_y = (vdisplay - primary_state->crtc_h) / 2;
 		} else {
 			primary_state->crtc_y = (vdisplay - fb_height) / 2;
 			primary_state->crtc_h = fb_height;
