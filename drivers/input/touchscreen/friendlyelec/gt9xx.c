@@ -38,6 +38,8 @@ u8 config[GTP_CONFIG_MAX_LENGTH + GTP_ADDR_LENGTH] = {
 	GTP_REG_CONFIG_DATA & 0xff
 };
 
+static bool gtp_keep_otp_config;
+
 #if GTP_HAVE_TOUCH_KEY
 static const u16 touch_key_array[] = GTP_KEY_TAB;
 #define GTP_MAX_KEY_NUM		ARRAY_SIZE(touch_key_array)
@@ -1410,12 +1412,21 @@ static s32 gtp_init_panel(struct goodix_ts_data *ts)
 	memcpy(&config[GTP_ADDR_LENGTH], send_cfg_buf[sensor_id], ts->gtp_cfg_len);
 #endif
 
-    GTP_INFO("Config group%d used,length: %d", sensor_id, ts->gtp_cfg_len);
+    if (gtp_keep_otp_config) {
+        ts->gtp_cfg_len = 0;
+        memset(&config[GTP_ADDR_LENGTH], 0, GTP_CONFIG_MAX_LENGTH);
+    } else {
+        GTP_INFO("Config group%d used,length: %d", sensor_id, ts->gtp_cfg_len);
+    }
 
     if (ts->gtp_cfg_len < GTP_CONFIG_MIN_LENGTH)
     {
-        GTP_ERROR("Config Group%d is INVALID CONFIG GROUP(Len: %d)! NO Config Sent! You need to check you header file CFG_GROUP section!", sensor_id, ts->gtp_cfg_len);
         ts->pnl_init_error = 1;
+
+        if (!gtp_keep_otp_config) {
+            GTP_ERROR("Config Group%d is INVALID CONFIG GROUP(Len: %d)! NO Config Sent!\n", sensor_id, ts->gtp_cfg_len);
+            GTP_ERROR("You need to check you header file CFG_GROUP section!\n");
+        }
 
         ts->gtp_cfg_len = GTP_CONFIG_MAX_LENGTH;
         ret = gtp_i2c_read(ts->client, config, ts->gtp_cfg_len + GTP_ADDR_LENGTH);
@@ -2325,6 +2336,12 @@ static void gtp_parse_dt(struct device *dev)
 
 	gtp_int_gpio = of_get_named_gpio(np, "goodix,irq-gpio", 0);
 	gtp_rst_gpio = of_get_named_gpio(np, "goodix,rst-gpio", 0);
+
+#if GTP_DRIVER_SEND_CFG
+	gtp_keep_otp_config = of_property_read_bool(dev->of_node, "keep-otp-config");
+#else
+	gtp_keep_otp_config = true;
+#endif
 }
 
 #ifdef GTP_CONFIG_OF
