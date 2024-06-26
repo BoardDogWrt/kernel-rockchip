@@ -795,6 +795,7 @@ static const struct of_device_id gt1x_match_table[] = {
 		{.compatible = "goodix,gt1x",},
 		{ },
 };
+MODULE_DEVICE_TABLE(of, gt1x_match_table);
 #endif
 
 static const struct i2c_device_id gt1x_ts_id[] = {
