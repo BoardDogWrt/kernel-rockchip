@@ -80,6 +80,9 @@ bool rockchip_dmcfreq_vop_bandwidth_avail(void)
 {
 	return !!common_info;
 }
+#if IS_MODULE(CONFIG_DRM_ROCKCHIP)
+EXPORT_SYMBOL(rockchip_dmcfreq_vop_bandwidth_avail);
+#endif
 
 void rockchip_dmcfreq_vop_bandwidth_update(struct dmcfreq_vop_info *vop_info)
 {
