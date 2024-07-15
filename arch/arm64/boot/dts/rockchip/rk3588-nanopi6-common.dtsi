@@ -31,6 +31,7 @@
 
 	chosen: chosen {
 		bootargs = "earlycon=uart8250,mmio32,0xfeb50000 console=ttyFIQ0 coherent_pool=1m irqchip.gicv3_pseudo_nmi=0";
+		bootargs_ext = "root=/dev/mmcblk2p8 rw rootfstype=ext4 rootflags=discard";
 	};
 
 	hdmi0_sound: hdmi0-sound {
