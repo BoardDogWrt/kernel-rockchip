@@ -18,6 +18,20 @@
 		ethernet0 = &r8125_u10;
 	};
 
+	adc_keys: adc-keys {
+		compatible = "adc-keys";
+		io-channels = <&saradc 1>;
+		io-channel-names = "buttons";
+		keyup-threshold-microvolt = <1800000>;
+		poll-interval = <100>;
+
+		vol-up-key {
+			label = "volume up";
+			linux,code = <KEY_VOLUMEUP>;
+			press-threshold-microvolt = <17000>;
+		};
+	};
+
 	dp0_sound: dp0-sound {
 		status = "okay";
 		compatible = "rockchip,hdmi";
