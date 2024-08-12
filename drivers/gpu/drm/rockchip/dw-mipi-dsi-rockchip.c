@@ -1387,6 +1387,13 @@ static int dw_mipi_dsi_rockchip_probe(struct platform_device *pdev)
 	if (!dsi)
 		return -ENOMEM;
 
+	ret = drm_of_find_panel_or_bridge(dsi->dev->of_node, 1, -1,
+					  &dsi->panel, &dsi->bridge);
+	if (ret == -ENODEV) {
+		dev_err(dev, "failed to find panel or bridge: %d\n", ret);
+		return ret;
+	}
+
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	dsi->base = devm_ioremap_resource(dev, res);
 	if (IS_ERR(dsi->base)) {

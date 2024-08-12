@@ -1682,6 +1682,13 @@ static int dw_mipi_dsi2_probe(struct platform_device *pdev)
 	if (!dsi2)
 		return -ENOMEM;
 
+	ret = drm_of_find_panel_or_bridge(dev->of_node, 1, -1,
+					  &dsi2->panel, &dsi2->bridge);
+	if (ret == -ENODEV) {
+		dev_err(dev, "Failed to find panel or bridge: %d\n", ret);
+		return ret;
+	}
+
 	id = of_alias_get_id(dev->of_node, "dsi");
 	if (id < 0)
 		id = 0;
