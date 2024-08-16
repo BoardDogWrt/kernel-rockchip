@@ -208,6 +208,8 @@ struct panel_simple {
 
 	struct regulator *supply;
 	struct i2c_adapter *ddc;
+	int force_status;
+	int nvmem_status;
 
 	struct gpio_desc *enable_gpio;
 	struct gpio_desc *reset_gpio;
@@ -624,6 +626,9 @@ static int panel_simple_prepare(struct drm_panel *panel)
 	struct panel_simple *p = to_panel_simple(panel);
 	int ret;
 
+	if (!p->nvmem_status && p->force_status != connector_status_connected)
+		return -ENODEV;
+
 	/* Preparing when already prepared is a no-op */
 	if (p->prepared)
 		return 0;
@@ -681,6 +686,10 @@ static int panel_simple_get_modes(struct drm_panel *panel,
 {
 	struct panel_simple *p = to_panel_simple(panel);
 	int num = 0;
+
+	/* be aware of connector (force) status */
+	if (connector)
+		p->force_status = connector->status;
 
 	/* probe EDID if a DDC bus is available */
 	if (p->ddc) {
@@ -921,6 +930,10 @@ static int panel_simple_probe(struct device *dev, const struct panel_desc *desc)
 		if (err != -EPROBE_DEFER)
 			dev_err(dev, "failed to get reset GPIO: %d\n", err);
 		return err;
+	} else {
+		/* ensure reset gpio as output */
+		gpiod_direction_output_raw(panel->reset_gpio,
+				gpiod_get_raw_value(panel->reset_gpio));
 	}
 
 	err = of_drm_get_panel_orientation(dev->of_node, &panel->orientation);
@@ -5124,6 +5137,33 @@ static int panel_simple_dsi_of_get_desc_data(struct device *dev,
 	return 0;
 }
 
+static int panel_simple_nvm_detect(struct panel_simple *panel)
+{
+	struct device *dev = panel->base.dev;
+	struct of_phandle_args args;
+	u8 chip, addr, nlen;
+	int ret;
+
+	panel->force_status = connector_status_unknown;
+	panel->nvmem_status = 1;
+
+	ret = of_parse_phandle_with_fixed_args(dev->of_node, "nvmems",
+					       3, 0, &args);
+	if (ret)
+		return 1;
+
+	chip = args.args[0];
+	addr = args.args[1];
+	nlen = args.args[2];
+	if (!chip || !addr)
+		return 1;
+
+	device_property_read_u32(dev, "nvmem-status", &panel->nvmem_status);
+	dev_dbg(dev, "panel nvmem status %d\n", panel->nvmem_status);
+
+	return panel->nvmem_status;
+}
+
 static int panel_simple_dsi_probe(struct mipi_dsi_device *dsi)
 {
 	struct panel_simple *panel;
@@ -5157,6 +5197,8 @@ static int panel_simple_dsi_probe(struct mipi_dsi_device *dsi)
 
 	panel = dev_get_drvdata(dev);
 	panel->dsi = dsi;
+
+	panel_simple_nvm_detect(panel);
 
 	if (!panel->base.backlight) {
 		struct backlight_properties props;

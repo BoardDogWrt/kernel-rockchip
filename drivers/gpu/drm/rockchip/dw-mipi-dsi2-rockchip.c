@@ -244,6 +244,7 @@ struct dw_mipi_dsi2 {
 	bool phy_enabled;
 	struct phy *dcphy;
 	union phy_configure_opts phy_opts;
+	int c_status;
 
 	bool disable_hold_mode;
 	bool auto_calc_mode;
@@ -1151,7 +1152,14 @@ dw_mipi_dsi2_connector_detect(struct drm_connector *connector, bool force)
 	if (dsi2->bridge && (dsi2->bridge->ops & DRM_BRIDGE_OP_DETECT))
 		return drm_bridge_detect(dsi2->bridge);
 
-	return connector_status_connected;
+	if (dsi2->c_status == connector_status_unknown) {
+		if (drm_panel_prepare(dsi2->panel) == -ENODEV)
+			dsi2->c_status = connector_status_disconnected;
+		else
+			dsi2->c_status = connector_status_connected;
+	}
+
+	return dsi2->c_status;;
 }
 
 static void dw_mipi_dsi2_drm_connector_destroy(struct drm_connector *connector)
@@ -1400,6 +1408,8 @@ static int dw_mipi_dsi2_bind(struct device *dev, struct device *master,
 		DRM_DEV_ERROR(dev, "Failed to find panel or bridge: %d\n", ret);
 		return ret;
 	}
+
+	dsi2->c_status = connector_status_unknown;
 
 	dw_mipi_dsi2_get_dsc_params_from_sink(dsi2, dsi2->panel, dsi2->bridge);
 	encoder->possible_crtcs = rockchip_drm_of_find_possible_crtcs(drm_dev,
