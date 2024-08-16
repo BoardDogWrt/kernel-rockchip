@@ -382,9 +382,9 @@ dsi1_pwm: &pwm11 {
 #endif
 
 /* MIPI-DSI */
-#define ENABLE_MIPI_DSI0	0
+#define ENABLE_MIPI_DSI1	1
 
-#include "rk3588-nanopi6-mipi-evb-v10.dtsi"
+#include "rk3588-nanopi6-mipi-lcd-yx35.dtsi"
 #include "rk3588-nanopi6-mipi-dsi-sel.dtsi"
 
 #if defined(ENABLE_MIPI_DSI0)
@@ -393,6 +393,15 @@ dsi1_pwm: &pwm11 {
 };
 
 &dsi0_gt1x {
+	compatible = "goodix,gt1x", "goodix,gt9xx";
+	interrupt-parent = <&gpio3>;
+	interrupts = <RK_PC0 IRQ_TYPE_EDGE_FALLING>;
+	goodix,irq-gpio = <&gpio3 RK_PC0 IRQ_TYPE_EDGE_FALLING>;
+	goodix,rst-gpio = <&gpio3 RK_PC1 GPIO_ACTIVE_HIGH>;
+	status = "okay";
+};
+
+&dsi0_gt9xx {
 	interrupt-parent = <&gpio3>;
 	interrupts = <RK_PC0 IRQ_TYPE_EDGE_FALLING>;
 	goodix,irq-gpio = <&gpio3 RK_PC0 IRQ_TYPE_EDGE_FALLING>;
@@ -406,6 +415,15 @@ dsi1_pwm: &pwm11 {
 };
 
 &dsi1_gt1x {
+	compatible = "goodix,gt1x", "goodix,gt9xx";
+	interrupt-parent = <&gpio4>;
+	interrupts = <RK_PA0 IRQ_TYPE_EDGE_FALLING>;
+	goodix,irq-gpio = <&gpio4 RK_PA0 IRQ_TYPE_EDGE_FALLING>;
+	goodix,rst-gpio = <&gpio4 RK_PA2 GPIO_ACTIVE_HIGH>;
+	status = "okay";
+};
+
+&dsi1_gt9xx {
 	interrupt-parent = <&gpio4>;
 	interrupts = <RK_PA0 IRQ_TYPE_EDGE_FALLING>;
 	goodix,irq-gpio = <&gpio4 RK_PA0 IRQ_TYPE_EDGE_FALLING>;
@@ -413,7 +431,7 @@ dsi1_pwm: &pwm11 {
 };
 #endif
 
-#undef ENABLE_MIPI_DSI0
+#undef ENABLE_MIPI_DSI1
 
 /* GPIO Connector */
 &i2c1 {
