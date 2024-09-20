@@ -8,7 +8,7 @@
 #include "rk3568-nanopi5-rev01.dts"
 
 / {
-	model = "FriendlyElec NanoPi R5S LTS";
+	model = "BoardDog NanoPi R5S LTS";
 	compatible = "friendlyelec,nanopi-r5s", "rockchip,rk3568";
 };
 
